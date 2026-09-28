@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36';
 const MOBILE_UA = 'Instagram 275.0.0.27.98 Android (33/13; 280dpi; 720x1423; Xiaomi; Redmi 7; onclite; qcom; en_US; 458229237)';
 const WEB_APP_ID = '936619743392459';
@@ -15,11 +17,14 @@ const MOBILE_HEADERS = {
 };
 
 const EMBED_HEADERS = {
-  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-  'Accept-Language': 'en-US,en;q=0.9',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+  'Accept-Language': 'en-GB,en;q=0.9',
   'Cache-Control': 'max-age=0',
   Dnt: '1',
   Priority: 'u=0, i',
+  'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+  'Sec-Ch-Ua-Mobile': '?0',
+  'Sec-Ch-Ua-Platform': '"macOS"',
   'Sec-Fetch-Dest': 'document',
   'Sec-Fetch-Mode': 'navigate',
   'Sec-Fetch-Site': 'none',
@@ -36,11 +41,8 @@ function canonicalUrl(rawUrl) {
 }
 
 function shortcode(rawUrl) {
-  try {
-    return new URL(rawUrl).pathname.match(/\/(?:reel|reels|p)\/([^/?#]+)/i)?.[1] || '';
-  } catch {
-    return '';
-  }
+  try { return new URL(rawUrl).pathname.match(/\/(?:reel|reels|p)\/([^/?#]+)/i)?.[1] || ''; }
+  catch { return ''; }
 }
 
 function normalize(value = '') {
@@ -58,11 +60,8 @@ async function request(url, options = {}) {
     () => controller.abort(),
     Math.max(5000, Number(process.env.INSTAGRAM_AUDIO_METADATA_TIMEOUT_MS || 20000)),
   );
-  try {
-    return await fetch(url, { redirect: 'follow', ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
+  try { return await fetch(url, { redirect: 'follow', ...options, signal: controller.signal }); }
+  finally { clearTimeout(timeout); }
 }
 
 function parseJson(text = '') {
@@ -124,9 +123,7 @@ function collectAudioCandidates(root) {
     if (!node || typeof node !== 'object' || visited.has(node)) return;
     visited.add(node);
     const meta = {
-      startTimeMs: Number(
-        node.audio_asset_start_time_in_ms ?? node.audio_asset_start_time_ms ?? inherited.startTimeMs ?? 0,
-      ) || 0,
+      startTimeMs: Number(node.audio_asset_start_time_in_ms ?? node.audio_asset_start_time_ms ?? inherited.startTimeMs ?? 0) || 0,
       durationMs: Number(node.duration_in_ms ?? inherited.durationMs ?? 0) || null,
     };
     for (const [key, child] of Object.entries(node)) {
@@ -150,26 +147,18 @@ function collectPlaybackCandidates(root) {
       const url = new URL(normalize(rawUrl)).toString();
       if (!/^https:/i.test(url) || seen.has(url)) return;
       seen.add(url);
-      found.push({
-        url,
-        path: path.join('.'),
-        width: Number(width || 0) || 0,
-        height: Number(height || 0) || 0,
-        priority,
-      });
+      found.push({ url, path: path.join('.'), width: Number(width || 0) || 0, height: Number(height || 0) || 0, priority });
     } catch {}
   }
 
   function visit(node, path = []) {
     if (!node || typeof node !== 'object' || visited.has(node)) return;
     visited.add(node);
-
     if (Array.isArray(node.video_versions)) {
       for (const [index, item] of node.video_versions.entries()) {
         if (item?.url) add(item.url, [...path, 'video_versions', String(index), 'url'], item.width, item.height, 100);
       }
     }
-
     for (const [key, child] of Object.entries(node)) {
       const childPath = [...path, key];
       if (typeof child === 'string' && /^(?:video_url|playable_url|playback_url)$/i.test(key)) {
@@ -181,30 +170,46 @@ function collectPlaybackCandidates(root) {
   }
 
   visit(root);
-  return found.sort((a, b) =>
-    b.priority - a.priority ||
-    (b.width * b.height) - (a.width * a.height)
-  );
+  return found.sort((a, b) => b.priority - a.priority || (b.width * b.height) - (a.width * a.height));
 }
 
-function extractContextJsonFromEmbed(html = '') {
-  const initMatch = String(html).match(/"init",\[\],\[(.*?)\]\],/s);
-  if (initMatch?.[1]) {
+function collectPlaybackFromText(text = '') {
+  const normalized = normalize(text);
+  const found = [];
+  const seen = new Set();
+
+  function add(rawUrl, path, priority) {
     try {
-      const init = JSON.parse(initMatch[1]);
-      if (init?.contextJSON) {
-        const context = typeof init.contextJSON === 'string' ? JSON.parse(init.contextJSON) : init.contextJSON;
-        if (context && typeof context === 'object') return context;
-      }
+      const url = new URL(normalize(rawUrl)).toString();
+      if (!/^https:/i.test(url) || seen.has(url)) return;
+      seen.add(url);
+      found.push({ url, path, priority, width: 0, height: 0 });
     } catch {}
   }
 
-  const contextMatch = String(html).match(/"contextJSON"\s*:\s*"((?:\\.|[^"\\])*)"/s);
-  if (contextMatch?.[1]) {
+  for (const match of normalized.matchAll(/"(?:video_url|playable_url|playback_url)"\s*:\s*"(https?:\/\/[^"\s]+)"/gi)) {
+    add(match[1], 'embed-text.video_url', 100);
+  }
+
+  for (const match of normalized.matchAll(/"url"\s*:\s*"(https?:\/\/[^"\s]+)"/gi)) {
+    const index = Number(match.index || 0);
+    const before = normalized.slice(Math.max(0, index - 1800), index);
+    if (!/video_versions/i.test(before)) continue;
+    add(match[1], 'embed-text.video_versions.url', 90);
+  }
+
+  return found.sort((a, b) => b.priority - a.priority);
+}
+
+function extractContextJsonFromEmbed(html = '') {
+  const match = String(html).match(/"init",\[\],\[(.*?)\]\],/s);
+  if (match?.[1]) {
     try {
-      const decoded = JSON.parse(`"${contextMatch[1]}"`);
-      const context = JSON.parse(decoded);
-      if (context && typeof context === 'object') return context;
+      let data = JSON.parse(match[1]);
+      if (data?.contextJSON) {
+        data = JSON.parse(data.contextJSON);
+        if (data && typeof data === 'object') return data;
+      }
     } catch {}
   }
   return null;
@@ -212,9 +217,7 @@ function extractContextJsonFromEmbed(html = '') {
 
 async function embedCaptionedAudio(code, failures) {
   try {
-    const response = await request(`https://www.instagram.com/p/${encodeURIComponent(code)}/embed/captioned/`, {
-      headers: EMBED_HEADERS,
-    });
+    const response = await request(`https://www.instagram.com/p/${encodeURIComponent(code)}/embed/captioned/`, { headers: EMBED_HEADERS });
     const text = await response.text();
     if (!response.ok) {
       failures.push(`embed:http-${response.status}`);
@@ -222,41 +225,26 @@ async function embedCaptionedAudio(code, failures) {
     }
 
     const context = extractContextJsonFromEmbed(text);
-    if (!context) {
-      failures.push('embed:no-context-json');
-      return null;
+    if (context) {
+      const audioCandidates = collectAudioCandidates(context);
+      if (audioCandidates.length) return { ...audioCandidates[0], source: 'embed-sound-asset', ext: 'm4a' };
+
+      const playbackCandidates = collectPlaybackCandidates(context);
+      if (playbackCandidates.length) {
+        const best = playbackCandidates[0];
+        console.info('[instagram-audio] embed playback carrier found:', JSON.stringify({ code, host: new URL(best.url).hostname, path: best.path }));
+        return { ...best, source: 'embed-playback', ext: 'mp4', startTimeMs: 0, durationMs: null };
+      }
     }
 
-    // Best case: Instagram exposes the music/original-sound asset directly.
-    const audioCandidates = collectAudioCandidates(context);
-    if (audioCandidates.length) {
-      return { ...audioCandidates[0], source: 'embed-sound-asset', ext: 'm4a' };
+    const textPlayback = collectPlaybackFromText(text);
+    if (textPlayback.length) {
+      const best = textPlayback[0];
+      console.info('[instagram-audio] escaped embed playback carrier found:', JSON.stringify({ code, host: new URL(best.url).hostname, path: best.path }));
+      return { ...best, source: 'embed-text-playback', ext: 'mp4', startTimeMs: 0, durationMs: null };
     }
 
-    // Some Reels do not expose music_info publicly, but the embed still contains
-    // the playback MP4 used by Instagram's own player. That playback is an audio
-    // carrier: Status HQ will map only its audio stream and mux it onto the HQ
-    // video-only source, exactly like TikTok video + data.music.
-    const playbackCandidates = collectPlaybackCandidates(context);
-    if (playbackCandidates.length) {
-      const best = playbackCandidates[0];
-      console.info('[instagram-audio] embed playback carrier found:', JSON.stringify({
-        code,
-        host: new URL(best.url).hostname,
-        path: best.path,
-        width: best.width || null,
-        height: best.height || null,
-      }));
-      return {
-        ...best,
-        source: 'embed-playback',
-        ext: 'mp4',
-        startTimeMs: 0,
-        durationMs: null,
-      };
-    }
-
-    failures.push('embed:no-sound-or-playback');
+    failures.push(context ? 'embed:no-sound-or-playback' : 'embed:no-context-or-playback');
     return null;
   } catch (error) {
     failures.push(`embed:${error?.message || error}`);
@@ -264,30 +252,17 @@ async function embedCaptionedAudio(code, failures) {
   }
 }
 
-function getNumberFromQuery(name, data = '') {
-  const value = String(data).match(new RegExp(`${name}=(\\d+)`))?.[1];
+const getNumberFromQuery = (name, data = '') => {
+  const value = String(data).match(new RegExp(name + '=(\\d+)'))?.[1];
   return Number(value) || null;
-}
+};
 
-function getObjectFromEntries(name, data = '') {
+const getObjectFromEntries = (name, data = '') => {
   try {
-    const objectText = String(data).match(new RegExp('\\["' + name + '",.*?,({.*?}),\\d+\\]'))?.[1];
-    return objectText ? JSON.parse(objectText) : null;
+    const obj = String(data).match(new RegExp('\\["' + name + '",.*?,({.*?}),\\d+\\]'))?.[1];
+    return obj && JSON.parse(obj);
   } catch { return null; }
-}
-
-function randomAlpha(length = 8) {
-  let out = '';
-  while (out.length < length) out += Math.random().toString(36).slice(2).replace(/\d/g, '');
-  return out.slice(0, length) || 'abcdef';
-}
-
-function randomBase64ish(length = 205) {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-  let out = '';
-  for (let i = 0; i < length; i += 1) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
-}
+};
 
 async function graphQlPlaybackAudio(code, failures) {
   try {
@@ -303,32 +278,42 @@ async function graphQlPlaybackAudio(code, failures) {
     const webConfig = getObjectFromEntries('DGWWebConfig', html) || {};
     const pushInfo = getObjectFromEntries('InstagramWebPushInfo', html) || {};
     const security = getObjectFromEntries('InstagramSecurityConfig', html) || {};
-    const lsd = getObjectFromEntries('LSD', html)?.token || randomBase64ish(11);
+    const lsd = getObjectFromEntries('LSD', html)?.token || randomBytes(8).toString('base64url');
     const csrf = security?.csrf_token || '';
+    const bloks = getObjectFromEntries('WebBloksVersioningID', html)?.versioningID || '';
     const anonCookie = [
-      csrf ? `csrftoken=${csrf}` : '',
-      polarisSiteData?.device_id ? `ig_did=${polarisSiteData.device_id}` : '',
+      csrf && `csrftoken=${csrf}`,
+      polarisSiteData?.device_id && `ig_did=${polarisSiteData.device_id}`,
       'wd=1280x720', 'dpr=2',
-      polarisSiteData?.machine_id ? `mid=${polarisSiteData.machine_id}` : '',
+      polarisSiteData?.machine_id && `mid=${polarisSiteData.machine_id}`,
       'ig_nrcb=1',
     ].filter(Boolean).join('; ');
 
-    const body = {
-      __d: 'www', __a: '1', __s: `::${randomAlpha(6)}`,
+    console.info('[instagram-audio] graphql page config:', JSON.stringify({
+      code,
+      hasLsd: Boolean(getObjectFromEntries('LSD', html)?.token),
+      hasCsrf: Boolean(csrf),
+      hasAppId: Boolean(webConfig?.appId),
+      hasBloks: Boolean(bloks),
+      hasDeviceId: Boolean(polarisSiteData?.device_id),
+    }));
+
+    const baseBody = {
+      __d: 'www', __a: '1',
+      __s: `::${Math.random().toString(36).substring(2).replace(/\d/g, '').slice(0, 6)}`,
       __hs: siteData?.haste_session || '20126.HYP:instagram_web_pkg.2.1...0',
       __req: 'b', __ccg: 'EXCELLENT',
       __rev: pushInfo?.rollout_hash || '1019933358',
       __hsi: siteData?.hsi || '7436540909012459023',
-      __dyn: randomBase64ish(205), __csr: randomBase64ish(205), __user: '0',
-      __comet_req: String(getNumberFromQuery('__comet_req', html) || 7),
+      __dyn: randomBytes(154).toString('base64url'),
+      __csr: randomBytes(154).toString('base64url'),
+      __user: '0',
+      __comet_req: getNumberFromQuery('__comet_req', html) || '7',
       av: '0', dpr: '2', lsd,
-      jazoest: String(getNumberFromQuery('jazoest', html) || Math.floor(Math.random() * 10000)),
-      __spin_r: siteData?.__spin_r || '1019933358', __spin_b: siteData?.__spin_b || 'trunk',
-      __spin_t: String(siteData?.__spin_t || Math.floor(Date.now() / 1000)),
-      fb_api_caller_class: 'RelayModern',
-      fb_api_req_friendly_name: 'PolarisPostActionLoadPostQueryQuery',
-      variables: JSON.stringify({ shortcode: code, fetch_tagged_user_count: null, hoisted_comment_id: null, hoisted_reply_id: null }),
-      server_timestamps: 'true', doc_id: '8845758582119845',
+      jazoest: getNumberFromQuery('jazoest', html) || Math.floor(Math.random() * 10000),
+      __spin_r: siteData?.__spin_r || '1019933358',
+      __spin_b: siteData?.__spin_b || 'trunk',
+      __spin_t: siteData?.__spin_t || Math.floor(Date.now() / 1000),
     };
 
     const gqlResponse = await request('https://www.instagram.com/graphql/query', {
@@ -336,13 +321,24 @@ async function graphQlPlaybackAudio(code, failures) {
       headers: {
         ...EMBED_HEADERS,
         'x-ig-app-id': String(webConfig?.appId || WEB_APP_ID),
-        'X-FB-LSD': lsd, 'X-CSRFToken': csrf, 'x-asbd-id': '129477',
+        'X-FB-LSD': lsd,
+        'X-CSRFToken': csrf,
+        ...(bloks ? { 'X-Bloks-Version-Id': bloks } : {}),
+        'x-asbd-id': '129477',
         cookie: anonCookie,
         'content-type': 'application/x-www-form-urlencoded',
         'X-FB-Friendly-Name': 'PolarisPostActionLoadPostQueryQuery',
       },
-      body: new URLSearchParams(body).toString(),
+      body: new URLSearchParams({
+        ...baseBody,
+        fb_api_caller_class: 'RelayModern',
+        fb_api_req_friendly_name: 'PolarisPostActionLoadPostQueryQuery',
+        variables: JSON.stringify({ shortcode: code, fetch_tagged_user_count: null, hoisted_comment_id: null, hoisted_reply_id: null }),
+        server_timestamps: 'true',
+        doc_id: '8845758582119845',
+      }).toString(),
     });
+
     const gqlText = await gqlResponse.text();
     if (!gqlResponse.ok) {
       failures.push(`graphql:http-${gqlResponse.status}`);
@@ -372,8 +368,7 @@ async function anonymousMobileMediaInfo(code, failures) {
       failures.push(`mobile-oembed:http-${oembedResponse.status}`);
       return null;
     }
-    const oembedJson = parseJson(oembedText);
-    const mediaId = String(oembedJson?.media_id || '').trim();
+    const mediaId = String(parseJson(oembedText)?.media_id || '').trim();
     if (!mediaId) {
       failures.push('mobile-oembed:no-media-id');
       return null;
@@ -405,8 +400,7 @@ async function anonymousMobileMediaInfo(code, failures) {
 }
 
 async function pageFallback(canonical, code, failures) {
-  const urls = [canonical, `${canonical}?__a=1&__d=dis`];
-  for (const url of urls) {
+  for (const url of [canonical, `${canonical}?__a=1&__d=dis`]) {
     try {
       const response = await request(url, {
         headers: { Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9', 'User-Agent': BROWSER_UA, Referer: 'https://www.instagram.com/' },
@@ -447,13 +441,9 @@ async function pageFallback(canonical, code, failures) {
 
 function toAudioItem(candidate, canonical, code) {
   console.info('[instagram-audio] resolved Instagram Reel sound:', JSON.stringify({
-    code,
-    source: candidate.source,
-    mediaId: candidate.mediaId || null,
-    host: new URL(candidate.url).hostname,
-    path: candidate.path || null,
-    startTimeMs: candidate.startTimeMs || 0,
-    durationMs: candidate.durationMs || null,
+    code, source: candidate.source, mediaId: candidate.mediaId || null,
+    host: new URL(candidate.url).hostname, path: candidate.path || null,
+    startTimeMs: candidate.startTimeMs || 0, durationMs: candidate.durationMs || null,
     ext: candidate.ext || 'm4a',
   }));
   return {

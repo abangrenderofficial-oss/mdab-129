@@ -88,23 +88,32 @@ function safeScalar(value) {
   return value;
 }
 
-function safeAudioMetadataPaths(rawText = '') {
-  const normalized = normalizeText(rawText).trim();
-  let root;
-  try {
-    root = JSON.parse(normalized);
-  } catch {
-    return [];
+function parseRawJson(rawText = '') {
+  const raw = String(rawText || '').replace(/^\uFEFF/, '').trim();
+  const attempts = [
+    raw,
+    raw.replace(/^for\s*\(;;\)\s*;\s*/i, '').replace(/^while\s*\(1\)\s*;\s*/i, '').replace(/^\)\]\}',?\s*/, '').trim(),
+  ];
+  for (const candidate of attempts) {
+    try { return JSON.parse(candidate); } catch {}
   }
+  return null;
+}
+
+function safeAudioMetadataPaths(rawText = '') {
+  const root = parseRawJson(rawText);
+  if (!root) return [];
 
   const out = [];
   const visited = new WeakSet();
   const interesting = /audio|music|sound|track|asset|cluster|canonical|clips_metadata/i;
+  const scalarKey = /^(id|pk|.*audio.*|.*music.*|.*sound.*|.*track.*|.*asset.*|.*cluster.*|.*canonical.*|title|name|type|duration_in_ms|audio_asset_start_time_in_ms)$/i;
+
   const walk = (node, pathParts = [], relevant = false, depth = 0) => {
-    if (!node || typeof node !== 'object' || depth > 16 || visited.has(node) || out.length >= 120) return;
+    if (!node || typeof node !== 'object' || depth > 18 || visited.has(node) || out.length >= 180) return;
     visited.add(node);
     if (Array.isArray(node)) {
-      for (let i = 0; i < Math.min(node.length, 12); i += 1) walk(node[i], [...pathParts, `[${i}]`], relevant, depth + 1);
+      for (let i = 0; i < Math.min(node.length, 20); i += 1) walk(node[i], [...pathParts, `[${i}]`], relevant, depth + 1);
       return;
     }
 
@@ -113,7 +122,7 @@ function safeAudioMetadataPaths(rawText = '') {
     if (hereRelevant && pathParts.length) {
       out.push({
         path: pathParts.join('.'),
-        keys: keys.filter((key) => interesting.test(key) || /^(id|pk|title|name|type|duration_in_ms|audio_asset_start_time_in_ms)$/i.test(key)).slice(0, 30),
+        keys: keys.filter((key) => interesting.test(key) || /^(id|pk|title|name|type|duration_in_ms|audio_asset_start_time_in_ms)$/i.test(key)).slice(0, 40),
       });
     }
 
@@ -122,10 +131,10 @@ function safeAudioMetadataPaths(rawText = '') {
       const childRelevant = hereRelevant || interesting.test(key);
       if (child && typeof child === 'object') {
         walk(child, childPath, childRelevant, depth + 1);
-      } else if (childRelevant && (/^(id|pk|.*audio.*|.*music.*|.*sound.*|.*track.*|.*asset.*|.*cluster.*|.*canonical.*|title|name|type|duration_in_ms|audio_asset_start_time_in_ms)$/i.test(key))) {
+      } else if (childRelevant && scalarKey.test(key)) {
         out.push({ path: childPath.join('.'), value: safeScalar(child) });
       }
-      if (out.length >= 120) break;
+      if (out.length >= 180) break;
     }
   };
 

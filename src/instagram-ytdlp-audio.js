@@ -73,10 +73,64 @@ function audioReferenceSummary(rawText = '') {
     audioType: firstScalar(text, 'audio_type'),
     musicCanonicalId: firstScalar(text, 'music_canonical_id'),
     audioAssetId: firstScalar(text, 'audio_asset_id'),
+    audioClusterId: firstScalar(text, 'audio_cluster_id'),
     originalMediaId: firstScalar(text, 'original_media_id'),
     originalAudioSubtype: firstScalar(text, 'original_audio_subtype'),
     originalAudioTitle: firstScalar(text, 'original_audio_title'),
   };
+}
+
+function safeScalar(value) {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return null;
+  if (/^https?:\/\//i.test(value) || value.length > 140) return '[redacted]';
+  return value;
+}
+
+function safeAudioMetadataPaths(rawText = '') {
+  const normalized = normalizeText(rawText).trim();
+  let root;
+  try {
+    root = JSON.parse(normalized);
+  } catch {
+    return [];
+  }
+
+  const out = [];
+  const visited = new WeakSet();
+  const interesting = /audio|music|sound|track|asset|cluster|canonical|clips_metadata/i;
+  const walk = (node, pathParts = [], relevant = false, depth = 0) => {
+    if (!node || typeof node !== 'object' || depth > 16 || visited.has(node) || out.length >= 120) return;
+    visited.add(node);
+    if (Array.isArray(node)) {
+      for (let i = 0; i < Math.min(node.length, 12); i += 1) walk(node[i], [...pathParts, `[${i}]`], relevant, depth + 1);
+      return;
+    }
+
+    const keys = Object.keys(node);
+    const hereRelevant = relevant || pathParts.some((part) => interesting.test(String(part))) || keys.some((key) => interesting.test(key));
+    if (hereRelevant && pathParts.length) {
+      out.push({
+        path: pathParts.join('.'),
+        keys: keys.filter((key) => interesting.test(key) || /^(id|pk|title|name|type|duration_in_ms|audio_asset_start_time_in_ms)$/i.test(key)).slice(0, 30),
+      });
+    }
+
+    for (const [key, child] of Object.entries(node)) {
+      const childPath = [...pathParts, key];
+      const childRelevant = hereRelevant || interesting.test(key);
+      if (child && typeof child === 'object') {
+        walk(child, childPath, childRelevant, depth + 1);
+      } else if (childRelevant && (/^(id|pk|.*audio.*|.*music.*|.*sound.*|.*track.*|.*asset.*|.*cluster.*|.*canonical.*|title|name|type|duration_in_ms|audio_asset_start_time_in_ms)$/i.test(key))) {
+        out.push({ path: childPath.join('.'), value: safeScalar(child) });
+      }
+      if (out.length >= 120) break;
+    }
+  };
+
+  walk(root);
+  return out;
 }
 
 function socialSoundFromText(rawText = '') {
@@ -163,7 +217,11 @@ async function recoverFromYtDlpPages(binary, url, info) {
       const text = await readFile(file, 'utf8').catch(() => '');
       const ref = audioReferenceSummary(text);
       if (Object.values(ref).some(Boolean)) {
-        references.push({ file: path.basename(file), ...ref });
+        references.push({
+          file: path.basename(file),
+          ...ref,
+          metadataPaths: safeAudioMetadataPaths(text),
+        });
       }
       const sound = socialSoundFromText(text);
       if (!sound) continue;

@@ -180,30 +180,27 @@ async function resolveInstagram(url) {
     return { ...media, platform: 'Instagram', canonicalUrl, audios: existingAudios };
   }
 
-  // Target case only: original Instagram video is silent but the Reel has an
-  // added sound. Fast path: get a merged provider copy and use ONLY its audio
-  // track as the donor. The original Instagram video remains the video track.
+  // For Reels where Instagram exposes only a silent/VP9 video track, prefer the
+  // provider's already-merged H.264 + AAC MP4 directly. This is faster, avoids a
+  // second local mux, and is playable on iPhone/Telegram.
   try {
-    const donor = await resolveInstagramProviderVideo(canonicalUrl);
-    if (donor?.url) {
-      console.info('[instagram-resolver] provider Reel audio donor resolved; preserving original video');
+    const merged = await resolveInstagramProviderVideo(canonicalUrl);
+    if (merged?.url) {
+      console.info('[instagram-resolver] merged provider Reel selected as primary playable video');
       return {
         ...media,
         platform: 'Instagram',
         canonicalUrl,
-        audios: [{
-          ...donor,
-          quality: 'Reel added sound',
-          source: `${donor.source || 'instagram-provider'}-audio-donor`,
-        }],
+        videos: [{ ...merged, hasAudio: true }],
+        audios: [],
       };
     }
   } catch (error) {
-    console.warn('[instagram-resolver] Reel audio donor provider failed:', error?.code, error?.message);
+    console.warn('[instagram-resolver] merged Reel provider failed:', error?.code, error?.message);
   }
 
-  // Fallback: try Instagram/yt-dlp's standalone sound stream and mux that onto
-  // the same original silent video.
+  // Fallback: try Instagram/yt-dlp's standalone sound stream. The downloader
+  // muxer will transcode non-H.264 video to an iPhone-compatible H.264 MP4.
   try {
     const sound = await resolveInstagramYtDlpAudio(canonicalUrl);
     if (sound?.url) {
@@ -219,8 +216,7 @@ async function resolveInstagram(url) {
     console.warn('[instagram-resolver] standalone Reel sound not resolved:', error?.code, error?.message);
   }
 
-  // Last fallback: legacy metadata sound resolver. It is audio-only as well and
-  // never replaces the original Instagram video.
+  // Last fallback: legacy metadata sound resolver.
   try {
     const sound = await resolveInstagramAudio(canonicalUrl);
     if (sound?.url) {
@@ -236,8 +232,11 @@ async function resolveInstagram(url) {
     console.warn('[instagram-resolver] metadata Reel sound not resolved:', error?.code, error?.message);
   }
 
-  console.warn('[instagram-resolver] silent Instagram video found but added Reel sound could not be resolved');
-  return { ...media, platform: 'Instagram', canonicalUrl, audios: [] };
+  // Never send a known-silent Instagram candidate to Telegram. Apart from
+  // missing audio, these target Reels can be VP9-in-MP4 and fail playback on iOS.
+  const error = new Error('Instagram Reel audio could not be recovered; refusing to send a silent/non-iPhone-compatible copy.');
+  error.code = 'INSTAGRAM_AUDIO_NOT_FOUND';
+  throw error;
 }
 
 export async function resolveMedia(platform, url) {

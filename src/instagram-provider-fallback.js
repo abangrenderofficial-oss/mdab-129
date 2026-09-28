@@ -56,6 +56,10 @@ function collectVideoCandidates(node, out = [], depth = 0) {
   }
   if (typeof node !== 'object') return out;
 
+  const mediaHint = String(
+    node?.type ?? node?.ext ?? node?.mime_type ?? node?.mimeType ?? node?.mime ?? '',
+  ).toLowerCase();
+  const hintedVideo = /(?:video|mp4|quicktime)/i.test(mediaHint);
   const direct = [
     node.video,
     node.video_url,
@@ -64,7 +68,7 @@ function collectVideoCandidates(node, out = [], depth = 0) {
     node.downloadUrl,
     node.src,
     node.url,
-  ].find((value) => typeof value === 'string' && looksLikeVideoUrl(value));
+  ].find((value) => typeof value === 'string' && (looksLikeVideoUrl(value) || (hintedVideo && /^https?:\/\//i.test(value))));
   if (direct) {
     out.push({
       url: direct,
@@ -105,15 +109,20 @@ async function runSss(page, target) {
     match: (response) => /\/api\/convert/i.test(response.url()) && response.request().method() === 'POST',
     pick: pickSss,
   });
-  await page.goto('https://sssinstagram.com/reels-downloader', {
-    waitUntil: 'domcontentloaded',
-    timeout: PROVIDER_PAGE_TIMEOUT_MS,
-  });
-  const input = page.locator('input[type="text"], input[name="url"], input#main_page_text').first();
-  await input.waitFor({ timeout: PROVIDER_INPUT_TIMEOUT_MS });
-  await input.fill(target);
-  await page.locator('button[type="submit"], button:has-text("Download")').first().click();
-  return outcome;
+  try {
+    await page.goto('https://sssinstagram.com/reels-downloader', {
+      waitUntil: 'domcontentloaded',
+      timeout: PROVIDER_PAGE_TIMEOUT_MS,
+    });
+    const input = page.locator('input[type="text"], input[name="url"], input#main_page_text').first();
+    await input.waitFor({ timeout: PROVIDER_INPUT_TIMEOUT_MS });
+    await input.fill(target);
+    await page.locator('button[type="submit"], button:has-text("Download")').first().click();
+    return await outcome;
+  } catch (error) {
+    outcome.catch(() => {});
+    throw error;
+  }
 }
 
 async function runFastVideoSave(page, target) {
@@ -121,16 +130,21 @@ async function runFastVideoSave(page, target) {
     match: (response) => /videodropper\.app\/allinone/i.test(response.url()),
     pick: pickFastVideoSave,
   });
-  await page.goto('https://fastvideosave.net/', {
-    waitUntil: 'domcontentloaded',
-    timeout: PROVIDER_PAGE_TIMEOUT_MS,
-  });
-  await page.waitForTimeout(350);
-  const input = page.locator('input[type="text"], input[type="url"], input[name*="url" i], input[placeholder*="link" i], input[placeholder*="url" i]').first();
-  await input.waitFor({ timeout: PROVIDER_INPUT_TIMEOUT_MS });
-  await input.fill(target);
-  await page.locator('button:has-text("Download"), button[type="submit"], button:has-text("Search"), .btn').first().click();
-  return outcome;
+  try {
+    await page.goto('https://fastvideosave.net/', {
+      waitUntil: 'domcontentloaded',
+      timeout: PROVIDER_PAGE_TIMEOUT_MS,
+    });
+    await page.waitForTimeout(350);
+    const input = page.locator('input[type="text"], input[type="url"], input[name*="url" i], input[placeholder*="link" i], input[placeholder*="url" i]').first();
+    await input.waitFor({ timeout: PROVIDER_INPUT_TIMEOUT_MS });
+    await input.fill(target);
+    await page.locator('button:has-text("Download"), button[type="submit"], button:has-text("Search"), .btn').first().click();
+    return await outcome;
+  } catch (error) {
+    outcome.catch(() => {});
+    throw error;
+  }
 }
 
 async function launchBrowser() {
@@ -211,26 +225,25 @@ export async function resolveInstagramProviderVideo(rawUrl) {
     { name: 'fastvideosave', run: runFastVideoSave },
   ];
   const browser = await launchBrowser();
+  const failures = [];
 
   try {
-    // Both providers run at the same time, but we keep the shared Chromium alive
-    // until BOTH contexts settle. This avoids killing the slower provider when
-    // the other one fails/finishes and also avoids concurrent Chromium extraction
-    // races (ETXTBSY) from launching two browsers at once.
-    const results = await Promise.allSettled(
-      providers.map((provider) => runProviderInContext(browser, provider, target)),
-    );
-    const success = results.find((item) => item.status === 'fulfilled');
-    if (success?.status === 'fulfilled') return success.value;
-
-    const reasons = results
-      .filter((item) => item.status === 'rejected')
-      .map((item) => item.reason?.message || String(item.reason))
-      .join('; ');
-    const out = new Error(`Instagram provider fallback failed (${reasons})`);
-    out.code = 'INSTAGRAM_PROVIDER_FAILED';
-    throw out;
+    // Run one provider at a time inside the SAME Chromium process. Two concurrent
+    // contexts were unstable on Railway and two Chromium launches race on the
+    // extracted executable. SSS is first because it has produced the correct AV
+    // Reel for this target before; FastVideoSave remains the fallback.
+    for (const provider of providers) {
+      try {
+        return await runProviderInContext(browser, provider, target);
+      } catch (error) {
+        failures.push(error?.message || String(error));
+      }
+    }
   } finally {
     await browser.close().catch(() => {});
   }
+
+  const out = new Error(`Instagram provider fallback failed (${failures.join('; ')})`);
+  out.code = 'INSTAGRAM_PROVIDER_FAILED';
+  throw out;
 }

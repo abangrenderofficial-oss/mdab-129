@@ -1,5 +1,7 @@
 import { execFile } from 'node:child_process';
+import { chmod } from 'node:fs/promises';
 import { promisify } from 'node:util';
+import path from 'node:path';
 import ffmpegPath from 'ffmpeg-static';
 import { resolveMedia, chooseBestVideo } from '../src/bot/media-resolver.js';
 import { localMediaLane } from '../src/bot/job-lanes.js';
@@ -36,6 +38,65 @@ async function probeOutputAudio(filePath) {
   };
 }
 
+async function diagnoseYtDlpFormats(platform, url) {
+  if (platform !== 'instagram') return;
+  try {
+    const binary = path.join(process.cwd(), 'bin', 'yt-dlp');
+    await chmod(binary, 0o755).catch(() => {});
+    const { stdout } = await execFileAsync(binary, [
+      '--dump-single-json',
+      '--skip-download',
+      '--no-warnings',
+      '--no-playlist',
+      '--no-check-certificates',
+      '--js-runtimes', `node:${process.execPath}`,
+      '--remote-components', 'ejs:github',
+      '--',
+      url,
+    ], {
+      timeout: 120000,
+      maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env, PATH: `${path.dirname(process.execPath)}:${process.env.PATH || ''}` },
+    });
+
+    const info = JSON.parse(stdout);
+    const formats = Array.isArray(info?.formats) ? info.formats : [];
+    const summary = formats.map((f) => ({
+      id: f?.format_id ?? null,
+      ext: f?.ext ?? null,
+      protocol: f?.protocol ?? null,
+      width: f?.width ?? null,
+      height: f?.height ?? null,
+      vcodec: f?.vcodec ?? null,
+      acodec: f?.acodec ?? null,
+      abr: f?.abr ?? null,
+      tbr: f?.tbr ?? null,
+      filesize: f?.filesize ?? f?.filesize_approx ?? null,
+      audioChannels: f?.audio_channels ?? null,
+      formatNote: f?.format_note ?? null,
+    }));
+
+    console.log('STATUS_HQ_SELFTEST_YTDLP_INFO', JSON.stringify({
+      extractor: info?.extractor_key || info?.extractor || null,
+      id: info?.id || null,
+      ext: info?.ext || null,
+      vcodec: info?.vcodec || null,
+      acodec: info?.acodec || null,
+      requestedFormats: Array.isArray(info?.requested_formats)
+        ? info.requested_formats.map((f) => ({ id: f?.format_id ?? null, vcodec: f?.vcodec ?? null, acodec: f?.acodec ?? null }))
+        : null,
+      formatCount: summary.length,
+      formats: summary,
+    }));
+  } catch (error) {
+    console.error('STATUS_HQ_SELFTEST_YTDLP_DIAG_FAILED', JSON.stringify({
+      code: error?.code ?? null,
+      message: String(error?.message || error).slice(0, 1400),
+      stderr: String(error?.stderr || '').slice(-2400),
+    }));
+  }
+}
+
 async function verifyResolver(platform, url) {
   const started = Date.now();
   const media = await resolveMedia(platform, url);
@@ -54,8 +115,6 @@ async function verifyResolver(platform, url) {
 }
 
 async function prepareStatusSource(platform, url) {
-  // Match the production Premium+ HQ path for Instagram: force the original
-  // social URL through yt-dlp so adaptive bestvideo+bestaudio can be merged.
   if (platform === 'instagram' || platform === 'youtube') {
     return prepareWhatsAppStatusHQ({
       sourceUrl: url,
@@ -92,9 +151,11 @@ async function verifyStatusHq({ url = STATUS_URL, platform = 'tiktok', requireAu
     const profileHasAudio = Boolean(prepared.profile?.hasAudio);
 
     if (requireAudio && !sourceHasAudio) {
+      await diagnoseYtDlpFormats(platform, url);
       throw new Error(`${platform} self-test source did not contain an audio track after source recovery`);
     }
     if (requireAudio && (!profileHasAudio || !outputAudio.hasAudio)) {
+      await diagnoseYtDlpFormats(platform, url);
       throw new Error(`${platform} Premium+ HQ output lost audio`);
     }
 
@@ -134,9 +195,6 @@ async function softCheck(name, task) {
 async function main() {
   console.log('ISOLATION_SMOKE_START');
 
-  // Hard gate only configuration/invariants that are under our control.
-  // External providers are intentionally soft checks unless an explicit
-  // STATUS_HQ_SELFTEST is enabled for a targeted production investigation.
   if (!heavyWorkerConfigured()) throw new Error('GitHub heavy worker token is not configured');
   console.log('ISOLATION_SMOKE_HEAVY_WORKER', JSON.stringify({ ok: true }));
 

@@ -5,8 +5,10 @@ import { chooseBestVideo, resolveMedia } from '../src/bot/media-resolver.js';
 import { prepareInstagramVideoWithAudio } from '../src/instagram-video-audio-mux.js';
 
 const execFileAsync = promisify(execFile);
-const enabled = /^(?:1|true|yes|on)$/i.test(String(process.env.STATUS_HQ_SELFTEST_ENABLED || ''));
-const url = String(process.env.STATUS_HQ_SELFTEST_URL || '').trim();
+const dedicatedUrl = String(process.env.INSTAGRAM_MUX_SMOKE_URL || '').trim();
+const legacyEnabled = /^(?:1|true|yes|on)$/i.test(String(process.env.STATUS_HQ_SELFTEST_ENABLED || ''));
+const legacyUrl = String(process.env.STATUS_HQ_SELFTEST_URL || '').trim();
+const url = dedicatedUrl || (legacyEnabled && /instagram\.com\/(?:reel|reels|p)\//i.test(legacyUrl) ? legacyUrl : '');
 
 async function probe(filePath) {
   let stderr = '';
@@ -24,7 +26,7 @@ async function probe(filePath) {
 }
 
 async function main() {
-  if (!enabled || !url || !/instagram\.com\/(?:reel|reels|p)\//i.test(url)) {
+  if (!url || !/instagram\.com\/(?:reel|reels|p)\//i.test(url)) {
     console.log('INSTAGRAM_MUX_SMOKE_SKIPPED');
     return;
   }

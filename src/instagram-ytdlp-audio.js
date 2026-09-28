@@ -55,6 +55,30 @@ function normalizeText(value = '') {
   return text;
 }
 
+function firstScalar(text, key) {
+  const escaped = String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text.match(new RegExp(`"${escaped}"\\s*:\\s*(?:"([^"]{0,240})"|(\\d+)|true|false|null)`, 'i'))?.[1]
+    || text.match(new RegExp(`"${escaped}"\\s*:\\s*"?(\\d+)"?`, 'i'))?.[1]
+    || null;
+}
+
+function audioReferenceSummary(rawText = '') {
+  const text = normalizeText(rawText);
+  return {
+    hasClipsMetadata: /"clips_metadata"\s*:/i.test(text),
+    hasMusicInfo: /"music_info"\s*:/i.test(text),
+    hasOriginalSoundInfo: /"original_sound_info"\s*:/i.test(text),
+    hasProgressiveUrlKey: /"(?:fast_start_)?progressive_download_url"\s*:/i.test(text),
+    hasDashManifest: /"dash_manifest"\s*:/i.test(text),
+    audioType: firstScalar(text, 'audio_type'),
+    musicCanonicalId: firstScalar(text, 'music_canonical_id'),
+    audioAssetId: firstScalar(text, 'audio_asset_id'),
+    originalMediaId: firstScalar(text, 'original_media_id'),
+    originalAudioSubtype: firstScalar(text, 'original_audio_subtype'),
+    originalAudioTitle: firstScalar(text, 'original_audio_title'),
+  };
+}
+
 function socialSoundFromText(rawText = '') {
   const text = normalizeText(rawText);
   const patterns = [
@@ -130,12 +154,17 @@ async function recoverFromYtDlpPages(binary, url, info) {
 
     const files = await listFilesRecursive(temp);
     let scannedBytes = 0;
+    const references = [];
     for (const file of files) {
       const fileStat = await stat(file).catch(() => null);
       if (!fileStat?.isFile() || fileStat.size <= 0 || fileStat.size > 16 * 1024 * 1024) continue;
       if (scannedBytes + fileStat.size > 32 * 1024 * 1024) break;
       scannedBytes += fileStat.size;
       const text = await readFile(file, 'utf8').catch(() => '');
+      const ref = audioReferenceSummary(text);
+      if (Object.values(ref).some(Boolean)) {
+        references.push({ file: path.basename(file), ...ref });
+      }
       const sound = socialSoundFromText(text);
       if (!sound) continue;
 
@@ -165,6 +194,7 @@ async function recoverFromYtDlpPages(binary, url, info) {
       dumpFileCount: files.length,
       scannedBytes,
       socialSoundFound: false,
+      audioReferences: references,
     }));
     return null;
   } finally {

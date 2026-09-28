@@ -7,6 +7,7 @@ import { resolveMedia, chooseBestVideo } from '../src/bot/media-resolver.js';
 import { localMediaLane } from '../src/bot/job-lanes.js';
 import { heavyWorkerConfigured } from '../src/heavy-worker-dispatch.js';
 import { prepareWhatsAppStatusHQ } from '../src/status-hq.js';
+import { resolveInstagramAudio } from '../src/instagram-audio.js';
 import { detectPlatform } from '../src/platform.js';
 
 const execFileAsync = promisify(execFile);
@@ -82,9 +83,6 @@ async function diagnoseYtDlpFormats(platform, url) {
       ext: info?.ext || null,
       vcodec: info?.vcodec || null,
       acodec: info?.acodec || null,
-      requestedFormats: Array.isArray(info?.requested_formats)
-        ? info.requested_formats.map((f) => ({ id: f?.format_id ?? null, vcodec: f?.vcodec ?? null, acodec: f?.acodec ?? null }))
-        : null,
       formatCount: summary.length,
       formats: summary,
     }));
@@ -115,21 +113,20 @@ async function verifyResolver(platform, url) {
 }
 
 async function prepareStatusSource(platform, url) {
-  if (platform === 'instagram' || platform === 'youtube') {
-    return prepareWhatsAppStatusHQ({
-      sourceUrl: url,
-      platform,
-      video: null,
-      audio: null,
-    });
+  if (platform === 'youtube') {
+    return prepareWhatsAppStatusHQ({ sourceUrl: url, platform, video: null, audio: null });
   }
 
   const media = await resolveMedia(platform, url);
   const best = chooseBestVideo(media?.videos || []);
   if (!best) throw new Error(`Status HQ smoke could not resolve a ${platform} source video`);
-  const audio = Array.isArray(media?.audios)
+  let audio = Array.isArray(media?.audios)
     ? media.audios.find((item) => item?.url) || null
     : null;
+
+  if (platform === 'instagram' && !audio) {
+    audio = await resolveInstagramAudio(url);
+  }
 
   return prepareWhatsAppStatusHQ({
     sourceUrl: media?.canonicalUrl || url,

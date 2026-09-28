@@ -25,6 +25,18 @@ async function prepareStatusFromSourceUrl(url, platform) {
     return prepareWhatsAppStatusHQ({ sourceUrl: url, platform, video: null, audio: null });
   }
 
+  // Instagram Reels can expose an adaptive/video-only direct stream even when
+  // the original post has audio. For Premium+ HQ, prefer yt-dlp against the
+  // original Reel URL so bestvideo+bestaudio is merged before the HQ encode.
+  // If this route fails, keep the old resolver/direct-stream path as fallback.
+  if (platform === 'instagram') {
+    try {
+      return await prepareWhatsAppStatusHQ({ sourceUrl: url, platform, video: null, audio: null });
+    } catch (error) {
+      console.warn('[status-hq/instagram] merged A/V source failed, trying resolver fallback:', error?.code, error?.message);
+    }
+  }
+
   const media = await resolveMedia(platform, url);
   const best = chooseBestVideo(media?.videos || []);
   if (!best) {

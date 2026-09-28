@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { chmod } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { resolveInstagramWebAudio } from './instagram-web-audio.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -74,9 +75,15 @@ export async function resolveInstagramYtDlpAudio(url) {
       formatCount: formats.length,
       formats: safeFormatSummary(formats),
     }));
-    const error = new Error('yt-dlp did not expose an Instagram audio stream.');
-    error.code = 'INSTAGRAM_YTDLP_AUDIO_NOT_FOUND';
-    throw error;
+
+    try {
+      return await resolveInstagramWebAudio(url);
+    } catch (webError) {
+      console.warn('[instagram-audio] sessioned web media-info failed:', webError?.code, webError?.message);
+      const error = new Error(`yt-dlp exposed no audio; web media info failed: ${webError?.message || webError}`);
+      error.code = 'INSTAGRAM_YTDLP_AUDIO_NOT_FOUND';
+      throw error;
+    }
   }
 
   console.info('[instagram-audio] yt-dlp sound stream found:', JSON.stringify({

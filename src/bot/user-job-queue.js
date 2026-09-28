@@ -36,7 +36,7 @@ function laneFor(key) {
   const s = state();
   let lane = s.users.get(key);
   if (!lane) {
-    lane = { active: false, queue: [] };
+    lane = { active: false, activeItem: null, queue: [] };
     s.users.set(key, lane);
   }
   return lane;
@@ -47,6 +47,34 @@ function cleanupLane(key, lane) {
   if (!lane.active && lane.queue.length === 0 && s.users.get(key) === lane) {
     s.users.delete(key);
   }
+}
+
+function settleCancelled(item) {
+  try {
+    item?.resolve?.({ skipped: true, cancelled: true });
+  } catch {}
+}
+
+export function resetUserHeavyQueue(userId) {
+  const key = userKey(userId);
+  if (!key) return { reset: false, hadActive: false, clearedWaiting: 0 };
+
+  const s = state();
+  const lane = s.users.get(key);
+  if (!lane) return { reset: true, hadActive: false, clearedWaiting: 0 };
+
+  const waiting = Array.isArray(lane.queue) ? lane.queue.splice(0) : [];
+  for (const item of waiting) settleCancelled(item);
+
+  const hadActive = Boolean(lane.active);
+
+  // Detach this user's old lane immediately. The already-running async task may
+  // still finish its current network/ffmpeg call, but its job fence has been
+  // invalidated by /reset and it no longer blocks a fresh job for this user.
+  if (s.users.get(key) === lane) s.users.delete(key);
+  queueMicrotask(pump);
+
+  return { reset: true, hadActive, clearedWaiting: waiting.length };
 }
 
 function pump() {
@@ -65,6 +93,7 @@ function pump() {
 
     const { key, lane, item } = picked;
     lane.active = true;
+    lane.activeItem = item;
     s.active += 1;
 
     Promise.resolve()
@@ -75,6 +104,7 @@ function pump() {
       .then(item.resolve, item.reject)
       .finally(() => {
         lane.active = false;
+        lane.activeItem = null;
         s.active = Math.max(0, s.active - 1);
         cleanupLane(key, lane);
         queueMicrotask(pump);

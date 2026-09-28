@@ -82,7 +82,7 @@ async function downloadToFile(item, filePath, label) {
   return fileStat.size;
 }
 
-async function outputHasAudio(filePath) {
+async function probeMedia(filePath) {
   let stderr = '';
   try {
     await execFileAsync(
@@ -93,7 +93,14 @@ async function outputHasAudio(filePath) {
   } catch (error) {
     stderr = String(error?.stderr || error?.message || '');
   }
-  return /\bAudio:\s/i.test(stderr);
+  const videoLine = stderr.match(/Video:[^\n]+/i)?.[0] || '';
+  const audioLine = stderr.match(/Audio:[^\n]+/i)?.[0] || '';
+  return {
+    hasAudio: Boolean(audioLine),
+    videoLine,
+    audioLine,
+    h264: /Video:\s*h264\b/i.test(videoLine) || /\bavc1\b/i.test(videoLine),
+  };
 }
 
 export async function prepareInstagramVideoWithAudio(video, audio, maxBytes, options = {}) {
@@ -117,6 +124,7 @@ export async function prepareInstagramVideoWithAudio(video, audio, maxBytes, opt
       downloadToFile(audio, audioPath, 'Instagram audio'),
     ]);
 
+    const inputProbe = await probeMedia(videoPath);
     const startSeconds = Math.max(0, Number(audio.startTimeMs || 0) / 1000);
     const args = [
       '-y',
@@ -128,13 +136,27 @@ export async function prepareInstagramVideoWithAudio(video, audio, maxBytes, opt
     ];
 
     if (startSeconds > 0) args.push('-ss', startSeconds.toFixed(3));
+    args.push('-i', audioPath, '-map', '0:v:0', '-map', '1:a:0');
+
+    if (inputProbe.h264) {
+      args.push('-c:v', 'copy');
+    } else {
+      args.push(
+        '-c:v', 'libx264',
+        '-preset', String(process.env.INSTAGRAM_MUX_H264_PRESET || 'veryfast'),
+        '-crf', String(process.env.INSTAGRAM_MUX_H264_CRF || '19'),
+        '-pix_fmt', 'yuv420p',
+        '-profile:v', 'high',
+        '-level', '4.1',
+        '-threads', String(Math.max(1, Math.min(2, Number(process.env.INSTAGRAM_MUX_THREADS || 2) || 2))),
+      );
+    }
+
     args.push(
-      '-i', audioPath,
-      '-map', '0:v:0',
-      '-map', '1:a:0',
-      '-c:v', 'copy',
       '-c:a', 'aac',
+      '-profile:a', 'aac_low',
       '-b:a', String(process.env.INSTAGRAM_MUX_AUDIO_BITRATE || '160k'),
+      '-ar', '48000',
       '-ac', '2',
       '-shortest',
       '-movflags', '+faststart',
@@ -155,9 +177,15 @@ export async function prepareInstagramVideoWithAudio(video, audio, maxBytes, opt
       throw error;
     }
 
-    if (!await outputHasAudio(outputPath)) {
+    const outputProbe = await probeMedia(outputPath);
+    if (!outputProbe.hasAudio) {
       const error = new Error('Instagram mux output still has no audio stream.');
       error.code = 'INSTAGRAM_MUX_AUDIO_VERIFY_FAILED';
+      throw error;
+    }
+    if (!outputProbe.h264) {
+      const error = new Error('Instagram mux output is not H.264/iPhone compatible.');
+      error.code = 'INSTAGRAM_MUX_VIDEO_COMPAT_VERIFY_FAILED';
       throw error;
     }
 
@@ -175,6 +203,10 @@ export async function prepareInstagramVideoWithAudio(video, audio, maxBytes, opt
       audioSource: audio.source || null,
       audioStartTimeMs: Number(audio.startTimeMs || 0) || 0,
       videoQuality: video.quality || null,
+      inputVideo: inputProbe.videoLine || null,
+      outputVideo: outputProbe.videoLine || null,
+      outputAudio: outputProbe.audioLine || null,
+      transcodedVideoToH264: !inputProbe.h264,
       sourceUrl: options.sourceUrl || video.sourceUrl || null,
     }));
 
@@ -182,6 +214,7 @@ export async function prepareInstagramVideoWithAudio(video, audio, maxBytes, opt
       filePath: outputPath,
       size: outputStat.size,
       mergedAudio: true,
+      h264Compatible: true,
       cleanup,
     };
   } catch (error) {

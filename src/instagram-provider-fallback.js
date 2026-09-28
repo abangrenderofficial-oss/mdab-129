@@ -6,33 +6,13 @@ const PROVIDER_RESPONSE_TIMEOUT_MS = Number(process.env.INSTAGRAM_PROVIDER_RESPO
 const PROVIDER_PAGE_TIMEOUT_MS = Number(process.env.INSTAGRAM_PROVIDER_PAGE_TIMEOUT_MS || 10000);
 const PROVIDER_INPUT_TIMEOUT_MS = Number(process.env.INSTAGRAM_PROVIDER_INPUT_TIMEOUT_MS || 6000);
 const PROVIDER_MEDIA_TIMEOUT_MS = Number(process.env.INSTAGRAM_PROVIDER_MEDIA_TIMEOUT_MS || 7000);
+const PROVIDER_ATTEMPT_TIMEOUT_MS = Number(process.env.INSTAGRAM_PROVIDER_ATTEMPT_TIMEOUT_MS || 15000);
 
 function normalizeTarget(rawUrl) {
   const input = new URL(rawUrl);
   const match = input.pathname.match(/\/(?:reel|reels|p|tv)\/([^/?#]+)/i);
   if (!match?.[1]) throw new Error('Instagram shortcode is missing.');
   return `https://www.instagram.com/reel/${match[1]}/`;
-}
-
-function deferredResponse(page, { match, pick, timeout = PROVIDER_RESPONSE_TIMEOUT_MS }) {
-  return new Promise((resolve, reject) => {
-    let done = false;
-    const finish = (fn, value) => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      fn(value);
-    };
-    const timer = setTimeout(() => finish(reject, new Error('provider-timeout')), timeout);
-    page.on('response', async (response) => {
-      if (done || !match(response)) return;
-      let json = null;
-      try { json = await response.json(); } catch { return; }
-      const verdict = pick(json);
-      if (verdict?.ok) finish(resolve, verdict.value);
-      else finish(reject, new Error(verdict?.error || 'provider-no-media'));
-    });
-  });
 }
 
 function looksLikeVideoUrl(value = '') {
@@ -104,47 +84,51 @@ function pickFastVideoSave(json) {
   return { ok: false, error: json?.message || json?.error || 'fastvideosave-no-video' };
 }
 
+async function triggerAndReadJson(page, matcher, trigger, picker) {
+  const responsePromise = page.waitForResponse(matcher, { timeout: PROVIDER_RESPONSE_TIMEOUT_MS });
+  const [response] = await Promise.all([
+    responsePromise,
+    trigger(),
+  ]);
+  const json = await response.json();
+  const verdict = picker(json);
+  if (!verdict?.ok) throw new Error(verdict?.error || 'provider-no-media');
+  return verdict.value;
+}
+
 async function runSss(page, target) {
-  const outcome = deferredResponse(page, {
-    match: (response) => /\/api\/convert/i.test(response.url()) && response.request().method() === 'POST',
-    pick: pickSss,
+  await page.goto('https://sssinstagram.com/reels-downloader', {
+    waitUntil: 'domcontentloaded',
+    timeout: PROVIDER_PAGE_TIMEOUT_MS,
   });
-  try {
-    await page.goto('https://sssinstagram.com/reels-downloader', {
-      waitUntil: 'domcontentloaded',
-      timeout: PROVIDER_PAGE_TIMEOUT_MS,
-    });
-    const input = page.locator('input[type="text"], input[name="url"], input#main_page_text').first();
-    await input.waitFor({ timeout: PROVIDER_INPUT_TIMEOUT_MS });
-    await input.fill(target);
-    await page.locator('button[type="submit"], button:has-text("Download")').first().click();
-    return await outcome;
-  } catch (error) {
-    outcome.catch(() => {});
-    throw error;
-  }
+  const input = page.locator('input[type="text"], input[name="url"], input#main_page_text').first();
+  await input.waitFor({ timeout: PROVIDER_INPUT_TIMEOUT_MS });
+  await input.fill(target);
+  const button = page.locator('button[type="submit"], button:has-text("Download")').first();
+  return triggerAndReadJson(
+    page,
+    (response) => /\/api\/convert/i.test(response.url()) && response.request().method() === 'POST',
+    () => button.click({ timeout: PROVIDER_INPUT_TIMEOUT_MS }),
+    pickSss,
+  );
 }
 
 async function runFastVideoSave(page, target) {
-  const outcome = deferredResponse(page, {
-    match: (response) => /videodropper\.app\/allinone/i.test(response.url()),
-    pick: pickFastVideoSave,
+  await page.goto('https://fastvideosave.net/', {
+    waitUntil: 'domcontentloaded',
+    timeout: PROVIDER_PAGE_TIMEOUT_MS,
   });
-  try {
-    await page.goto('https://fastvideosave.net/', {
-      waitUntil: 'domcontentloaded',
-      timeout: PROVIDER_PAGE_TIMEOUT_MS,
-    });
-    await page.waitForTimeout(350);
-    const input = page.locator('input[type="text"], input[type="url"], input[name*="url" i], input[placeholder*="link" i], input[placeholder*="url" i]').first();
-    await input.waitFor({ timeout: PROVIDER_INPUT_TIMEOUT_MS });
-    await input.fill(target);
-    await page.locator('button:has-text("Download"), button[type="submit"], button:has-text("Search"), .btn').first().click();
-    return await outcome;
-  } catch (error) {
-    outcome.catch(() => {});
-    throw error;
-  }
+  await page.waitForTimeout(350);
+  const input = page.locator('input[type="text"], input[type="url"], input[name*="url" i], input[placeholder*="link" i], input[placeholder*="url" i]').first();
+  await input.waitFor({ timeout: PROVIDER_INPUT_TIMEOUT_MS });
+  await input.fill(target);
+  const button = page.locator('button:has-text("Download"), button[type="submit"], button:has-text("Search"), .btn').first();
+  return triggerAndReadJson(
+    page,
+    (response) => /videodropper\.app\/allinone/i.test(response.url()),
+    () => button.click({ timeout: PROVIDER_INPUT_TIMEOUT_MS }),
+    pickFastVideoSave,
+  );
 }
 
 async function launchBrowser() {
@@ -187,9 +171,17 @@ async function runProviderInContext(browser, provider, target) {
     viewport: { width: 1280, height: 900 },
     locale: 'en-US',
   });
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    context.close().catch(() => {});
+  }, PROVIDER_ATTEMPT_TIMEOUT_MS);
+
   try {
     const page = await context.newPage();
+    page.setDefaultTimeout(PROVIDER_INPUT_TIMEOUT_MS);
     const result = await provider.run(page, target);
+    if (timedOut) throw new Error('provider-attempt-timeout');
     if (!result?.url) throw new Error('provider-no-url');
     await validateProviderVideo(result.url, provider.name);
     console.info('[instagram-provider] merged Reel candidate resolved:', JSON.stringify({
@@ -211,9 +203,11 @@ async function runProviderInContext(browser, provider, target) {
       filesize: null,
     };
   } catch (error) {
-    console.warn('[instagram-provider] provider failed:', provider.name, error?.message || error);
-    throw new Error(`${provider.name}:${error?.message || error}`);
+    const message = timedOut ? 'provider-attempt-timeout' : (error?.message || String(error));
+    console.warn('[instagram-provider] provider failed:', provider.name, message);
+    throw new Error(`${provider.name}:${message}`);
   } finally {
+    clearTimeout(timer);
     await context.close().catch(() => {});
   }
 }
@@ -228,10 +222,6 @@ export async function resolveInstagramProviderVideo(rawUrl) {
   const failures = [];
 
   try {
-    // Run one provider at a time inside the SAME Chromium process. Two concurrent
-    // contexts were unstable on Railway and two Chromium launches race on the
-    // extracted executable. SSS is first because it has produced the correct AV
-    // Reel for this target before; FastVideoSave remains the fallback.
     for (const provider of providers) {
       try {
         return await runProviderInContext(browser, provider, target);

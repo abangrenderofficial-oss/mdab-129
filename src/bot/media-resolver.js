@@ -1,5 +1,6 @@
 import { parseMedia, chooseBestVideo, needsCustomHeaders } from '../downloader.js';
 import { resolveInstagramAudio } from '../instagram-audio.js';
+import { resolveInstagramYtDlpAudio } from '../instagram-ytdlp-audio.js';
 import { parseThreadsPost } from '../threads.js';
 import { parseTwitterVideo } from '../twitter.js';
 import { parseYouTubeFree } from '../youtube-free.js';
@@ -170,6 +171,22 @@ async function resolveInstagram(url) {
     return { ...media, platform: 'Instagram', canonicalUrl, audios: existingAudios };
   }
 
+  // Same model as TikTok: resolve the social platform sound as its own stream,
+  // then let Status HQ mux that audio onto the best video-only stream.
+  try {
+    const sound = await resolveInstagramYtDlpAudio(canonicalUrl);
+    return {
+      ...media,
+      platform: 'Instagram',
+      canonicalUrl,
+      audios: sound?.url ? [sound] : [],
+    };
+  } catch (error) {
+    console.warn('[instagram-resolver] yt-dlp audio-only stream not resolved:', error?.code, error?.message);
+  }
+
+  // Older/public metadata fallbacks remain only for Reels where yt-dlp does not
+  // expose the social sound stream.
   try {
     const sound = await resolveInstagramAudio(canonicalUrl);
     return {

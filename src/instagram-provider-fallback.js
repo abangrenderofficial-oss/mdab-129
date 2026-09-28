@@ -130,6 +130,10 @@ async function launchBrowser() {
   });
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function resolveInstagramProviderVideo(rawUrl) {
   const target = normalizeTarget(rawUrl);
   let browser = null;
@@ -137,46 +141,51 @@ export async function resolveInstagramProviderVideo(rawUrl) {
   try {
     browser = await launchBrowser();
     const providers = [
-      ['sssinstagram', runSss],
-      ['fastvideosave', runFastVideoSave],
+      { name: 'sssinstagram', run: runSss, attempts: 3 },
+      { name: 'fastvideosave', run: runFastVideoSave, attempts: 2 },
     ];
 
-    for (const [name, run] of providers) {
-      const context = await browser.newContext({
-        userAgent: UA,
-        viewport: { width: 1280, height: 900 },
-        locale: 'en-US',
-      });
-      try {
-        const page = await context.newPage();
-        const result = await run(page, target);
-        if (!result?.url) throw new Error('provider-no-url');
-        console.info('[instagram-provider] merged Reel candidate resolved:', JSON.stringify({
-          provider: name,
-          host: new URL(result.url).hostname,
-          quality: result.quality ?? null,
-        }));
-        return {
-          url: result.url,
-          sourceUrl: target,
-          quality: `Instagram ${name}`,
-          width: result.width ?? null,
-          height: result.height ?? null,
-          ext: 'mp4',
-          hasAudio: true,
-          source: `instagram-${name}`,
-          headers: {
-            'User-Agent': UA,
-            Referer: name === 'sssinstagram' ? 'https://sssinstagram.com/' : 'https://fastvideosave.net/',
-            Accept: 'video/mp4,video/*;q=0.9,*/*;q=0.8',
-          },
-          filesize: null,
-        };
-      } catch (error) {
-        failures.push(`${name}:${error?.message || error}`);
-        console.warn('[instagram-provider] provider failed:', name, error?.message || error);
-      } finally {
-        await context.close().catch(() => {});
+    for (const provider of providers) {
+      for (let attempt = 1; attempt <= provider.attempts; attempt += 1) {
+        const context = await browser.newContext({
+          userAgent: UA,
+          viewport: { width: 1280, height: 900 },
+          locale: 'en-US',
+        });
+        try {
+          const page = await context.newPage();
+          const result = await provider.run(page, target);
+          if (!result?.url) throw new Error('provider-no-url');
+          console.info('[instagram-provider] merged Reel candidate resolved:', JSON.stringify({
+            provider: provider.name,
+            attempt,
+            host: new URL(result.url).hostname,
+            quality: result.quality ?? null,
+          }));
+          return {
+            url: result.url,
+            sourceUrl: target,
+            quality: `Instagram ${provider.name}`,
+            width: result.width ?? null,
+            height: result.height ?? null,
+            ext: 'mp4',
+            hasAudio: true,
+            source: `instagram-${provider.name}`,
+            headers: {
+              'User-Agent': UA,
+              Referer: provider.name === 'sssinstagram' ? 'https://sssinstagram.com/' : 'https://fastvideosave.net/',
+              Accept: 'video/mp4,video/*;q=0.9,*/*;q=0.8',
+            },
+            filesize: null,
+          };
+        } catch (error) {
+          const detail = `${provider.name}#${attempt}:${error?.message || error}`;
+          failures.push(detail);
+          console.warn('[instagram-provider] provider attempt failed:', provider.name, `attempt=${attempt}/${provider.attempts}`, error?.message || error);
+          if (attempt < provider.attempts) await delay(450);
+        } finally {
+          await context.close().catch(() => {});
+        }
       }
     }
   } finally {

@@ -4,12 +4,24 @@ const MOBILE_UA = 'Instagram 275.0.0.27.98 Android (33/13; 280dpi; 720x1423; Xia
 const MOBILE_HEADERS = {
   'x-ig-app-locale': 'en_US',
   'x-ig-device-locale': 'en_US',
+  'x-ig-mapped-locale': 'en_US',
   'user-agent': MOBILE_UA,
   'accept-language': 'en-US',
   'x-fb-http-engine': 'Liger',
   'x-fb-client-ip': 'True',
   'x-fb-server-cluster': 'True',
   'content-length': '0',
+};
+
+const EMBED_HEADERS = {
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Cache-Control': 'max-age=0',
+  'User-Agent': BROWSER_UA,
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'none',
+  'Upgrade-Insecure-Requests': '1',
 };
 
 function canonicalUrl(rawUrl) {
@@ -77,12 +89,12 @@ function looksLikeAudioPath(path = []) {
 
 function candidatePriority(key = '') {
   const value = String(key).toLowerCase();
-  if (value === 'fast_start_progressive_download_url') return 100;
-  if (value === 'progressive_download_url') return 95;
-  if (value === 'reactive_audio_download_url') return 90;
-  if (value === 'web_30s_preview_download_url') return 70;
+  if (value === 'fast_start_progressive_download_url') return 110;
+  if (value === 'progressive_download_url') return 105;
+  if (value === 'reactive_audio_download_url') return 100;
+  if (value === 'web_30s_preview_download_url') return 75;
+  if (/audio.*url|url.*audio/.test(value)) return 70;
   if (value === 'uri') return 50;
-  if (/audio.*url|url.*audio/.test(value)) return 60;
   return 0;
 }
 
@@ -136,6 +148,59 @@ function collectAudioCandidates(root) {
   return result.sort((a, b) => b.priority - a.priority);
 }
 
+function extractContextJsonFromEmbed(html = '') {
+  const initMatch = String(html).match(/"init",\[\],\[(.*?)\]\],/s);
+  if (initMatch?.[1]) {
+    try {
+      const init = JSON.parse(initMatch[1]);
+      if (init?.contextJSON) {
+        const context = typeof init.contextJSON === 'string' ? JSON.parse(init.contextJSON) : init.contextJSON;
+        if (context && typeof context === 'object') return context;
+      }
+    } catch {}
+  }
+
+  const contextMatch = String(html).match(/"contextJSON"\s*:\s*"((?:\\.|[^"\\])*)"/s);
+  if (contextMatch?.[1]) {
+    try {
+      const decoded = JSON.parse(`"${contextMatch[1]}"`);
+      const context = JSON.parse(decoded);
+      if (context && typeof context === 'object') return context;
+    } catch {}
+  }
+  return null;
+}
+
+async function embedCaptionedAudio(code, failures) {
+  try {
+    const response = await request(`https://www.instagram.com/p/${encodeURIComponent(code)}/embed/captioned/`, {
+      headers: EMBED_HEADERS,
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      failures.push(`embed:http-${response.status}`);
+      return null;
+    }
+
+    const context = extractContextJsonFromEmbed(text);
+    if (!context) {
+      failures.push('embed:no-context-json');
+      return null;
+    }
+
+    const candidates = collectAudioCandidates(context);
+    if (!candidates.length) {
+      failures.push('embed:no-audio-fields');
+      return null;
+    }
+
+    return { ...candidates[0], source: 'embed-captioned' };
+  } catch (error) {
+    failures.push(`embed:${error?.message || error}`);
+    return null;
+  }
+}
+
 async function anonymousMobileMediaInfo(code, failures) {
   try {
     const oembed = new URL('https://i.instagram.com/api/v1/oembed/');
@@ -177,9 +242,8 @@ async function anonymousMobileMediaInfo(code, failures) {
       return null;
     }
 
-    const best = candidates[0];
     return {
-      ...best,
+      ...candidates[0],
       source: 'anonymous-mobile-info',
       mediaId,
     };
@@ -224,7 +288,7 @@ async function pageFallback(canonical, code, failures) {
         try {
           found.push({
             url: new URL(normalize(match[1])).toString(),
-            priority: /fast_start/i.test(match[0]) ? 100 : 95,
+            priority: /fast_start/i.test(match[0]) ? 110 : 105,
             path: 'page-embedded.progressive_download_url',
             distance: anchor >= 0 ? Math.abs(index - anchor) : index,
             startTimeMs: Number(nearby.match(/"audio_asset_start_time_in_ms"\s*:\s*(\d+)/i)?.[1] || 0),
@@ -245,7 +309,7 @@ async function pageFallback(canonical, code, failures) {
 }
 
 function toAudioItem(candidate, canonical, code) {
-  console.info('[instagram-audio] recovered Instagram Reel audio:', JSON.stringify({
+  console.info('[instagram-audio] resolved Instagram Reel sound:', JSON.stringify({
     code,
     source: candidate.source,
     mediaId: candidate.mediaId || null,
@@ -257,7 +321,7 @@ function toAudioItem(candidate, canonical, code) {
   return {
     url: candidate.url,
     ext: 'm4a',
-    quality: 'Instagram Reel audio',
+    quality: 'Instagram sound',
     source: `instagram-${candidate.source}`,
     startTimeMs: candidate.startTimeMs || 0,
     durationMs: candidate.durationMs || null,
@@ -275,13 +339,16 @@ export async function resolveInstagramAudio(rawUrl) {
     throw error;
   }
 
+  const embed = await embedCaptionedAudio(code, failures);
+  if (embed) return toAudioItem(embed, canonical, code);
+
   const mobile = await anonymousMobileMediaInfo(code, failures);
   if (mobile) return toAudioItem(mobile, canonical, code);
 
   const page = await pageFallback(canonical, code, failures);
   if (page) return toAudioItem(page, canonical, code);
 
-  const error = new Error(`Instagram Reel audio metadata was not found (${failures.join('; ')})`);
+  const error = new Error(`Instagram Reel sound was not found (${failures.join('; ')})`);
   error.code = 'INSTAGRAM_AUDIO_NOT_FOUND';
   throw error;
 }

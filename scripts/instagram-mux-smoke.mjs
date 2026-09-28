@@ -8,6 +8,7 @@ import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 import ffmpegPath from 'ffmpeg-static';
 import { chooseBestVideo, resolveMedia } from '../src/bot/media-resolver.js';
+import { resolveInstagramProviderVideo } from '../src/instagram-provider-fallback.js';
 import { prepareInstagramVideoWithAudio } from '../src/instagram-video-audio-mux.js';
 
 const execFileAsync = promisify(execFile);
@@ -152,6 +153,30 @@ async function probeProgressiveCandidates(targetUrl) {
   return null;
 }
 
+async function runMuxProbe(video, audio, targetUrl, mode, started) {
+  let prepared = null;
+  try {
+    prepared = await prepareInstagramVideoWithAudio(video, audio, 50 * 1024 * 1024, { sourceUrl: targetUrl });
+    const result = await probe(prepared.filePath);
+    if (!result.hasVideo || !result.hasAudio) throw new Error(`Instagram mux smoke output invalid: video=${result.hasVideo} audio=${result.hasAudio}`);
+    console.log('INSTAGRAM_MUX_SMOKE_PASSED', JSON.stringify({
+      ok: true,
+      mode,
+      ms: Date.now() - started,
+      size: prepared.size,
+      videoSource: video.source || null,
+      videoQuality: video.quality || null,
+      audioSource: audio.source || null,
+      audioFormat: audio.formatId || null,
+      outputVideo: result.video.slice(0, 260),
+      outputAudio: result.audio.slice(0, 260),
+    }));
+    return true;
+  } finally {
+    await prepared?.cleanup?.().catch(() => {});
+  }
+}
+
 async function main() {
   if (!url || !/instagram\.com\/(?:reel|reels|p)\//i.test(url)) {
     console.log('INSTAGRAM_MUX_SMOKE_SKIPPED');
@@ -163,27 +188,29 @@ async function main() {
   const video = chooseBestVideo(media?.videos || []);
   const audio = Array.isArray(media?.audios) ? media.audios.find((item) => item?.url) : null;
   if (!video?.url) throw new Error('Instagram mux smoke: video stream missing');
+  const targetUrl = media?.canonicalUrl || url;
 
+  // If the resolver already returns an AV file today, still force the exact
+  // target architecture: preserve this video track, obtain a Reel AV donor,
+  // take ONLY donor audio, and mux the two. This makes the silent-video + added
+  // Reel sound path testable even when Instagram/provider behavior changes.
   if (!audio?.url) {
     const resolved = await probeResolvedVideo(video).catch((error) => {
       console.warn('INSTAGRAM_RESOLVED_VIDEO_PROBE_ERROR', error?.message || error);
       return null;
     });
     if (resolved?.result?.hasVideo && resolved?.result?.hasAudio) {
-      console.log('INSTAGRAM_MUX_SMOKE_PASSED', JSON.stringify({
-        ok: true,
-        mode: 'resolved-provider-av',
-        ms: Date.now() - started,
-        source: video?.source || null,
-        bytes: resolved.bytes,
-        outputVideo: resolved.result.video.slice(0, 260),
-        outputAudio: resolved.result.audio.slice(0, 260),
-      }));
+      const donor = await resolveInstagramProviderVideo(targetUrl);
+      await runMuxProbe(video, {
+        ...donor,
+        quality: 'Reel added sound',
+        source: `${donor.source || 'instagram-provider'}-audio-donor`,
+      }, targetUrl, 'forced-audio-donor-mux', started);
       return;
     }
 
     console.warn('INSTAGRAM_MUX_SMOKE_NO_SEPARATE_AUDIO; probing progressive MP4 candidates');
-    const progressive = await probeProgressiveCandidates(media?.canonicalUrl || url);
+    const progressive = await probeProgressiveCandidates(targetUrl);
     if (!progressive) throw new Error('Instagram mux smoke: no separate audio; resolved provider and progressive MP4 files are physically silent/unavailable');
     console.log('INSTAGRAM_MUX_SMOKE_PASSED', JSON.stringify({
       ok: true,
@@ -197,26 +224,7 @@ async function main() {
     return;
   }
 
-  let prepared = null;
-  try {
-    prepared = await prepareInstagramVideoWithAudio(video, audio, 50 * 1024 * 1024, { sourceUrl: media?.canonicalUrl || url });
-    const result = await probe(prepared.filePath);
-    if (!result.hasVideo || !result.hasAudio) throw new Error(`Instagram mux smoke output invalid: video=${result.hasVideo} audio=${result.hasAudio}`);
-    console.log('INSTAGRAM_MUX_SMOKE_PASSED', JSON.stringify({
-      ok: true,
-      mode: 'separate-audio-mux',
-      ms: Date.now() - started,
-      size: prepared.size,
-      videoSource: video.source || null,
-      videoQuality: video.quality || null,
-      audioSource: audio.source || null,
-      audioFormat: audio.formatId || null,
-      outputVideo: result.video.slice(0, 260),
-      outputAudio: result.audio.slice(0, 260),
-    }));
-  } finally {
-    await prepared?.cleanup?.().catch(() => {});
-  }
+  await runMuxProbe(video, audio, targetUrl, 'separate-audio-mux', started);
 }
 
 main().catch((error) => {

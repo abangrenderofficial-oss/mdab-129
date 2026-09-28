@@ -1,6 +1,7 @@
 import { parseMedia, chooseBestVideo, needsCustomHeaders } from '../downloader.js';
 import { resolveInstagramAudio } from '../instagram-audio.js';
 import { resolveInstagramYtDlpAudio } from '../instagram-ytdlp-audio.js';
+import { resolveInstagramProviderVideo } from '../instagram-provider-fallback.js';
 import { parseThreadsPost } from '../threads.js';
 import { parseTwitterVideo } from '../twitter.js';
 import { parseYouTubeFree } from '../youtube-free.js';
@@ -197,6 +198,24 @@ async function resolveInstagram(url) {
     };
   } catch (error) {
     console.warn('[instagram-resolver] separate Reel sound not resolved:', error?.code, error?.message);
+  }
+
+  // Instagram sometimes exposes only a silent video to logged-out clients and
+  // withholds the Reel's social sound metadata. This is equivalent to TikTok's
+  // external TikWM fallback: ask a downloader provider for its already-merged
+  // MP4, then make that the only video candidate so a silent higher-resolution
+  // native stream cannot win chooseBestVideo().
+  try {
+    const merged = await resolveInstagramProviderVideo(canonicalUrl);
+    return {
+      ...media,
+      platform: 'Instagram',
+      canonicalUrl,
+      videos: [merged],
+      audios: [],
+    };
+  } catch (error) {
+    console.warn('[instagram-resolver] merged provider fallback failed:', error?.code, error?.message);
     return { ...media, platform: 'Instagram', canonicalUrl, audios: [] };
   }
 }

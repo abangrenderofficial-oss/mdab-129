@@ -186,25 +186,9 @@ async function resolveInstagram(url) {
     console.warn('[instagram-resolver] yt-dlp audio-only stream not resolved:', error?.code, error?.message);
   }
 
-  // Older/public metadata fallbacks remain only for Reels where yt-dlp does not
-  // expose the social sound stream.
-  try {
-    const sound = await resolveInstagramAudio(canonicalUrl);
-    return {
-      ...media,
-      platform: 'Instagram',
-      canonicalUrl,
-      audios: sound?.url ? [sound] : [],
-    };
-  } catch (error) {
-    console.warn('[instagram-resolver] separate Reel sound not resolved:', error?.code, error?.message);
-  }
-
-  // Instagram sometimes exposes only a silent video to logged-out clients and
-  // withholds the Reel's social sound metadata. This is equivalent to TikTok's
-  // external TikWM fallback: ask a downloader provider for its already-merged
-  // MP4, then make that the only video candidate so a silent higher-resolution
-  // native stream cannot win chooseBestVideo().
+  // If Instagram's logged-out endpoints expose only a silent video, use the
+  // provider fallback immediately. Waiting for the old metadata chain first can
+  // consume the whole Railway pre-deploy window with repeated 401/403 timeouts.
   try {
     const merged = await resolveInstagramProviderVideo(canonicalUrl);
     return {
@@ -216,6 +200,20 @@ async function resolveInstagram(url) {
     };
   } catch (error) {
     console.warn('[instagram-resolver] merged provider fallback failed:', error?.code, error?.message);
+  }
+
+  // Keep the older metadata path only as the final fallback after the faster
+  // merged-provider attempt has failed.
+  try {
+    const sound = await resolveInstagramAudio(canonicalUrl);
+    return {
+      ...media,
+      platform: 'Instagram',
+      canonicalUrl,
+      audios: sound?.url ? [sound] : [],
+    };
+  } catch (error) {
+    console.warn('[instagram-resolver] separate Reel sound not resolved:', error?.code, error?.message);
     return { ...media, platform: 'Instagram', canonicalUrl, audios: [] };
   }
 }

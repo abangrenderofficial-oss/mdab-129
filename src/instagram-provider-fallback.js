@@ -134,6 +134,40 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function providerHeaders(name) {
+  return {
+    'User-Agent': UA,
+    Referer: name === 'sssinstagram' ? 'https://sssinstagram.com/' : 'https://fastvideosave.net/',
+    Accept: 'video/mp4,video/*;q=0.9,*/*;q=0.8',
+  };
+}
+
+async function validateProviderVideo(url, name) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        redirect: 'follow',
+        headers: { ...providerHeaders(name), Range: 'bytes=0-1023' },
+        signal: AbortSignal.timeout(12000),
+      });
+      const ok = response.ok || response.status === 206;
+      const type = String(response.headers.get('content-type') || '').toLowerCase();
+      await response.body?.cancel().catch(() => {});
+      if (!ok) throw new Error(`provider-media-http-${response.status}`);
+      if (type && !type.includes('video') && !type.includes('octet-stream')) {
+        throw new Error(`provider-media-type-${type}`);
+      }
+      return true;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) await delay(300);
+    }
+  }
+  throw lastError || new Error('provider-media-validation-failed');
+}
+
 export async function resolveInstagramProviderVideo(rawUrl) {
   const target = normalizeTarget(rawUrl);
   let browser = null;
@@ -156,11 +190,13 @@ export async function resolveInstagramProviderVideo(rawUrl) {
           const page = await context.newPage();
           const result = await provider.run(page, target);
           if (!result?.url) throw new Error('provider-no-url');
+          await validateProviderVideo(result.url, provider.name);
           console.info('[instagram-provider] merged Reel candidate resolved:', JSON.stringify({
             provider: provider.name,
             attempt,
             host: new URL(result.url).hostname,
             quality: result.quality ?? null,
+            mediaValidated: true,
           }));
           return {
             url: result.url,
@@ -171,11 +207,7 @@ export async function resolveInstagramProviderVideo(rawUrl) {
             ext: 'mp4',
             hasAudio: true,
             source: `instagram-${provider.name}`,
-            headers: {
-              'User-Agent': UA,
-              Referer: provider.name === 'sssinstagram' ? 'https://sssinstagram.com/' : 'https://fastvideosave.net/',
-              Accept: 'video/mp4,video/*;q=0.9,*/*;q=0.8',
-            },
+            headers: providerHeaders(provider.name),
             filesize: null,
           };
         } catch (error) {

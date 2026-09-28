@@ -169,7 +169,7 @@ async function resolveInstagram(url) {
     ? media.audios.filter((item) => item?.url)
     : [];
 
-  // Normal Reel: the source video already carries audio. Do not touch it.
+  // Normal Reel: source video already has audio. Leave it completely unchanged.
   if (videos.some((item) => item?.hasAudio === true)) {
     console.info('[instagram-resolver] embedded audio detected; native video flow unchanged');
     return { ...media, platform: 'Instagram', canonicalUrl, audios: existingAudios };
@@ -180,27 +180,9 @@ async function resolveInstagram(url) {
     return { ...media, platform: 'Instagram', canonicalUrl, audios: existingAudios };
   }
 
-  // Silent source video + added Reel sound. First try to resolve the actual
-  // standalone sound stream. The downloader will mux it onto the original video.
-  try {
-    const sound = await resolveInstagramYtDlpAudio(canonicalUrl);
-    if (sound?.url) {
-      console.info('[instagram-resolver] silent video + standalone Reel sound resolved');
-      return {
-        ...media,
-        platform: 'Instagram',
-        canonicalUrl,
-        audios: [sound],
-      };
-    }
-  } catch (error) {
-    console.warn('[instagram-resolver] standalone Reel sound not resolved:', error?.code, error?.message);
-  }
-
-  // If Instagram does not expose the standalone audio URL, use a provider only
-  // as an AUDIO DONOR. Keep the original silent Instagram video untouched.
-  // prepareInstagramVideoWithAudio() can read the audio track from this MP4 and
-  // mux it onto the original source video.
+  // Target case only: original Instagram video is silent but the Reel has an
+  // added sound. Fast path: get a merged provider copy and use ONLY its audio
+  // track as the donor. The original Instagram video remains the video track.
   try {
     const donor = await resolveInstagramProviderVideo(canonicalUrl);
     if (donor?.url) {
@@ -220,8 +202,25 @@ async function resolveInstagram(url) {
     console.warn('[instagram-resolver] Reel audio donor provider failed:', error?.code, error?.message);
   }
 
-  // Final metadata-based sound resolver. Still returns audio only; never swaps
-  // the original Instagram video for a provider video.
+  // Fallback: try Instagram/yt-dlp's standalone sound stream and mux that onto
+  // the same original silent video.
+  try {
+    const sound = await resolveInstagramYtDlpAudio(canonicalUrl);
+    if (sound?.url) {
+      console.info('[instagram-resolver] silent video + standalone Reel sound resolved');
+      return {
+        ...media,
+        platform: 'Instagram',
+        canonicalUrl,
+        audios: [sound],
+      };
+    }
+  } catch (error) {
+    console.warn('[instagram-resolver] standalone Reel sound not resolved:', error?.code, error?.message);
+  }
+
+  // Last fallback: legacy metadata sound resolver. It is audio-only as well and
+  // never replaces the original Instagram video.
   try {
     const sound = await resolveInstagramAudio(canonicalUrl);
     if (sound?.url) {

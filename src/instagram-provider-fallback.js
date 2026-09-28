@@ -167,13 +167,15 @@ async function validateProviderVideo(url, name) {
   return true;
 }
 
-async function runProvider(browser, provider, target) {
-  const context = await browser.newContext({
-    userAgent: UA,
-    viewport: { width: 1280, height: 900 },
-    locale: 'en-US',
-  });
+async function runProviderIndependent(provider, target) {
+  const browser = await launchBrowser();
+  let context = null;
   try {
+    context = await browser.newContext({
+      userAgent: UA,
+      viewport: { width: 1280, height: 900 },
+      locale: 'en-US',
+    });
     const page = await context.newPage();
     const result = await provider.run(page, target);
     if (!result?.url) throw new Error('provider-no-url');
@@ -200,30 +202,26 @@ async function runProvider(browser, provider, target) {
     console.warn('[instagram-provider] provider failed:', provider.name, error?.message || error);
     throw new Error(`${provider.name}:${error?.message || error}`);
   } finally {
-    await context.close().catch(() => {});
+    await context?.close().catch(() => {});
+    await browser.close().catch(() => {});
   }
 }
 
 export async function resolveInstagramProviderVideo(rawUrl) {
   const target = normalizeTarget(rawUrl);
-  const browser = await launchBrowser();
-  try {
-    const providers = [
-      { name: 'sssinstagram', run: runSss },
-      { name: 'fastvideosave', run: runFastVideoSave },
-    ];
+  const providers = [
+    { name: 'sssinstagram', run: runSss },
+    { name: 'fastvideosave', run: runFastVideoSave },
+  ];
 
-    try {
-      return await Promise.any(providers.map((provider) => runProvider(browser, provider, target)));
-    } catch (error) {
-      const reasons = Array.isArray(error?.errors)
-        ? error.errors.map((item) => item?.message || String(item)).join('; ')
-        : (error?.message || String(error));
-      const out = new Error(`Instagram provider fallback failed (${reasons})`);
-      out.code = 'INSTAGRAM_PROVIDER_FAILED';
-      throw out;
-    }
-  } finally {
-    await browser.close().catch(() => {});
+  try {
+    return await Promise.any(providers.map((provider) => runProviderIndependent(provider, target)));
+  } catch (error) {
+    const reasons = Array.isArray(error?.errors)
+      ? error.errors.map((item) => item?.message || String(item)).join('; ')
+      : (error?.message || String(error));
+    const out = new Error(`Instagram provider fallback failed (${reasons})`);
+    out.code = 'INSTAGRAM_PROVIDER_FAILED';
+    throw out;
   }
 }

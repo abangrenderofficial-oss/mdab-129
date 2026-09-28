@@ -1,6 +1,7 @@
-const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36';
-const MOBILE_UA = 'Instagram 275.0.0.27.98 Android (33/13; 280dpi; 720x1423; Xiaomi; Redmi 7; onclite; qcom; en_US; 458229237)';
-const FALLBACK_APP_ID = '936619743392459';
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36';
+const APP_ID = '936619743392459';
+const GRAPHQL_DOC_ID = '8845758582119845';
+const SHORTCODE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
 function canonicalUrl(rawUrl) {
   const url = new URL(rawUrl);
@@ -12,6 +13,16 @@ function canonicalUrl(rawUrl) {
 function shortcode(rawUrl) {
   try { return new URL(rawUrl).pathname.match(/\/(?:reel|reels|p)\/([^/?#]+)/i)?.[1] || ''; }
   catch { return ''; }
+}
+
+function shortcodeToPk(code = '') {
+  let value = 0n;
+  for (const char of String(code)) {
+    const digit = SHORTCODE_ALPHABET.indexOf(char);
+    if (digit < 0) return '';
+    value = value * 64n + BigInt(digit);
+  }
+  return value ? value.toString() : '';
 }
 
 function parseJson(text = '') {
@@ -33,28 +44,22 @@ function normalize(value = '') {
     .replaceAll('\\"', '"');
 }
 
-function cookieHeader(response) {
+function cookiePairs(response) {
   const values = typeof response?.headers?.getSetCookie === 'function'
     ? response.headers.getSetCookie()
     : [response?.headers?.get?.('set-cookie') || ''];
   return values
     .filter(Boolean)
     .map((value) => String(value).split(';')[0])
-    .filter(Boolean)
-    .join('; ');
+    .filter(Boolean);
 }
 
-function cookieValue(header, name) {
-  return String(header || '').match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`))?.[1] || '';
-}
-
-function pageConfig(html = '', cookies = '') {
-  const csrfFromHtml = String(html).match(/"csrf_token"\s*:\s*"([^"]+)"/i)?.[1] || '';
-  const appId = String(html).match(/"appId"\s*:\s*"?(\d+)"?/i)?.[1] || FALLBACK_APP_ID;
-  return {
-    csrf: cookieValue(cookies, 'csrftoken') || csrfFromHtml,
-    appId,
-  };
+function cookieValue(pairs = [], name) {
+  for (const pair of pairs) {
+    const match = String(pair).match(new RegExp(`^${name}=([^;]+)$`));
+    if (match?.[1]) return match[1];
+  }
+  return '';
 }
 
 function candidatePriority(key = '') {
@@ -116,25 +121,95 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 20000) {
   });
 }
 
-async function resolveMediaId(code) {
-  const endpoint = new URL('https://i.instagram.com/api/v1/oembed/');
-  endpoint.searchParams.set('url', `https://www.instagram.com/p/${code}/`);
-  const response = await fetchWithTimeout(endpoint, {
+async function setupRulingSession(code) {
+  const pk = shortcodeToPk(code);
+  if (!pk) throw new Error('shortcode-to-pk-failed');
+
+  const rulingUrl = new URL('https://i.instagram.com/api/v1/web/get_ruling_for_content/');
+  rulingUrl.searchParams.set('content_type', 'MEDIA');
+  rulingUrl.searchParams.set('target_id', pk);
+
+  const response = await fetchWithTimeout(rulingUrl, {
     headers: {
-      'User-Agent': MOBILE_UA,
-      'x-ig-app-locale': 'en_US',
-      'x-ig-device-locale': 'en_US',
-      'accept-language': 'en-US',
-      'x-fb-http-engine': 'Liger',
-      'x-fb-client-ip': 'True',
-      'x-fb-server-cluster': 'True',
+      'User-Agent': BROWSER_UA,
+      'X-IG-App-ID': APP_ID,
+      'X-IG-WWW-Claim': '0',
+      Origin: 'https://www.instagram.com',
+      Accept: '*/*',
     },
   });
+
+  const pairs = cookiePairs(response);
+  const csrf = cookieValue(pairs, 'csrftoken');
+  console.info('[instagram-audio] ruling session:', JSON.stringify({
+    code,
+    pk,
+    status: response.status,
+    hasCookies: pairs.length > 0,
+    hasCsrf: Boolean(csrf),
+  }));
+
+  return {
+    pk,
+    cookies: pairs.join('; '),
+    csrf,
+  };
+}
+
+async function fetchGraphQlMedia(code, session) {
+  const variables = {
+    shortcode: code,
+    child_comment_count: 3,
+    fetch_comment_count: 40,
+    parent_comment_count: 24,
+    has_threaded_comments: true,
+  };
+
+  const body = new URLSearchParams();
+  body.set('variables', JSON.stringify(variables));
+  body.set('doc_id', GRAPHQL_DOC_ID);
+
+  const response = await fetchWithTimeout('https://www.instagram.com/graphql/query/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'X-IG-App-ID': APP_ID,
+      'X-ASBD-ID': '198387',
+      'X-IG-WWW-Claim': '0',
+      'User-Agent': BROWSER_UA,
+      Referer: 'https://www.instagram.com/',
+      Origin: 'https://www.instagram.com',
+      'X-Requested-With': 'XMLHttpRequest',
+      ...(session?.csrf ? { 'X-CSRFToken': session.csrf } : {}),
+      ...(session?.cookies ? { Cookie: session.cookies } : {}),
+    },
+    body: body.toString(),
+  });
+
   const text = await response.text();
-  if (!response.ok) throw new Error(`oembed-http-${response.status}`);
-  const mediaId = String(parseJson(text)?.media_id || '').trim();
-  if (!mediaId) throw new Error('oembed-no-media-id');
-  return mediaId;
+  if (!response.ok) {
+    const error = new Error(`ruling-graphql-http-${response.status}`);
+    error.code = 'INSTAGRAM_WEB_AUDIO_NOT_FOUND';
+    throw error;
+  }
+
+  const json = parseJson(text);
+  if (!json) {
+    const contentType = response.headers.get('content-type') || '';
+    const error = new Error(`ruling-graphql-invalid-json:${contentType.split(';')[0] || 'unknown'}`);
+    error.code = 'INSTAGRAM_WEB_AUDIO_NOT_FOUND';
+    throw error;
+  }
+
+  const media = json?.data?.xdt_shortcode_media || json?.data?.shortcode_media || null;
+  if (!media || typeof media !== 'object') {
+    const message = json?.errors?.[0]?.message || 'no-media';
+    const error = new Error(`ruling-graphql-${message}`);
+    error.code = 'INSTAGRAM_WEB_AUDIO_NOT_FOUND';
+    throw error;
+  }
+
+  return media;
 }
 
 export async function resolveInstagramWebAudio(rawUrl) {
@@ -146,76 +221,20 @@ export async function resolveInstagramWebAudio(rawUrl) {
     throw error;
   }
 
-  const mediaId = await resolveMediaId(code);
-  const pageResponse = await fetchWithTimeout(canonical, {
-    headers: {
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'User-Agent': BROWSER_UA,
-      'Cache-Control': 'no-cache',
-      Pragma: 'no-cache',
-    },
-  });
-  const html = await pageResponse.text();
-  if (!pageResponse.ok) {
-    const error = new Error(`Instagram page HTTP ${pageResponse.status}`);
-    error.code = 'INSTAGRAM_WEB_AUDIO_NOT_FOUND';
-    throw error;
+  let session;
+  try {
+    session = await setupRulingSession(code);
+  } catch (error) {
+    const wrapped = new Error(`ruling-session-failed:${error?.message || error}`);
+    wrapped.code = 'INSTAGRAM_WEB_AUDIO_NOT_FOUND';
+    throw wrapped;
   }
 
-  const cookies = cookieHeader(pageResponse);
-  const { csrf, appId } = pageConfig(html, cookies);
-  console.info('[instagram-audio] web media-info session:', JSON.stringify({
-    code,
-    mediaId,
-    hasCookies: Boolean(cookies),
-    hasCsrf: Boolean(csrf),
-    appId,
-  }));
-
-  const infoResponse = await fetchWithTimeout(
-    `https://www.instagram.com/api/v1/media/${encodeURIComponent(mediaId)}/info/`,
-    {
-      headers: {
-        Accept: '*/*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'User-Agent': BROWSER_UA,
-        Referer: canonical,
-        Origin: 'https://www.instagram.com',
-        'X-IG-App-ID': appId,
-        'X-ASBD-ID': '359341',
-        'X-IG-WWW-Claim': '0',
-        'X-Requested-With': 'XMLHttpRequest',
-        ...(csrf ? { 'X-CSRFToken': csrf } : {}),
-        ...(cookies ? { Cookie: cookies } : {}),
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-origin',
-      },
-    },
-  );
-
-  const text = await infoResponse.text();
-  if (!infoResponse.ok) {
-    const contentType = infoResponse.headers.get('content-type') || '';
-    const error = new Error(`web-media-info-http-${infoResponse.status}:${contentType.split(';')[0] || 'unknown'}`);
-    error.code = 'INSTAGRAM_WEB_AUDIO_NOT_FOUND';
-    throw error;
-  }
-
-  const json = parseJson(text);
-  if (!json) {
-    const contentType = infoResponse.headers.get('content-type') || '';
-    const error = new Error(`web-media-info-invalid-json:${contentType.split(';')[0] || 'unknown'}`);
-    error.code = 'INSTAGRAM_WEB_AUDIO_NOT_FOUND';
-    throw error;
-  }
-
-  const item = json?.items?.[0] || json?.item || json;
-  const candidates = collectSocialAudio(item);
+  const media = await fetchGraphQlMedia(code, session);
+  const candidates = collectSocialAudio(media);
   if (!candidates.length) {
-    const clips = item?.clips_metadata || null;
-    console.warn('[instagram-audio] web media-info has no social sound URL:', JSON.stringify({
+    const clips = media?.clips_metadata || null;
+    console.warn('[instagram-audio] ruling GraphQL has no social sound URL:', JSON.stringify({
       code,
       hasClipsMetadata: Boolean(clips),
       audioType: clips?.audio_type || null,
@@ -223,15 +242,14 @@ export async function resolveInstagramWebAudio(rawUrl) {
       hasOriginalSoundInfo: Boolean(clips?.original_sound_info),
       musicCanonicalId: clips?.music_canonical_id || null,
     }));
-    const error = new Error('web-media-info-no-social-sound-url');
+    const error = new Error('ruling-graphql-no-social-sound-url');
     error.code = 'INSTAGRAM_WEB_AUDIO_NOT_FOUND';
     throw error;
   }
 
   const best = candidates[0];
-  console.info('[instagram-audio] web social sound found:', JSON.stringify({
+  console.info('[instagram-audio] ruling GraphQL social sound found:', JSON.stringify({
     code,
-    mediaId,
     path: best.path,
     host: new URL(best.url).hostname,
     audioAssetId: best.audioAssetId || null,
@@ -244,7 +262,7 @@ export async function resolveInstagramWebAudio(rawUrl) {
     url: best.url,
     ext: /\.m4a(?:\?|$)/i.test(best.url) ? 'm4a' : 'mp4',
     quality: 'Instagram social sound',
-    source: 'instagram-web-media-info',
+    source: 'instagram-ruling-graphql',
     startTimeMs: best.startTimeMs || 0,
     durationMs: best.durationMs || null,
     headers: {

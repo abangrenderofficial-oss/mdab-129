@@ -1,4 +1,5 @@
 import { parseMedia, chooseBestVideo, needsCustomHeaders } from '../downloader.js';
+import { resolveInstagramAudio } from '../instagram-audio.js';
 import { parseThreadsPost } from '../threads.js';
 import { parseTwitterVideo } from '../twitter.js';
 import { parseYouTubeFree } from '../youtube-free.js';
@@ -158,10 +159,36 @@ async function resolveTikTok(url) {
   };
 }
 
+async function resolveInstagram(url) {
+  const media = await parseMedia(url);
+  const canonicalUrl = media?.canonicalUrl || url;
+  const existingAudios = Array.isArray(media?.audios)
+    ? media.audios.filter((item) => item?.url)
+    : [];
+
+  if (existingAudios.length) {
+    return { ...media, platform: 'Instagram', canonicalUrl, audios: existingAudios };
+  }
+
+  try {
+    const sound = await resolveInstagramAudio(canonicalUrl);
+    return {
+      ...media,
+      platform: 'Instagram',
+      canonicalUrl,
+      audios: sound?.url ? [sound] : [],
+    };
+  } catch (error) {
+    console.warn('[instagram-resolver] separate Reel sound not resolved:', error?.code, error?.message);
+    return { ...media, platform: 'Instagram', canonicalUrl, audios: [] };
+  }
+}
+
 export async function resolveMedia(platform, url) {
   if (platform === 'threads') return parseThreadsPost(url);
   if (platform === 'twitter') return parseTwitterVideo(url);
   if (platform === 'tiktok') return resolveTikTok(url);
+  if (platform === 'instagram') return resolveInstagram(url);
   if (platform === 'youtube') {
     try {
       return await parseMedia(url);

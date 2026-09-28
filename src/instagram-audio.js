@@ -1,39 +1,34 @@
-const INSTAGRAM_BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36';
-const INSTAGRAM_ANDROID_UA = 'Instagram 435.0.0.37.76 Android (30/11; 420dpi; 1080x2400; Google; Pixel 7; panther; en_US)';
-const INSTAGRAM_IOS_UA = 'Instagram 377.0.0.0.50 iOS (18_5; iPhone17,2; en_US; en; scale=3.00; 1320x2868; 723588494)';
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36';
+const IOS_UA = 'Instagram 377.0.0.0.50 iOS (18_5; iPhone17,2; en_US; en; scale=3.00; 1320x2868; 723588494)';
+const ANDROID_UA = 'Instagram 435.0.0.37.76 Android (30/11; 420dpi; 1080x2400; Google; Pixel 7; panther; en_US)';
 const WEB_APP_ID = '936619743392459';
 const IOS_APP_ID = '124024574287414';
 const ANDROID_APP_ID = '567067343352427';
-const SHORTCODE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
-function canonicalInstagramUrl(rawUrl) {
-  const parsed = new URL(rawUrl);
-  parsed.search = '';
-  parsed.hash = '';
-  return parsed.toString();
+function canonicalUrl(rawUrl) {
+  const url = new URL(rawUrl);
+  url.search = '';
+  url.hash = '';
+  return url.toString();
 }
 
-function reelCode(rawUrl) {
-  try {
-    const parsed = new URL(rawUrl);
-    return parsed.pathname.match(/\/(?:reel|reels|p)\/([^/?#]+)/i)?.[1] || '';
-  } catch {
-    return '';
-  }
+function shortcode(rawUrl) {
+  try { return new URL(rawUrl).pathname.match(/\/(?:reel|reels|p)\/([^/?#]+)/i)?.[1] || ''; } catch { return ''; }
 }
 
-function shortcodeToMediaId(shortcode = '') {
-  const code = String(shortcode || '').length > 28 ? String(shortcode).slice(0, -28) : String(shortcode || '');
+function mediaIdFromShortcode(input = '') {
+  const code = String(input).length > 28 ? String(input).slice(0, -28) : String(input);
   let value = 0n;
   for (const char of code) {
-    const digit = SHORTCODE_ALPHABET.indexOf(char);
+    const digit = ALPHABET.indexOf(char);
     if (digit < 0) return '';
-    value = (value * 64n) + BigInt(digit);
+    value = value * 64n + BigInt(digit);
   }
   return value ? value.toString() : '';
 }
 
-function normalizeEmbeddedText(value = '') {
+function normalize(value = '') {
   return String(value)
     .replaceAll('\\\\u0026', '&')
     .replaceAll('\\u0026', '&')
@@ -42,15 +37,21 @@ function normalizeEmbeddedText(value = '') {
     .replaceAll('\\"', '"');
 }
 
-function audioHeaders(canonical, userAgent = INSTAGRAM_BROWSER_UA) {
-  return {
-    Referer: canonical,
-    'User-Agent': userAgent,
-    Accept: 'audio/mp4,audio/*;q=0.9,*/*;q=0.8',
-  };
+function parseMetaJson(text = '') {
+  let value = String(text || '').replace(/^\uFEFF/, '').trim();
+  for (let i = 0; i < 4; i += 1) {
+    const before = value;
+    value = value
+      .replace(/^for\s*\(;;\)\s*;\s*/i, '')
+      .replace(/^while\s*\(1\)\s*;\s*/i, '')
+      .replace(/^\)\]\}',?\s*/, '')
+      .trim();
+    if (value === before) break;
+  }
+  try { return JSON.parse(value); } catch { return null; }
 }
 
-function apiHeaders(appId = WEB_APP_ID, userAgent = INSTAGRAM_BROWSER_UA) {
+function apiHeaders(appId = WEB_APP_ID, userAgent = BROWSER_UA) {
   return {
     'X-IG-App-ID': appId,
     'X-ASBD-ID': '359341',
@@ -63,369 +64,258 @@ function apiHeaders(appId = WEB_APP_ID, userAgent = INSTAGRAM_BROWSER_UA) {
   };
 }
 
+function audioHeaders(canonical) {
+  return {
+    Referer: canonical,
+    'User-Agent': BROWSER_UA,
+    Accept: 'audio/mp4,audio/*;q=0.9,*/*;q=0.8',
+  };
+}
+
+async function request(url, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.max(5000, Number(process.env.INSTAGRAM_AUDIO_METADATA_TIMEOUT_MS || 20000)));
+  try { return await fetch(url, { redirect: 'follow', ...options, signal: controller.signal }); }
+  finally { clearTimeout(timeout); }
+}
+
 function parseBaseUrls(xml = '') {
-  const urls = [];
-  for (const match of String(xml || '').matchAll(/<BaseURL[^>]*>(https?:\/\/[^<]+)<\/BaseURL>/gi)) {
-    const raw = normalizeEmbeddedText(match[1]).replaceAll('&amp;', '&');
-    try { urls.push(new URL(raw).toString()); } catch {}
+  const out = [];
+  for (const match of String(xml).matchAll(/<BaseURL[^>]*>(https?:\/\/[^<]+)<\/BaseURL>/gi)) {
+    const raw = normalize(match[1]);
+    try { out.push(new URL(raw).toString()); } catch {}
   }
-  return urls;
+  return out;
 }
 
-function pathLooksAudio(path = []) {
-  return path.some((part) => /audio|music|sound/i.test(String(part || '')));
+function audioContext(path = []) {
+  return path.some((key) => /audio|music|sound/i.test(String(key)));
 }
 
-function collectObjectAudioCandidates(root) {
-  const candidates = [];
+function collectCandidates(root) {
+  const result = [];
   const seenObjects = new WeakSet();
+  const seenUrls = new Set();
 
-  const add = (url, meta = {}) => {
-    if (!url || typeof url !== 'string') return;
-    const normalized = normalizeEmbeddedText(url);
+  const add = (rawUrl, path, meta) => {
     try {
-      candidates.push({ url: new URL(normalized).toString(), ...meta });
+      const url = new URL(normalize(rawUrl)).toString();
+      if (seenUrls.has(url)) return;
+      seenUrls.add(url);
+      result.push({ url, path, ...meta });
     } catch {}
   };
 
-  const visit = (value, path = [], inheritedMeta = {}) => {
-    if (!value || typeof value !== 'object') return;
-    if (seenObjects.has(value)) return;
-    seenObjects.add(value);
-
-    const localMeta = {
-      startTimeMs: Number(value.audio_asset_start_time_in_ms ?? inheritedMeta.startTimeMs ?? 0) || 0,
-      durationMs: Number(value.duration_in_ms ?? inheritedMeta.durationMs ?? 0) || null,
+  const visit = (node, path = [], inherited = {}) => {
+    if (!node || typeof node !== 'object' || seenObjects.has(node)) return;
+    seenObjects.add(node);
+    const meta = {
+      startTimeMs: Number(node.audio_asset_start_time_in_ms ?? inherited.startTimeMs ?? 0) || 0,
+      durationMs: Number(node.duration_in_ms ?? inherited.durationMs ?? 0) || null,
     };
 
-    for (const [key, child] of Object.entries(value)) {
+    for (const [key, child] of Object.entries(node)) {
       const childPath = [...path, key];
-      const audioContext = pathLooksAudio(childPath);
-
       if (typeof child === 'string') {
-        if (key === 'progressive_download_url' && audioContext) {
-          add(child, { ...localMeta, path: childPath.join('.') });
-        } else if (/audio.*url|url.*audio/i.test(key) && audioContext) {
-          add(child, { ...localMeta, path: childPath.join('.') });
-        } else if (/dash_manifest/i.test(key) && audioContext) {
-          for (const url of parseBaseUrls(child)) {
-            add(url, { ...localMeta, path: `${childPath.join('.')}<BaseURL>` });
-          }
+        const isAudio = audioContext(childPath);
+        if (isAudio && (key === 'progressive_download_url' || /audio.*url|url.*audio/i.test(key))) {
+          add(child, childPath.join('.'), meta);
+        } else if (isAudio && /dash_manifest/i.test(key)) {
+          for (const url of parseBaseUrls(child)) add(url, `${childPath.join('.')}<BaseURL>`, meta);
         }
-        continue;
+      } else if (child && typeof child === 'object') {
+        visit(child, childPath, meta);
       }
-
-      if (child && typeof child === 'object') visit(child, childPath, localMeta);
     }
   };
 
   visit(root);
-  const deduped = [];
-  const seen = new Set();
-  for (const item of candidates) {
-    if (seen.has(item.url)) continue;
-    seen.add(item.url);
-    deduped.push(item);
-  }
-  return deduped;
+  return result.sort((a, b) => Number(/progressive_download_url/i.test(b.path)) - Number(/progressive_download_url/i.test(a.path)));
 }
 
-function collectProgressiveAudio(text, code = '') {
-  const normalized = normalizeEmbeddedText(text);
+function collectFromText(text = '', code = '') {
+  const normalized = normalize(text);
   const anchor = code ? normalized.indexOf(`"code":"${code}"`) : -1;
-  const candidates = [];
-  const regex = /"progressive_download_url"\s*:\s*"(https?:\/\/[^"\s]+)"/gi;
-
-  for (const match of normalized.matchAll(regex)) {
-    const raw = normalizeEmbeddedText(match[1]);
-    let url = raw;
-    try { url = new URL(raw).toString(); } catch { continue; }
+  const result = [];
+  const seen = new Set();
+  for (const match of normalized.matchAll(/"progressive_download_url"\s*:\s*"(https?:\/\/[^"\s]+)"/gi)) {
     const index = Number(match.index || 0);
     const nearby = normalized.slice(Math.max(0, index - 12000), Math.min(normalized.length, index + 12000));
-    const audioContext = /music_info|music_asset|original_sound|audio_asset|audio_cluster/i.test(nearby);
-    if (!audioContext) continue;
-    const offsetMatch = nearby.match(/"audio_asset_start_time_in_ms"\s*:\s*(\d+)/i);
-    const durationMatch = nearby.match(/"duration_in_ms"\s*:\s*(\d+)/i);
-    candidates.push({
-      url,
-      index,
-      distance: anchor >= 0 ? Math.abs(index - anchor) : index,
-      startTimeMs: offsetMatch ? Number(offsetMatch[1]) : 0,
-      durationMs: durationMatch ? Number(durationMatch[1]) : null,
-      path: 'embedded.progressive_download_url',
-    });
+    if (!/music_info|music_asset|original_sound|audio_asset|audio_cluster/i.test(nearby)) continue;
+    try {
+      const url = new URL(normalize(match[1])).toString();
+      if (seen.has(url)) continue;
+      seen.add(url);
+      result.push({
+        url,
+        path: 'embedded.progressive_download_url',
+        distance: anchor >= 0 ? Math.abs(index - anchor) : index,
+        startTimeMs: Number(nearby.match(/"audio_asset_start_time_in_ms"\s*:\s*(\d+)/i)?.[1] || 0),
+        durationMs: Number(nearby.match(/"duration_in_ms"\s*:\s*(\d+)/i)?.[1] || 0) || null,
+      });
+    } catch {}
   }
-
-  const deduped = [];
-  const seen = new Set();
-  for (const item of candidates.sort((a, b) => a.distance - b.distance)) {
-    if (seen.has(item.url)) continue;
-    seen.add(item.url);
-    deduped.push(item);
-  }
-  return deduped;
+  return result.sort((a, b) => a.distance - b.distance);
 }
 
-async function fetchResponse(url, options = {}) {
-  const controller = new AbortController();
-  const timeoutMs = Math.max(5000, Number(process.env.INSTAGRAM_AUDIO_METADATA_TIMEOUT_MS || 20000));
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { redirect: 'follow', ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
+function invalidJsonTag(response, text) {
+  const type = String(response?.headers?.get?.('content-type') || '').split(';')[0] || 'unknown';
+  const prefix = String(text || '').trim().slice(0, 20).replace(/\s+/g, ' ');
+  return `invalid-json:${type}:${prefix || 'empty'}`;
 }
 
-async function fetchInstagramText(url, headers = {}) {
-  const response = await fetchResponse(url, {
-    headers: {
-      Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'User-Agent': INSTAGRAM_BROWSER_UA,
-      Referer: 'https://www.instagram.com/',
-      ...headers,
-    },
-  });
-  if (!response.ok) throw new Error(`Instagram metadata HTTP ${response.status}`);
-  return { text: await response.text(), response };
-}
-
-function pickCandidate(candidates = [], source = '') {
-  if (!candidates.length) return null;
-  const ranked = [...candidates].sort((a, b) => {
-    const aScore = /progressive_download_url/i.test(a.path || '') ? 2 : 1;
-    const bScore = /progressive_download_url/i.test(b.path || '') ? 2 : 1;
-    return bScore - aScore;
-  });
-  return { ...ranked[0], source };
-}
-
-async function tryProductInfo(canonical, mediaId, failures) {
+async function tryApiMediaInfo(mediaId, failures) {
   const attempts = [
-    {
-      name: 'web-api',
-      url: `https://www.instagram.com/api/v1/media/${mediaId}/info/`,
-      headers: apiHeaders(WEB_APP_ID, INSTAGRAM_BROWSER_UA),
-    },
-    {
-      name: 'ios-api',
-      url: `https://i.instagram.com/api/v1/media/${mediaId}/info/`,
-      headers: apiHeaders(IOS_APP_ID, INSTAGRAM_IOS_UA),
-    },
-    {
-      name: 'android-api',
-      url: `https://i.instagram.com/api/v1/media/${mediaId}/info/`,
-      headers: apiHeaders(ANDROID_APP_ID, INSTAGRAM_ANDROID_UA),
-    },
+    ['web-api', `https://www.instagram.com/api/v1/media/${mediaId}/info/`, apiHeaders(WEB_APP_ID, BROWSER_UA)],
+    ['ios-api', `https://i.instagram.com/api/v1/media/${mediaId}/info/`, apiHeaders(IOS_APP_ID, IOS_UA)],
+    ['android-api', `https://i.instagram.com/api/v1/media/${mediaId}/info/`, apiHeaders(ANDROID_APP_ID, ANDROID_UA)],
   ];
 
-  for (const attempt of attempts) {
+  for (const [name, url, headers] of attempts) {
     try {
-      const response = await fetchResponse(attempt.url, { headers: attempt.headers });
+      const response = await request(url, { headers });
       const text = await response.text();
-      if (!response.ok) {
-        failures.push(`${attempt.name}:http-${response.status}`);
-        continue;
-      }
-      let json;
-      try { json = JSON.parse(text); } catch {
-        failures.push(`${attempt.name}:invalid-json`);
-        continue;
-      }
-      const candidates = collectObjectAudioCandidates(json);
-      const best = pickCandidate(candidates, attempt.name);
-      if (best) return best;
-      failures.push(`${attempt.name}:no-audio-fields`);
+      if (!response.ok) { failures.push(`${name}:http-${response.status}`); continue; }
+      const json = parseMetaJson(text);
+      if (!json) { failures.push(`${name}:${invalidJsonTag(response, text)}`); continue; }
+      const candidate = collectCandidates(json)[0];
+      if (candidate) return { ...candidate, source: name };
+      failures.push(`${name}:no-audio-fields`);
     } catch (error) {
-      failures.push(`${attempt.name}:${error?.message || error}`);
+      failures.push(`${name}:${error?.message || error}`);
     }
   }
   return null;
 }
 
-function extractCookieHeader(response) {
-  const raw = typeof response?.headers?.getSetCookie === 'function'
+function cookieHeader(response) {
+  const values = typeof response?.headers?.getSetCookie === 'function'
     ? response.headers.getSetCookie()
     : [response?.headers?.get?.('set-cookie') || ''];
-  return raw.filter(Boolean).map((value) => String(value).split(';')[0]).join('; ');
+  return values.filter(Boolean).map((v) => String(v).split(';')[0]).join('; ');
 }
 
-function cookieValue(cookieHeader = '', name = '') {
-  return String(cookieHeader).match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`))?.[1] || '';
+function cookieValue(header, name) {
+  return String(header || '').match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`))?.[1] || '';
 }
 
-function extractLsdToken(text = '') {
-  const patterns = [
+function lsdToken(text = '') {
+  for (const pattern of [
     /\["LSD",\[\],\{"token":"([^"]+)"/,
     /"LSD"[^\n]{0,300}?"token":"([^"]+)"/,
     /"lsd"\s*:\s*"([^"]+)"/i,
-  ];
-  for (const pattern of patterns) {
-    const value = String(text).match(pattern)?.[1];
-    if (value) return normalizeEmbeddedText(value);
+  ]) {
+    const token = String(text).match(pattern)?.[1];
+    if (token) return normalize(token);
   }
   return '';
 }
 
-async function tryLoggedOutGraphql(canonical, mediaId, failures) {
+async function tryGraphql(canonical, mediaId, code, failures) {
   try {
-    const home = await fetchResponse('https://www.instagram.com/', {
+    const home = await request('https://www.instagram.com/', { headers: { 'User-Agent': BROWSER_UA, Accept: 'text/html', 'Accept-Language': 'en-US,en;q=0.9' } });
+    const homeText = await home.text();
+    if (!home.ok) { failures.push(`graphql-session:http-${home.status}`); return null; }
+    const lsd = lsdToken(homeText);
+    if (!lsd) { failures.push('graphql-session:no-lsd'); return null; }
+    const cookies = cookieHeader(home);
+    const csrf = cookieValue(cookies, 'csrftoken');
+    const body = new URLSearchParams({
+      lsd,
+      fb_api_caller_class: 'RelayModern',
+      fb_api_req_friendly_name: 'PolarisLoggedOutDesktopWWWPostRootContentQuery',
+      server_timestamps: 'true',
+      variables: JSON.stringify({ media_id: mediaId }),
+      doc_id: '27130156389949648',
+    });
+    const response = await request('https://www.instagram.com/api/graphql', {
+      method: 'POST',
+      body: body.toString(),
       headers: {
-        Accept: 'text/html,application/xhtml+xml',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'User-Agent': INSTAGRAM_BROWSER_UA,
+        ...apiHeaders(WEB_APP_ID, BROWSER_UA),
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-FB-Friendly-Name': 'PolarisLoggedOutDesktopWWWPostRootContentQuery',
+        'X-FB-LSD': lsd,
+        'X-Requested-With': 'XMLHttpRequest',
+        Referer: canonical,
+        ...(cookies ? { Cookie: cookies } : {}),
+        ...(csrf ? { 'X-CSRFToken': csrf } : {}),
       },
     });
-    const homeText = await home.text();
-    if (!home.ok) {
-      failures.push(`graphql-session:http-${home.status}`);
-      return null;
-    }
-    const lsd = extractLsdToken(homeText);
-    if (!lsd) {
-      failures.push('graphql-session:no-lsd');
-      return null;
-    }
-    const cookieHeader = extractCookieHeader(home);
-    const csrf = cookieValue(cookieHeader, 'csrftoken');
-
-    const body = new URLSearchParams();
-    body.set('lsd', lsd);
-    body.set('fb_api_caller_class', 'RelayModern');
-    body.set('fb_api_req_friendly_name', 'PolarisLoggedOutDesktopWWWPostRootContentQuery');
-    body.set('server_timestamps', 'true');
-    body.set('variables', JSON.stringify({ media_id: mediaId }));
-    body.set('doc_id', '27130156389949648');
-
-    const headers = {
-      ...apiHeaders(WEB_APP_ID, INSTAGRAM_BROWSER_UA),
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'X-FB-Friendly-Name': 'PolarisLoggedOutDesktopWWWPostRootContentQuery',
-      'X-FB-LSD': lsd,
-      'X-Requested-With': 'XMLHttpRequest',
-      Referer: canonical,
-      ...(cookieHeader ? { Cookie: cookieHeader } : {}),
-      ...(csrf ? { 'X-CSRFToken': csrf } : {}),
-    };
-
-    const response = await fetchResponse('https://www.instagram.com/api/graphql', {
-      method: 'POST',
-      headers,
-      body: body.toString(),
-    });
     const text = await response.text();
-    if (!response.ok) {
-      failures.push(`graphql:http-${response.status}`);
-      return null;
+    if (!response.ok) { failures.push(`graphql:http-${response.status}`); return null; }
+    const json = parseMetaJson(text);
+    if (json) {
+      const candidate = collectCandidates(json)[0];
+      if (candidate) return { ...candidate, source: 'graphql' };
     }
-    let json;
-    try { json = JSON.parse(text); } catch {
-      failures.push('graphql:invalid-json');
-      return null;
-    }
-    const candidates = collectObjectAudioCandidates(json);
-    const best = pickCandidate(candidates, 'graphql');
-    if (best) return best;
-
-    const embedded = collectProgressiveAudio(text, reelCode(canonical));
-    if (embedded.length) return { ...embedded[0], source: 'graphql-embedded' };
-    failures.push('graphql:no-audio-fields');
+    const embedded = collectFromText(text, code)[0];
+    if (embedded) return { ...embedded, source: 'graphql-embedded' };
+    failures.push(`graphql:${json ? 'no-audio-fields' : invalidJsonTag(response, text)}`);
   } catch (error) {
     failures.push(`graphql:${error?.message || error}`);
   }
   return null;
 }
 
-export async function resolveInstagramAudio(rawUrl) {
-  const canonical = canonicalInstagramUrl(rawUrl);
-  const code = reelCode(canonical);
-  const mediaId = shortcodeToMediaId(code);
-  const failures = [];
-
-  if (mediaId) {
-    const apiCandidate = await tryProductInfo(canonical, mediaId, failures);
-    if (apiCandidate) {
-      console.info('[instagram-audio] recovered audio from Instagram API:', JSON.stringify({
-        code,
-        source: apiCandidate.source,
-        host: new URL(apiCandidate.url).hostname,
-        path: apiCandidate.path || null,
-        startTimeMs: apiCandidate.startTimeMs || 0,
-        durationMs: apiCandidate.durationMs || null,
-      }));
-      return {
-        url: apiCandidate.url,
-        ext: 'm4a',
-        quality: 'Instagram Reel audio',
-        source: `instagram-${apiCandidate.source}`,
-        startTimeMs: apiCandidate.startTimeMs || 0,
-        durationMs: apiCandidate.durationMs || null,
-        headers: audioHeaders(canonical),
-      };
-    }
-
-    const graphqlCandidate = await tryLoggedOutGraphql(canonical, mediaId, failures);
-    if (graphqlCandidate) {
-      console.info('[instagram-audio] recovered audio from Instagram GraphQL:', JSON.stringify({
-        code,
-        source: graphqlCandidate.source,
-        host: new URL(graphqlCandidate.url).hostname,
-        path: graphqlCandidate.path || null,
-        startTimeMs: graphqlCandidate.startTimeMs || 0,
-        durationMs: graphqlCandidate.durationMs || null,
-      }));
-      return {
-        url: graphqlCandidate.url,
-        ext: 'm4a',
-        quality: 'Instagram Reel audio',
-        source: `instagram-${graphqlCandidate.source}`,
-        startTimeMs: graphqlCandidate.startTimeMs || 0,
-        durationMs: graphqlCandidate.durationMs || null,
-        headers: audioHeaders(canonical),
-      };
-    }
-  } else {
-    failures.push('shortcode-to-media-id:failed');
-  }
-
-  const endpoints = [canonical];
-  try {
-    const jsonUrl = new URL(canonical);
-    jsonUrl.searchParams.set('__a', '1');
-    jsonUrl.searchParams.set('__d', 'dis');
-    endpoints.push(jsonUrl.toString());
-  } catch {}
-
-  for (const endpoint of endpoints) {
+async function tryPage(canonical, code, failures) {
+  for (const url of [canonical, `${canonical}?__a=1&__d=dis`]) {
     try {
-      const { text } = await fetchInstagramText(endpoint);
-      const candidates = collectProgressiveAudio(text, code);
-      if (!candidates.length) {
-        failures.push(`${new URL(endpoint).pathname}:no-progressive-audio`);
-        continue;
+      const response = await request(url, { headers: { 'User-Agent': BROWSER_UA, Accept: 'text/html,application/json;q=0.9,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9', Referer: 'https://www.instagram.com/' } });
+      const text = await response.text();
+      if (!response.ok) { failures.push(`page:http-${response.status}`); continue; }
+      const json = parseMetaJson(text);
+      if (json) {
+        const candidate = collectCandidates(json)[0];
+        if (candidate) return { ...candidate, source: 'page-json' };
       }
-      const best = candidates[0];
-      console.info('[instagram-audio] recovered progressive audio metadata:', JSON.stringify({
-        code,
-        candidates: candidates.length,
-        host: new URL(best.url).hostname,
-        startTimeMs: best.startTimeMs,
-        durationMs: best.durationMs,
-      }));
-      return {
-        url: best.url,
-        ext: 'm4a',
-        quality: 'Instagram Reel audio',
-        source: 'instagram-page-audio',
-        startTimeMs: best.startTimeMs,
-        durationMs: best.durationMs,
-        headers: audioHeaders(canonical),
-      };
+      const embedded = collectFromText(text, code)[0];
+      if (embedded) return { ...embedded, source: 'page-embedded' };
+      failures.push('page:no-audio-fields');
     } catch (error) {
-      failures.push(`${new URL(endpoint).pathname}:${error?.message || error}`);
+      failures.push(`page:${error?.message || error}`);
     }
   }
+  return null;
+}
+
+function toAudioItem(candidate, canonical, code) {
+  console.info('[instagram-audio] recovered Instagram Reel audio:', JSON.stringify({
+    code,
+    source: candidate.source,
+    host: new URL(candidate.url).hostname,
+    path: candidate.path || null,
+    startTimeMs: candidate.startTimeMs || 0,
+    durationMs: candidate.durationMs || null,
+  }));
+  return {
+    url: candidate.url,
+    ext: 'm4a',
+    quality: 'Instagram Reel audio',
+    source: `instagram-${candidate.source}`,
+    startTimeMs: candidate.startTimeMs || 0,
+    durationMs: candidate.durationMs || null,
+    headers: audioHeaders(canonical),
+  };
+}
+
+export async function resolveInstagramAudio(rawUrl) {
+  const canonical = canonicalUrl(rawUrl);
+  const code = shortcode(canonical);
+  const mediaId = mediaIdFromShortcode(code);
+  const failures = [];
+  if (!mediaId) {
+    const error = new Error('Instagram shortcode could not be converted to media ID.');
+    error.code = 'INSTAGRAM_AUDIO_NOT_FOUND';
+    throw error;
+  }
+
+  const api = await tryApiMediaInfo(mediaId, failures);
+  if (api) return toAudioItem(api, canonical, code);
+  const graphql = await tryGraphql(canonical, mediaId, code, failures);
+  if (graphql) return toAudioItem(graphql, canonical, code);
+  const page = await tryPage(canonical, code, failures);
+  if (page) return toAudioItem(page, canonical, code);
 
   const error = new Error(`Instagram Reel audio metadata was not found (${failures.join('; ')})`);
   error.code = 'INSTAGRAM_AUDIO_NOT_FOUND';

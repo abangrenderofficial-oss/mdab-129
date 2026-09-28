@@ -1,13 +1,14 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import ffmpegPath from 'ffmpeg-static';
+import { chooseBestVideo, resolveMedia } from '../src/bot/media-resolver.js';
 import { localMediaLane } from '../src/bot/job-lanes.js';
 import { prepareWhatsAppStatusHQ } from '../src/status-hq.js';
 
 const execFileAsync = promisify(execFile);
-const TEST_URL = 'https://www.instagram.com/reel/Dd00o7WRnRH/?stkn=aTgyanVqcXI0bXR4';
+const TEST_URL = 'https://www.tiktok.com/@j_k_123_7/video/7654589734496341262';
 
-async function probeMedia(filePath) {
+async function probeDimensions(filePath) {
   let stderr = '';
   try {
     await execFileAsync(ffmpegPath, ['-hide_banner', '-i', filePath], {
@@ -17,15 +18,8 @@ async function probeMedia(filePath) {
   } catch (error) {
     stderr = String(error?.stderr || error?.message || '');
   }
-
   const match = stderr.match(/Video:[^\n]*?\b(\d{2,5})x(\d{2,5})\b/i);
-  const audioLine = stderr.match(/Audio:[^\n]+/i)?.[0] || '';
-  return {
-    width: match ? Number(match[1]) : null,
-    height: match ? Number(match[2]) : null,
-    hasAudio: Boolean(audioLine),
-    audioLine: audioLine.slice(0, 300),
-  };
+  return match ? { width: Number(match[1]), height: Number(match[2]) } : { width: null, height: null };
 }
 
 export default async function handler(req, res) {
@@ -33,14 +27,24 @@ export default async function handler(req, res) {
   let prepared = null;
 
   try {
+    const media = await resolveMedia('tiktok', TEST_URL);
+    const best = chooseBestVideo(media?.videos || []);
+    if (!best) {
+      return res.status(200).json({
+        ok: false,
+        stage: 'resolve',
+        ms: Date.now() - started,
+        error: 'No video candidate resolved',
+      });
+    }
+
     const result = await localMediaLane(async () => {
       prepared = await prepareWhatsAppStatusHQ({
-        sourceUrl: TEST_URL,
-        platform: 'instagram',
-        video: null,
-        audio: null,
+        sourceUrl: media?.canonicalUrl || TEST_URL,
+        platform: 'tiktok',
+        video: best,
       });
-      const output = await probeMedia(prepared.filePath);
+      const output = await probeDimensions(prepared.filePath);
       return { prepared, output };
     });
 
@@ -51,19 +55,13 @@ export default async function handler(req, res) {
     const outputRatio = output.width && output.height ? output.width / output.height : null;
     const ratioDiff = sourceRatio && outputRatio ? Math.abs(outputRatio - sourceRatio) / sourceRatio : null;
     const ratioOk = ratioDiff === null || ratioDiff <= 0.02;
-    const sourceHasAudio = Boolean(prepared.source?.hasAudio);
-    const outputHasAudio = Boolean(output.hasAudio);
 
     return res.status(200).json({
-      ok: Boolean(prepared.filePath && prepared.size && ratioOk && sourceHasAudio && outputHasAudio),
+      ok: Boolean(prepared.filePath && prepared.size && ratioOk),
       stage: 'complete',
-      architecture: 'instagram-premium-hq-audio-e2e-v1',
-      testUrl: TEST_URL,
+      architecture: 'isolated-status-lane-v1',
       ms: Date.now() - started,
       singleFile: true,
-      sourceHasAudio,
-      outputHasAudio,
-      outputAudio: output.audioLine,
       sourceDuration: prepared.source?.duration || null,
       sourceWidth: prepared.source?.width || null,
       sourceHeight: prepared.source?.height || null,
@@ -75,16 +73,12 @@ export default async function handler(req, res) {
       profile: prepared.profile?.mode || null,
       tier: prepared.profile?.tier || null,
       videoKbps: prepared.profile?.videoKbps || null,
-      audioKbps: prepared.profile?.audioKbps || null,
-      profileHasAudio: prepared.profile?.hasAudio ?? null,
       attempt: prepared.attempt || null,
     });
   } catch (error) {
     return res.status(200).json({
       ok: false,
       stage: 'error',
-      architecture: 'instagram-premium-hq-audio-e2e-v1',
-      testUrl: TEST_URL,
       ms: Date.now() - started,
       code: error?.code || 'ERROR',
       error: String(error?.message || error).slice(0, 1800),

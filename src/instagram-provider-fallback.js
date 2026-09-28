@@ -167,15 +167,13 @@ async function validateProviderVideo(url, name) {
   return true;
 }
 
-async function runProviderIndependent(provider, target) {
-  const browser = await launchBrowser();
-  let context = null;
+async function runProviderInContext(browser, provider, target) {
+  const context = await browser.newContext({
+    userAgent: UA,
+    viewport: { width: 1280, height: 900 },
+    locale: 'en-US',
+  });
   try {
-    context = await browser.newContext({
-      userAgent: UA,
-      viewport: { width: 1280, height: 900 },
-      locale: 'en-US',
-    });
     const page = await context.newPage();
     const result = await provider.run(page, target);
     if (!result?.url) throw new Error('provider-no-url');
@@ -202,8 +200,7 @@ async function runProviderIndependent(provider, target) {
     console.warn('[instagram-provider] provider failed:', provider.name, error?.message || error);
     throw new Error(`${provider.name}:${error?.message || error}`);
   } finally {
-    await context?.close().catch(() => {});
-    await browser.close().catch(() => {});
+    await context.close().catch(() => {});
   }
 }
 
@@ -213,15 +210,27 @@ export async function resolveInstagramProviderVideo(rawUrl) {
     { name: 'sssinstagram', run: runSss },
     { name: 'fastvideosave', run: runFastVideoSave },
   ];
+  const browser = await launchBrowser();
 
   try {
-    return await Promise.any(providers.map((provider) => runProviderIndependent(provider, target)));
-  } catch (error) {
-    const reasons = Array.isArray(error?.errors)
-      ? error.errors.map((item) => item?.message || String(item)).join('; ')
-      : (error?.message || String(error));
+    // Both providers run at the same time, but we keep the shared Chromium alive
+    // until BOTH contexts settle. This avoids killing the slower provider when
+    // the other one fails/finishes and also avoids concurrent Chromium extraction
+    // races (ETXTBSY) from launching two browsers at once.
+    const results = await Promise.allSettled(
+      providers.map((provider) => runProviderInContext(browser, provider, target)),
+    );
+    const success = results.find((item) => item.status === 'fulfilled');
+    if (success?.status === 'fulfilled') return success.value;
+
+    const reasons = results
+      .filter((item) => item.status === 'rejected')
+      .map((item) => item.reason?.message || String(item.reason))
+      .join('; ');
     const out = new Error(`Instagram provider fallback failed (${reasons})`);
     out.code = 'INSTAGRAM_PROVIDER_FAILED';
     throw out;
+  } finally {
+    await browser.close().catch(() => {});
   }
 }

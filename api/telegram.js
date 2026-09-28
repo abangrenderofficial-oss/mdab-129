@@ -5,6 +5,7 @@ import { commandMenuText, START_TEXT } from '../src/bot/commands.js';
 import { handleConnectCommand, processAuditDelete, setMirrorWebhook } from '../src/bot/audit.js';
 import { MEDIA_LIVE_WALLPAPER, MEDIA_STATUS_HQ, MEDIA_STATUS_HQ_ANDROID } from '../src/bot/media-actions.js';
 import { handleTotalUserCommand, markPremiumHqCompleted, recordUsage } from '../src/bot/stats.js';
+import { resetUserHeavyQueue } from '../src/bot/user-job-queue.js';
 import { processStatusProfileMenu } from '../src/features/status-hq-menu.js';
 import { processStatusAndroidButton } from '../src/features/status-hq-android.js';
 import { processStatusButton } from '../src/features/status-hq.js';
@@ -172,9 +173,10 @@ export default async function handler(req, res) {
     }
     if (command === '/reset') {
       resetUserFence(update);
-      await sendMessage(message.chat.id, '♻️ Sesi anda telah direset.\nSemua proses lama untuk sesi ini dibatalkan. Bot kembali normal.\nSila hantar link atau video semula.')
+      const queueReset = resetUserHeavyQueue(message?.from?.id);
+      await sendMessage(message.chat.id, '♻️ Sesi anda telah direset.\nQueue lama untuk sesi ini telah dibuang dan proses lama ditandakan batal.\nSila hantar link atau video semula.')
         .catch((error) => console.warn('User reset reply failed:', error?.message));
-      return json(res, 200, { ok: true, reset: 'user' });
+      return json(res, 200, { ok: true, reset: 'user', queue: queueReset });
     }
     if (command === '/resetadmin') {
       const userId = message?.from?.id;

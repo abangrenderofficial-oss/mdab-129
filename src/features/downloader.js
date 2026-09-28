@@ -1,4 +1,6 @@
 import { prepareSocialVideoTelegramUpload } from '../social-video.js';
+import { prepareInstagramVideoWithAudio } from '../instagram-video-audio-mux.js';
+import { resolveInstagramProviderVideo } from '../instagram-provider-fallback.js';
 import { prepareYouTubeTelegramUpload } from '../youtube-upload.js';
 import { prepareTikTokTelegramRescue } from '../tiktok-rescue.js';
 import { createRelayUrl } from '../relay.js';
@@ -133,6 +135,29 @@ async function deliverCompressedSocial(chatId, video, durationHint, sourceUrl) {
   }
 }
 
+async function deliverInstagramMuxed(chatId, video, audio, options = {}) {
+  let prepared = null;
+  try {
+    prepared = await localMediaLane(() => prepareInstagramVideoWithAudio(
+      video,
+      audio,
+      configuredUploadLimit(),
+      { sourceUrl: options.sourceUrl },
+    ));
+    return await sendVideoFileUpload(
+      chatId,
+      prepared.filePath,
+      '',
+      telegramVideoExtra(video, options),
+    );
+  } catch (error) {
+    console.warn('[downloader/instagram-mux] failed:', error?.code, error?.message);
+    return null;
+  } finally {
+    if (prepared?.cleanup) await prepared.cleanup().catch(() => {});
+  }
+}
+
 async function deliverVideo(chatId, video, baseUrl, options = {}) {
   if (!video?.url) return null;
   const size = Number(video.filesize || 0);
@@ -220,6 +245,10 @@ export async function processStandardDownload({ chatId, url, platform, context =
 
   const title = safeTitle(media, platform);
   const candidates = orderedVideoCandidates(media.videos || []);
+  const instagramAudio = platform === 'instagram' && Array.isArray(media.audios)
+    ? media.audios.find((item) => item?.url) || null
+    : null;
+  const instagramNeedsMux = Boolean(instagramAudio?.url && candidates.length);
   let sentVideo = null;
 
   if (platform === 'youtube') {
@@ -227,7 +256,41 @@ export async function processStandardDownload({ chatId, url, platform, context =
     sentVideo = await deliverPreferredYouTube(chatId, url);
   }
 
-  if (candidates.length && !sentVideo) {
+  if (instagramNeedsMux && !sentVideo) {
+    await sendChatAction(chatId, 'upload_video').catch(() => {});
+    for (const candidate of candidates.slice(0, 4)) {
+      if (!active(fence)) return { handled: true, cancelled: true };
+      sentVideo = await deliverInstagramMuxed(chatId, candidate, instagramAudio, {
+        platform,
+        duration: media.duration,
+        sourceUrl: media?.canonicalUrl || url,
+      });
+      if (sentVideo) break;
+    }
+
+    // Never fall through to the silent native candidate after we have proved the
+    // Reel uses a separate social-audio stream. If local muxing fails, use a
+    // provider's already-merged MP4 as the non-silent fallback instead.
+    if (!sentVideo && active(fence)) {
+      try {
+        const merged = await resolveInstagramProviderVideo(media?.canonicalUrl || url);
+        sentVideo = await deliverVideo(chatId, merged, context.baseUrl, {
+          platform,
+          duration: media.duration,
+          sourceUrl: media?.canonicalUrl || url,
+          allowCompression: false,
+        });
+      } catch (error) {
+        console.warn('[downloader/instagram-provider] merged fallback failed after mux:', error?.code, error?.message);
+      }
+    }
+
+    if (!sentVideo && active(fence)) {
+      await sendMessage(chatId, '❌ Audio Instagram berjaya dikesan tetapi video+audio belum berjaya digabungkan. Cuba hantar semula link yang sama.');
+    }
+  }
+
+  if (candidates.length && !sentVideo && !instagramNeedsMux) {
     await sendChatAction(chatId, 'upload_video').catch(() => {});
     for (const candidate of candidates.slice(0, 6)) {
       if (!active(fence)) return { handled: true, cancelled: true };

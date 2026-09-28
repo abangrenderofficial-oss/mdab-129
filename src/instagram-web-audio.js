@@ -145,7 +145,7 @@ async function setupRulingSession(code) {
     code,
     pk,
     status: response.status,
-    hasCookies: pairs.length > 0,
+    cookieNames: pairs.map((pair) => String(pair).split('=')[0]).filter(Boolean),
     hasCsrf: Boolean(csrf),
   }));
 
@@ -165,9 +165,9 @@ async function fetchGraphQlMedia(code, session) {
     has_threaded_comments: true,
   };
 
-  const body = new URLSearchParams();
-  body.set('variables', JSON.stringify(variables));
-  body.set('doc_id', GRAPHQL_DOC_ID);
+  // Instagram's web endpoint expects the same raw form body used by the web
+  // client/reference extractor. Do not URL-encode the JSON payload here.
+  const body = `variables=${JSON.stringify(variables)}&doc_id=${GRAPHQL_DOC_ID}`;
 
   const response = await fetchWithTimeout('https://www.instagram.com/graphql/query/', {
     method: 'POST',
@@ -183,7 +183,7 @@ async function fetchGraphQlMedia(code, session) {
       ...(session?.csrf ? { 'X-CSRFToken': session.csrf } : {}),
       ...(session?.cookies ? { Cookie: session.cookies } : {}),
     },
-    body: body.toString(),
+    body,
   });
 
   const text = await response.text();

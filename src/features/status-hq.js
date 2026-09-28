@@ -2,6 +2,7 @@ import { prepareWhatsAppStatusHQ } from '../status-hq.js';
 import { prepareWhatsAppStatusImageHQ } from '../status-image-hq.js';
 import { detectPlatform } from '../platform.js';
 import { resolveInstagramAudio } from '../instagram-audio.js';
+import { resolveInstagramYtDlpAudio } from '../instagram-ytdlp-audio.js';
 import { getTelegramFileSource, sendChatAction, sendMessage, sendVideoFileUpload, telegram } from '../telegram.js';
 import { dispatchHeavyMediaJob, heavyVideoLimitBytes, heavyWorkerConfigured, shouldUseHeavyWorker } from '../heavy-worker-dispatch.js';
 import { isJobFenceActive } from '../recovery.js';
@@ -42,12 +43,10 @@ async function prepareStatusFromSourceUrl(url, platform) {
     return prepareWhatsAppStatusHQ({ sourceUrl: url, platform, video: best, audio });
   }
 
-  // IMPORTANT: Instagram resolvers can return a direct MP4 that already contains
-  // the audible Reel mix even when media.audios[] is empty. Production used to
-  // treat an empty audios[] as proof that audio was missing and immediately call
-  // the separate metadata recovery endpoint. That endpoint can be rate-limited
-  // (HTTP 403), causing Premium+ HQ to fail even though the direct MP4 itself had
-  // perfectly usable audio. Always try + verify the direct resolved video first.
+  // Instagram Reels can expose a video-only MP4 while the audible Reel mix lives
+  // in a separate social-sound asset. First keep the cheap path for Reels whose
+  // direct MP4 already contains audio. If it is silent, resolve the social sound
+  // exactly like TikTok's video + music flow and mux both tracks before HQ encode.
   let directPrepared = null;
   try {
     directPrepared = await prepareWhatsAppStatusHQ({
@@ -57,12 +56,12 @@ async function prepareStatusFromSourceUrl(url, platform) {
       audio,
     });
     if (directPrepared?.profile?.hasAudio) {
-      console.info('[status-hq/instagram] using direct resolved Instagram video with embedded audio.');
+      console.info('[status-hq/instagram] direct Instagram video already contains audio.');
       return directPrepared;
     }
-    console.warn('[status-hq/instagram] direct resolved video had no audio; trying Reel audio recovery.');
+    console.warn('[status-hq/instagram] direct Instagram video is silent; resolving social sound track.');
   } catch (error) {
-    console.warn('[status-hq/instagram] direct resolved video preparation failed; trying Reel audio recovery:', error?.code, error?.message);
+    console.warn('[status-hq/instagram] direct Instagram video preparation failed; resolving social sound track:', error?.code, error?.message);
   }
 
   if (directPrepared?.cleanup) {
@@ -72,22 +71,34 @@ async function prepareStatusFromSourceUrl(url, platform) {
 
   if (!audio) {
     try {
-      audio = await resolveInstagramAudio(url);
-    } catch (error) {
-      console.warn('[status-hq/instagram] Reel audio metadata recovery failed:', error?.code, error?.message);
-      const missing = new Error('Instagram Reel audio could not be recovered safely.');
-      missing.code = 'INSTAGRAM_AUDIO_NOT_FOUND';
-      throw missing;
+      audio = await resolveInstagramYtDlpAudio(url);
+      console.info('[status-hq/instagram] social sound resolved for mux:', JSON.stringify({
+        source: audio?.source || null,
+        quality: audio?.quality || null,
+        startTimeMs: audio?.startTimeMs || 0,
+        durationMs: audio?.durationMs || null,
+      }));
+    } catch (socialSoundError) {
+      console.warn('[status-hq/instagram] social sound resolver failed; trying legacy metadata fallback:', socialSoundError?.code, socialSoundError?.message);
+      try {
+        audio = await resolveInstagramAudio(url);
+      } catch (metadataError) {
+        console.warn('[status-hq/instagram] legacy Reel audio metadata fallback failed:', metadataError?.code, metadataError?.message);
+        const missing = new Error('Instagram Reel social sound could not be resolved.');
+        missing.code = 'INSTAGRAM_SOCIAL_SOUND_NOT_FOUND';
+        throw missing;
+      }
     }
   }
 
   const recovered = await prepareWhatsAppStatusHQ({ sourceUrl: url, platform, video: best, audio });
   if (!recovered?.profile?.hasAudio) {
     await recovered?.cleanup?.().catch(() => {});
-    const missing = new Error('Instagram Reel Premium+ HQ source still has no audio after recovery.');
-    missing.code = 'INSTAGRAM_AUDIO_MISSING_AFTER_RECOVERY';
+    const missing = new Error('Instagram Reel Premium+ HQ source still has no audio after social-sound mux.');
+    missing.code = 'INSTAGRAM_AUDIO_MISSING_AFTER_MUX';
     throw missing;
   }
+  console.info('[status-hq/instagram] video + social sound mux verified with audio.');
   return recovered;
 }
 
@@ -245,7 +256,7 @@ export async function processStatusButton(callbackQuery, context = {}) {
             });
           } catch (error) {
             instagramTelegramError = error;
-            console.warn('[status-hq/instagram] Telegram copy had no usable audio; trying original source recovery:', error?.code, error?.message);
+            console.warn('[status-hq/instagram] Telegram copy had no usable audio; trying original source:', error?.code, error?.message);
           }
         }
 

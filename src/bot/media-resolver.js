@@ -164,58 +164,81 @@ async function resolveTikTok(url) {
 async function resolveInstagram(url) {
   const media = await parseMedia(url);
   const canonicalUrl = media?.canonicalUrl || url;
+  const videos = Array.isArray(media?.videos) ? media.videos.filter((item) => item?.url) : [];
   const existingAudios = Array.isArray(media?.audios)
     ? media.audios.filter((item) => item?.url)
     : [];
 
-  if (existingAudios.length) {
+  // Normal Reel: the source video already carries audio. Do not touch it.
+  if (videos.some((item) => item?.hasAudio === true)) {
+    console.info('[instagram-resolver] embedded audio detected; native video flow unchanged');
     return { ...media, platform: 'Instagram', canonicalUrl, audios: existingAudios };
   }
 
-  // Same model as TikTok: resolve the social platform sound as its own stream,
-  // then let Status HQ mux that audio onto the best video-only stream.
+  if (existingAudios.length) {
+    console.info('[instagram-resolver] silent video + existing Reel sound stream detected');
+    return { ...media, platform: 'Instagram', canonicalUrl, audios: existingAudios };
+  }
+
+  // Silent source video + added Reel sound. First try to resolve the actual
+  // standalone sound stream. The downloader will mux it onto the original video.
   try {
     const sound = await resolveInstagramYtDlpAudio(canonicalUrl);
-    return {
-      ...media,
-      platform: 'Instagram',
-      canonicalUrl,
-      audios: sound?.url ? [sound] : [],
-    };
+    if (sound?.url) {
+      console.info('[instagram-resolver] silent video + standalone Reel sound resolved');
+      return {
+        ...media,
+        platform: 'Instagram',
+        canonicalUrl,
+        audios: [sound],
+      };
+    }
   } catch (error) {
-    console.warn('[instagram-resolver] yt-dlp audio-only stream not resolved:', error?.code, error?.message);
+    console.warn('[instagram-resolver] standalone Reel sound not resolved:', error?.code, error?.message);
   }
 
-  // If Instagram's logged-out endpoints expose only a silent video, use the
-  // provider fallback immediately. Waiting for the old metadata chain first can
-  // consume the whole Railway pre-deploy window with repeated 401/403 timeouts.
+  // If Instagram does not expose the standalone audio URL, use a provider only
+  // as an AUDIO DONOR. Keep the original silent Instagram video untouched.
+  // prepareInstagramVideoWithAudio() can read the audio track from this MP4 and
+  // mux it onto the original source video.
   try {
-    const merged = await resolveInstagramProviderVideo(canonicalUrl);
-    return {
-      ...media,
-      platform: 'Instagram',
-      canonicalUrl,
-      videos: [merged],
-      audios: [],
-    };
+    const donor = await resolveInstagramProviderVideo(canonicalUrl);
+    if (donor?.url) {
+      console.info('[instagram-resolver] provider Reel audio donor resolved; preserving original video');
+      return {
+        ...media,
+        platform: 'Instagram',
+        canonicalUrl,
+        audios: [{
+          ...donor,
+          quality: 'Reel added sound',
+          source: `${donor.source || 'instagram-provider'}-audio-donor`,
+        }],
+      };
+    }
   } catch (error) {
-    console.warn('[instagram-resolver] merged provider fallback failed:', error?.code, error?.message);
+    console.warn('[instagram-resolver] Reel audio donor provider failed:', error?.code, error?.message);
   }
 
-  // Keep the older metadata path only as the final fallback after the faster
-  // merged-provider attempt has failed.
+  // Final metadata-based sound resolver. Still returns audio only; never swaps
+  // the original Instagram video for a provider video.
   try {
     const sound = await resolveInstagramAudio(canonicalUrl);
-    return {
-      ...media,
-      platform: 'Instagram',
-      canonicalUrl,
-      audios: sound?.url ? [sound] : [],
-    };
+    if (sound?.url) {
+      console.info('[instagram-resolver] metadata Reel sound resolved');
+      return {
+        ...media,
+        platform: 'Instagram',
+        canonicalUrl,
+        audios: [sound],
+      };
+    }
   } catch (error) {
-    console.warn('[instagram-resolver] separate Reel sound not resolved:', error?.code, error?.message);
-    return { ...media, platform: 'Instagram', canonicalUrl, audios: [] };
+    console.warn('[instagram-resolver] metadata Reel sound not resolved:', error?.code, error?.message);
   }
+
+  console.warn('[instagram-resolver] silent Instagram video found but added Reel sound could not be resolved');
+  return { ...media, platform: 'Instagram', canonicalUrl, audios: [] };
 }
 
 export async function resolveMedia(platform, url) {

@@ -21,6 +21,23 @@ function score(format = {}) {
   return audioOnly * 100000 + abr * 100 + asr + tbr;
 }
 
+function safeFormatSummary(formats = []) {
+  return formats.map((format) => ({
+    id: format?.format_id ?? null,
+    ext: format?.ext ?? null,
+    protocol: format?.protocol ?? null,
+    vcodec: format?.vcodec ?? null,
+    acodec: format?.acodec ?? null,
+    abr: format?.abr ?? null,
+    asr: format?.asr ?? null,
+    tbr: format?.tbr ?? null,
+    width: format?.width ?? null,
+    height: format?.height ?? null,
+    audioChannels: format?.audio_channels ?? null,
+    note: format?.format_note ?? null,
+  }));
+}
+
 export async function resolveInstagramYtDlpAudio(url) {
   const binary = path.join(process.cwd(), 'bin', 'yt-dlp');
   await chmod(binary, 0o755).catch(() => {});
@@ -49,6 +66,14 @@ export async function resolveInstagramYtDlpAudio(url) {
 
   const best = candidates[0];
   if (!best) {
+    console.warn('[instagram-audio] yt-dlp format diagnosis:', JSON.stringify({
+      extractor: info?.extractor_key || info?.extractor || null,
+      id: info?.id || null,
+      topLevelVcodec: info?.vcodec || null,
+      topLevelAcodec: info?.acodec || null,
+      formatCount: formats.length,
+      formats: safeFormatSummary(formats),
+    }));
     const error = new Error('yt-dlp did not expose an Instagram audio stream.');
     error.code = 'INSTAGRAM_YTDLP_AUDIO_NOT_FOUND';
     throw error;

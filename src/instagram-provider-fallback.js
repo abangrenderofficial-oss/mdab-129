@@ -2,10 +2,10 @@ import chromiumPack from '@sparticuz/chromium';
 import { chromium as playwrightChromium } from 'playwright-core';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36';
-const PROVIDER_RESPONSE_TIMEOUT_MS = Number(process.env.INSTAGRAM_PROVIDER_RESPONSE_TIMEOUT_MS || 12000);
-const PROVIDER_PAGE_TIMEOUT_MS = Number(process.env.INSTAGRAM_PROVIDER_PAGE_TIMEOUT_MS || 12000);
-const PROVIDER_INPUT_TIMEOUT_MS = Number(process.env.INSTAGRAM_PROVIDER_INPUT_TIMEOUT_MS || 7000);
-const PROVIDER_MEDIA_TIMEOUT_MS = Number(process.env.INSTAGRAM_PROVIDER_MEDIA_TIMEOUT_MS || 8000);
+const PROVIDER_RESPONSE_TIMEOUT_MS = Number(process.env.INSTAGRAM_PROVIDER_RESPONSE_TIMEOUT_MS || 10000);
+const PROVIDER_PAGE_TIMEOUT_MS = Number(process.env.INSTAGRAM_PROVIDER_PAGE_TIMEOUT_MS || 10000);
+const PROVIDER_INPUT_TIMEOUT_MS = Number(process.env.INSTAGRAM_PROVIDER_INPUT_TIMEOUT_MS || 6000);
+const PROVIDER_MEDIA_TIMEOUT_MS = Number(process.env.INSTAGRAM_PROVIDER_MEDIA_TIMEOUT_MS || 7000);
 
 function normalizeTarget(rawUrl) {
   const input = new URL(rawUrl);
@@ -23,10 +23,7 @@ function deferredResponse(page, { match, pick, timeout = PROVIDER_RESPONSE_TIMEO
       clearTimeout(timer);
       fn(value);
     };
-    const timer = setTimeout(
-      () => finish(reject, new Error('provider-timeout')),
-      timeout,
-    );
+    const timer = setTimeout(() => finish(reject, new Error('provider-timeout')), timeout);
     page.on('response', async (response) => {
       if (done || !match(response)) return;
       let json = null;
@@ -128,7 +125,7 @@ async function runFastVideoSave(page, target) {
     waitUntil: 'domcontentloaded',
     timeout: PROVIDER_PAGE_TIMEOUT_MS,
   });
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(350);
   const input = page.locator('input[type="text"], input[type="url"], input[name*="url" i], input[placeholder*="link" i], input[placeholder*="url" i]').first();
   await input.waitFor({ timeout: PROVIDER_INPUT_TIMEOUT_MS });
   await input.fill(target);
@@ -170,59 +167,63 @@ async function validateProviderVideo(url, name) {
   return true;
 }
 
+async function runProvider(browser, provider, target) {
+  const context = await browser.newContext({
+    userAgent: UA,
+    viewport: { width: 1280, height: 900 },
+    locale: 'en-US',
+  });
+  try {
+    const page = await context.newPage();
+    const result = await provider.run(page, target);
+    if (!result?.url) throw new Error('provider-no-url');
+    await validateProviderVideo(result.url, provider.name);
+    console.info('[instagram-provider] merged Reel candidate resolved:', JSON.stringify({
+      provider: provider.name,
+      host: new URL(result.url).hostname,
+      quality: result.quality ?? null,
+      mediaValidated: true,
+    }));
+    return {
+      url: result.url,
+      sourceUrl: target,
+      quality: `Instagram ${provider.name}`,
+      width: result.width ?? null,
+      height: result.height ?? null,
+      ext: 'mp4',
+      hasAudio: true,
+      source: `instagram-${provider.name}`,
+      headers: providerHeaders(provider.name),
+      filesize: null,
+    };
+  } catch (error) {
+    console.warn('[instagram-provider] provider failed:', provider.name, error?.message || error);
+    throw new Error(`${provider.name}:${error?.message || error}`);
+  } finally {
+    await context.close().catch(() => {});
+  }
+}
+
 export async function resolveInstagramProviderVideo(rawUrl) {
   const target = normalizeTarget(rawUrl);
-  let browser = null;
-  const failures = [];
+  const browser = await launchBrowser();
   try {
-    browser = await launchBrowser();
     const providers = [
       { name: 'sssinstagram', run: runSss },
       { name: 'fastvideosave', run: runFastVideoSave },
     ];
 
-    for (const provider of providers) {
-      const context = await browser.newContext({
-        userAgent: UA,
-        viewport: { width: 1280, height: 900 },
-        locale: 'en-US',
-      });
-      try {
-        const page = await context.newPage();
-        const result = await provider.run(page, target);
-        if (!result?.url) throw new Error('provider-no-url');
-        await validateProviderVideo(result.url, provider.name);
-        console.info('[instagram-provider] merged Reel candidate resolved:', JSON.stringify({
-          provider: provider.name,
-          host: new URL(result.url).hostname,
-          quality: result.quality ?? null,
-          mediaValidated: true,
-        }));
-        return {
-          url: result.url,
-          sourceUrl: target,
-          quality: `Instagram ${provider.name}`,
-          width: result.width ?? null,
-          height: result.height ?? null,
-          ext: 'mp4',
-          hasAudio: true,
-          source: `instagram-${provider.name}`,
-          headers: providerHeaders(provider.name),
-          filesize: null,
-        };
-      } catch (error) {
-        const detail = `${provider.name}:${error?.message || error}`;
-        failures.push(detail);
-        console.warn('[instagram-provider] provider failed:', provider.name, error?.message || error);
-      } finally {
-        await context.close().catch(() => {});
-      }
+    try {
+      return await Promise.any(providers.map((provider) => runProvider(browser, provider, target)));
+    } catch (error) {
+      const reasons = Array.isArray(error?.errors)
+        ? error.errors.map((item) => item?.message || String(item)).join('; ')
+        : (error?.message || String(error));
+      const out = new Error(`Instagram provider fallback failed (${reasons})`);
+      out.code = 'INSTAGRAM_PROVIDER_FAILED';
+      throw out;
     }
   } finally {
-    await browser?.close().catch(() => {});
+    await browser.close().catch(() => {});
   }
-
-  const error = new Error(`Instagram provider fallback failed (${failures.join('; ')})`);
-  error.code = 'INSTAGRAM_PROVIDER_FAILED';
-  throw error;
 }

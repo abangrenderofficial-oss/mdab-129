@@ -156,10 +156,11 @@ function baseHeaders() {
   return {
     'User-Agent': BROWSER_UA,
     'X-IG-App-ID': APP_ID,
-    'X-ASBD-ID': '359341',
+    'X-ASBD-ID': '198387',
     'X-IG-WWW-Claim': '0',
     Origin: 'https://www.instagram.com',
     Accept: '*/*',
+    'Accept-Language': 'en-US,en;q=0.9',
   };
 }
 
@@ -176,7 +177,6 @@ async function initializeSession(canonical, code) {
   let lsd = extractLsd(homeHtml);
   let htmlCsrf = extractHtmlCsrf(homeHtml);
 
-  // The post page often carries a fresher LSD/CSRF than the homepage.
   try {
     const postResponse = await request(canonical, {
       headers: {
@@ -224,6 +224,57 @@ async function initializeSession(canonical, code) {
   }));
 
   return { mediaId, jar, lsd, csrf, apiCheck };
+}
+
+async function fetchSessionedMediaInfo(canonical, session) {
+  const attempts = [
+    `https://i.instagram.com/api/v1/media/${encodeURIComponent(session.mediaId)}/info/`,
+    `https://www.instagram.com/api/v1/media/${encodeURIComponent(session.mediaId)}/info/`,
+  ];
+
+  const failures = [];
+  for (const endpoint of attempts) {
+    try {
+      const response = await request(endpoint, {
+        headers: {
+          ...baseHeaders(),
+          Referer: canonical,
+          'X-Requested-With': 'XMLHttpRequest',
+          ...(session.csrf ? { 'X-CSRFToken': session.csrf } : {}),
+          ...(session.jar?.size ? { Cookie: cookieHeader(session.jar) } : {}),
+        },
+      });
+      const text = await response.text();
+      const json = parseJson(text);
+      if (!response.ok || !json) {
+        failures.push(`${new URL(endpoint).hostname}:${response.status}:${response.headers.get('content-type') || 'unknown'}`);
+        continue;
+      }
+      const item = json?.items?.[0] || json?.item || null;
+      if (!item) {
+        failures.push(`${new URL(endpoint).hostname}:no-item`);
+        continue;
+      }
+      const candidates = collectSocialAudio(item);
+      console.info('[instagram-audio] sessioned media-info response:', JSON.stringify({
+        host: new URL(endpoint).hostname,
+        status: response.status,
+        hasAudio: item?.has_audio ?? null,
+        hasClipsMetadata: Boolean(item?.clips_metadata),
+        hasMusicInfo: Boolean(item?.clips_metadata?.music_info),
+        hasOriginalSoundInfo: Boolean(item?.clips_metadata?.original_sound_info),
+        candidates: candidates.length,
+      }));
+      if (candidates.length) return candidates[0];
+      failures.push(`${new URL(endpoint).hostname}:no-social-audio`);
+    } catch (error) {
+      failures.push(`${new URL(endpoint).hostname}:${error?.message || error}`);
+    }
+  }
+
+  const error = new Error(`sessioned-media-info-failed:${failures.join(',')}`);
+  error.code = 'INSTAGRAM_WEB_AUDIO_NOT_FOUND';
+  throw error;
 }
 
 async function fetchCurrentGraphQl(canonical, session) {
@@ -280,6 +331,31 @@ async function fetchCurrentGraphQl(canonical, session) {
   return product;
 }
 
+function toAudio(best, canonical, source) {
+  console.info('[instagram-audio] Instagram social sound found:', JSON.stringify({
+    source,
+    path: best.path || null,
+    host: new URL(best.url).hostname,
+    audioAssetId: best.audioAssetId || null,
+    title: best.title || null,
+    startTimeMs: best.startTimeMs || 0,
+    durationMs: best.durationMs || null,
+  }));
+  return {
+    url: best.url,
+    ext: /\.m4a(?:\?|$)/i.test(best.url) ? 'm4a' : 'mp4',
+    quality: 'Instagram social sound',
+    source,
+    startTimeMs: best.startTimeMs || 0,
+    durationMs: best.durationMs || null,
+    headers: {
+      Referer: canonical,
+      'User-Agent': BROWSER_UA,
+      Accept: 'audio/mp4,audio/*;q=0.9,*/*;q=0.8',
+    },
+  };
+}
+
 export async function resolveInstagramWebAudio(rawUrl) {
   const canonical = canonicalUrl(rawUrl);
   const code = shortcode(canonical);
@@ -290,6 +366,14 @@ export async function resolveInstagramWebAudio(rawUrl) {
   }
 
   const session = await initializeSession(canonical, code);
+
+  try {
+    const mediaInfoAudio = await fetchSessionedMediaInfo(canonical, session);
+    if (mediaInfoAudio?.url) return toAudio(mediaInfoAudio, canonical, 'instagram-session-media-info');
+  } catch (error) {
+    console.warn('[instagram-audio] sessioned media-info did not expose social sound:', error?.message || error);
+  }
+
   const product = await fetchCurrentGraphQl(canonical, session);
   const candidates = collectSocialAudio(product);
   if (!candidates.length) {
@@ -307,28 +391,5 @@ export async function resolveInstagramWebAudio(rawUrl) {
     throw error;
   }
 
-  const best = candidates[0];
-  console.info('[instagram-audio] current GraphQL social sound found:', JSON.stringify({
-    code,
-    path: best.path,
-    host: new URL(best.url).hostname,
-    audioAssetId: best.audioAssetId || null,
-    title: best.title || null,
-    startTimeMs: best.startTimeMs || 0,
-    durationMs: best.durationMs || null,
-  }));
-
-  return {
-    url: best.url,
-    ext: /\.m4a(?:\?|$)/i.test(best.url) ? 'm4a' : 'mp4',
-    quality: 'Instagram social sound',
-    source: 'instagram-current-graphql',
-    startTimeMs: best.startTimeMs || 0,
-    durationMs: best.durationMs || null,
-    headers: {
-      Referer: canonical,
-      'User-Agent': BROWSER_UA,
-      Accept: 'audio/mp4,audio/*;q=0.9,*/*;q=0.8',
-    },
-  };
+  return toAudio(candidates[0], canonical, 'instagram-current-graphql');
 }

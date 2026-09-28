@@ -112,21 +112,75 @@ async function verifyResolver(platform, url) {
   }));
 }
 
+async function prepareInstagramButtonEquivalent(url) {
+  const media = await resolveMedia('instagram', url);
+  const best = chooseBestVideo(media?.videos || []);
+  if (!best) throw new Error('Instagram self-test could not resolve the standard downloaded video');
+
+  let telegramEquivalent = null;
+  try {
+    // The Premium+ button acts on the video Telegram already has. Downloading
+    // the same resolved candidate with platform=telegram emulates that path
+    // without refetching the original Reel metadata.
+    telegramEquivalent = await prepareWhatsAppStatusHQ({
+      sourceUrl: '',
+      platform: 'telegram',
+      video: best,
+      audio: null,
+    });
+    if (telegramEquivalent?.profile?.hasAudio) {
+      console.log('STATUS_HQ_SELFTEST_TELEGRAM_SOURCE', JSON.stringify({
+        ok: true,
+        source: best?.source || null,
+        quality: best?.quality || null,
+        sourceHasAudio: Boolean(telegramEquivalent.source?.hasAudio),
+        outputHasAudio: Boolean(telegramEquivalent.profile?.hasAudio),
+      }));
+      return telegramEquivalent;
+    }
+
+    console.warn('STATUS_HQ_SELFTEST_TELEGRAM_SOURCE', JSON.stringify({
+      ok: false,
+      reason: 'resolved-standard-video-has-no-audio',
+      source: best?.source || null,
+      quality: best?.quality || null,
+    }));
+    await telegramEquivalent?.cleanup?.().catch(() => {});
+    telegramEquivalent = null;
+  } catch (error) {
+    await telegramEquivalent?.cleanup?.().catch(() => {});
+    telegramEquivalent = null;
+    console.warn('STATUS_HQ_SELFTEST_TELEGRAM_SOURCE', JSON.stringify({
+      ok: false,
+      reason: String(error?.code || error?.message || error).slice(0, 500),
+    }));
+  }
+
+  let audio = Array.isArray(media?.audios)
+    ? media.audios.find((item) => item?.url) || null
+    : null;
+  if (!audio) audio = await resolveInstagramAudio(url);
+
+  return prepareWhatsAppStatusHQ({
+    sourceUrl: media?.canonicalUrl || url,
+    platform: 'instagram',
+    video: best,
+    audio,
+  });
+}
+
 async function prepareStatusSource(platform, url) {
   if (platform === 'youtube') {
     return prepareWhatsAppStatusHQ({ sourceUrl: url, platform, video: null, audio: null });
   }
+  if (platform === 'instagram') return prepareInstagramButtonEquivalent(url);
 
   const media = await resolveMedia(platform, url);
   const best = chooseBestVideo(media?.videos || []);
   if (!best) throw new Error(`Status HQ smoke could not resolve a ${platform} source video`);
-  let audio = Array.isArray(media?.audios)
+  const audio = Array.isArray(media?.audios)
     ? media.audios.find((item) => item?.url) || null
     : null;
-
-  if (platform === 'instagram' && !audio) {
-    audio = await resolveInstagramAudio(url);
-  }
 
   return prepareWhatsAppStatusHQ({
     sourceUrl: media?.canonicalUrl || url,

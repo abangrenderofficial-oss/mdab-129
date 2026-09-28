@@ -1,5 +1,6 @@
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36';
 const MOBILE_UA = 'Instagram 275.0.0.27.98 Android (33/13; 280dpi; 720x1423; Xiaomi; Redmi 7; onclite; qcom; en_US; 458229237)';
+const WEB_APP_ID = '936619743392459';
 
 const MOBILE_HEADERS = {
   'x-ig-app-locale': 'en_US',
@@ -17,11 +18,14 @@ const EMBED_HEADERS = {
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'en-US,en;q=0.9',
   'Cache-Control': 'max-age=0',
-  'User-Agent': BROWSER_UA,
+  Dnt: '1',
+  Priority: 'u=0, i',
   'Sec-Fetch-Dest': 'document',
   'Sec-Fetch-Mode': 'navigate',
   'Sec-Fetch-Site': 'none',
+  'Sec-Fetch-User': '?1',
   'Upgrade-Insecure-Requests': '1',
+  'User-Agent': BROWSER_UA,
 };
 
 function canonicalUrl(rawUrl) {
@@ -79,7 +83,7 @@ function audioHeaders(canonical) {
   return {
     Referer: canonical,
     'User-Agent': BROWSER_UA,
-    Accept: 'audio/mp4,audio/*;q=0.9,*/*;q=0.8',
+    Accept: 'video/mp4,audio/mp4,audio/*;q=0.9,*/*;q=0.8',
   };
 }
 
@@ -194,9 +198,138 @@ async function embedCaptionedAudio(code, failures) {
       return null;
     }
 
-    return { ...candidates[0], source: 'embed-captioned' };
+    return { ...candidates[0], source: 'embed-captioned', ext: 'm4a' };
   } catch (error) {
     failures.push(`embed:${error?.message || error}`);
+    return null;
+  }
+}
+
+function getNumberFromQuery(name, data = '') {
+  const value = String(data).match(new RegExp(`${name}=(\\d+)`))?.[1];
+  return Number(value) || null;
+}
+
+function getObjectFromEntries(name, data = '') {
+  try {
+    const escaped = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const objectText = String(data).match(new RegExp(`\\["${escaped}",.*?,({.*?}),\\d+\\]`))?.[1];
+    return objectText ? JSON.parse(objectText) : null;
+  } catch {
+    return null;
+  }
+}
+
+function randomAlpha(length = 8) {
+  let out = '';
+  while (out.length < length) out += Math.random().toString(36).slice(2).replace(/\d/g, '');
+  return out.slice(0, length) || 'abcdef';
+}
+
+function randomBase64ish(length = 205) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  let out = '';
+  for (let i = 0; i < length; i += 1) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
+async function graphQlPlaybackAudio(code, failures) {
+  try {
+    const pageResponse = await request(`https://www.instagram.com/p/${encodeURIComponent(code)}/`, {
+      headers: EMBED_HEADERS,
+    });
+    const html = await pageResponse.text();
+    if (!pageResponse.ok) {
+      failures.push(`graphql-page:http-${pageResponse.status}`);
+      return null;
+    }
+
+    const siteData = getObjectFromEntries('SiteData', html) || {};
+    const polarisSiteData = getObjectFromEntries('PolarisSiteData', html) || {};
+    const webConfig = getObjectFromEntries('DGWWebConfig', html) || {};
+    const pushInfo = getObjectFromEntries('InstagramWebPushInfo', html) || {};
+    const security = getObjectFromEntries('InstagramSecurityConfig', html) || {};
+    const lsd = getObjectFromEntries('LSD', html)?.token || randomBase64ish(11);
+    const csrf = security?.csrf_token || '';
+    const anonCookie = [
+      csrf ? `csrftoken=${csrf}` : '',
+      polarisSiteData?.device_id ? `ig_did=${polarisSiteData.device_id}` : '',
+      'wd=1280x720',
+      'dpr=2',
+      polarisSiteData?.machine_id ? `mid=${polarisSiteData.machine_id}` : '',
+      'ig_nrcb=1',
+    ].filter(Boolean).join('; ');
+
+    const body = {
+      __d: 'www',
+      __a: '1',
+      __s: `::${randomAlpha(6)}`,
+      __hs: siteData?.haste_session || '20126.HYP:instagram_web_pkg.2.1...0',
+      __req: 'b',
+      __ccg: 'EXCELLENT',
+      __rev: pushInfo?.rollout_hash || '1019933358',
+      __hsi: siteData?.hsi || '7436540909012459023',
+      __dyn: randomBase64ish(205),
+      __csr: randomBase64ish(205),
+      __user: '0',
+      __comet_req: String(getNumberFromQuery('__comet_req', html) || 7),
+      av: '0',
+      dpr: '2',
+      lsd,
+      jazoest: String(getNumberFromQuery('jazoest', html) || Math.floor(Math.random() * 10000)),
+      __spin_r: siteData?.__spin_r || '1019933358',
+      __spin_b: siteData?.__spin_b || 'trunk',
+      __spin_t: String(siteData?.__spin_t || Math.floor(Date.now() / 1000)),
+      fb_api_caller_class: 'RelayModern',
+      fb_api_req_friendly_name: 'PolarisPostActionLoadPostQueryQuery',
+      variables: JSON.stringify({
+        shortcode: code,
+        fetch_tagged_user_count: null,
+        hoisted_comment_id: null,
+        hoisted_reply_id: null,
+      }),
+      server_timestamps: 'true',
+      doc_id: '8845758582119845',
+    };
+
+    const gqlResponse = await request('https://www.instagram.com/graphql/query', {
+      method: 'POST',
+      headers: {
+        ...EMBED_HEADERS,
+        'x-ig-app-id': String(webConfig?.appId || WEB_APP_ID),
+        'X-FB-LSD': lsd,
+        'X-CSRFToken': csrf,
+        'x-asbd-id': '129477',
+        cookie: anonCookie,
+        'content-type': 'application/x-www-form-urlencoded',
+        'X-FB-Friendly-Name': 'PolarisPostActionLoadPostQueryQuery',
+      },
+      body: new URLSearchParams(body).toString(),
+    });
+    const gqlText = await gqlResponse.text();
+    if (!gqlResponse.ok) {
+      failures.push(`graphql:http-${gqlResponse.status}`);
+      return null;
+    }
+
+    const gql = parseJson(gqlText);
+    const media = gql?.data?.xdt_shortcode_media || gql?.data?.shortcode_media || null;
+    const playbackUrl = normalize(media?.video_url || '');
+    if (!playbackUrl) {
+      failures.push(`graphql:no-video-url:${gql?.errors?.[0]?.message || 'empty'}`);
+      return null;
+    }
+
+    return {
+      url: playbackUrl,
+      source: 'graphql-playback',
+      path: 'xdt_shortcode_media.video_url',
+      ext: 'mp4',
+      startTimeMs: 0,
+      durationMs: null,
+    };
+  } catch (error) {
+    failures.push(`graphql:${error?.message || error}`);
     return null;
   }
 }
@@ -246,6 +379,7 @@ async function anonymousMobileMediaInfo(code, failures) {
       ...candidates[0],
       source: 'anonymous-mobile-info',
       mediaId,
+      ext: 'm4a',
     };
   } catch (error) {
     failures.push(`anonymous-mobile:${error?.message || error}`);
@@ -274,7 +408,7 @@ async function pageFallback(canonical, code, failures) {
       const json = parseJson(text);
       if (json) {
         const candidates = collectAudioCandidates(json);
-        if (candidates.length) return { ...candidates[0], source: 'page-json' };
+        if (candidates.length) return { ...candidates[0], source: 'page-json', ext: 'm4a' };
       }
 
       const normalized = normalize(text);
@@ -293,6 +427,7 @@ async function pageFallback(canonical, code, failures) {
             distance: anchor >= 0 ? Math.abs(index - anchor) : index,
             startTimeMs: Number(nearby.match(/"audio_asset_start_time_in_ms"\s*:\s*(\d+)/i)?.[1] || 0),
             durationMs: Number(nearby.match(/"duration_in_ms"\s*:\s*(\d+)/i)?.[1] || 0) || null,
+            ext: 'm4a',
           });
         } catch {}
       }
@@ -317,10 +452,11 @@ function toAudioItem(candidate, canonical, code) {
     path: candidate.path || null,
     startTimeMs: candidate.startTimeMs || 0,
     durationMs: candidate.durationMs || null,
+    ext: candidate.ext || 'm4a',
   }));
   return {
     url: candidate.url,
-    ext: 'm4a',
+    ext: candidate.ext || 'm4a',
     quality: 'Instagram sound',
     source: `instagram-${candidate.source}`,
     startTimeMs: candidate.startTimeMs || 0,
@@ -341,6 +477,9 @@ export async function resolveInstagramAudio(rawUrl) {
 
   const embed = await embedCaptionedAudio(code, failures);
   if (embed) return toAudioItem(embed, canonical, code);
+
+  const playback = await graphQlPlaybackAudio(code, failures);
+  if (playback) return toAudioItem(playback, canonical, code);
 
   const mobile = await anonymousMobileMediaInfo(code, failures);
   if (mobile) return toAudioItem(mobile, canonical, code);

@@ -1,3 +1,4 @@
+import { createCipheriv } from 'node:crypto';
 import chromiumPack from '@sparticuz/chromium';
 import { chromium as playwrightChromium } from 'playwright-core';
 
@@ -10,6 +11,9 @@ const PROVIDER_ATTEMPT_TIMEOUT_MS = Number(process.env.INSTAGRAM_PROVIDER_ATTEMP
 const PROVIDER_TOTAL_TIMEOUT_MS = Number(process.env.INSTAGRAM_PROVIDER_TOTAL_TIMEOUT_MS || 18000);
 const PROVIDER_BROWSER_TIMEOUT_MS = Number(process.env.INSTAGRAM_PROVIDER_BROWSER_TIMEOUT_MS || 9000);
 const PROVIDER_CACHE_TTL_MS = Number(process.env.INSTAGRAM_PROVIDER_CACHE_TTL_MS || 5 * 60 * 1000);
+const PROVIDER_CLOSE_TIMEOUT_MS = Number(process.env.INSTAGRAM_PROVIDER_CLOSE_TIMEOUT_MS || 1200);
+const FASTVIDEOSAVE_DIRECT_TIMEOUT_MS = Number(process.env.INSTAGRAM_FASTVIDEOSAVE_TIMEOUT_MS || 9000);
+const FASTVIDEOSAVE_AES_KEY = Buffer.from('qwertyuioplkjhgf', 'utf8');
 
 const providerCache = new Map();
 
@@ -34,10 +38,25 @@ function numericQuality(value) {
   return match ? Number(match[1]) : 0;
 }
 
+function collectEmbeddedUrls(value, out) {
+  const text = String(value || '')
+    .replace(/\\u0026/g, '&')
+    .replace(/\\\//g, '/')
+    .replace(/&amp;/g, '&');
+  const matches = text.match(/https?:\/\/[^\s"'<>\\]+/gi) || [];
+  for (const match of matches) {
+    const cleaned = match.replace(/[),.;]+$/, '');
+    if (looksLikeVideoUrl(cleaned)) {
+      out.push({ url: cleaned, quality: 'provider', width: null, height: null });
+    }
+  }
+}
+
 function collectVideoCandidates(node, out = [], depth = 0) {
   if (depth > 7 || node == null) return out;
   if (typeof node === 'string') {
     if (looksLikeVideoUrl(node)) out.push({ url: node, quality: 'provider', width: null, height: null });
+    else collectEmbeddedUrls(node, out);
     return out;
   }
   if (Array.isArray(node)) {
@@ -56,6 +75,8 @@ function collectVideoCandidates(node, out = [], depth = 0) {
     node.videoUrl,
     node.download_url,
     node.downloadUrl,
+    node.media,
+    node.original,
     node.src,
     node.url,
   ].find((value) => typeof value === 'string' && (looksLikeVideoUrl(value) || (hintedVideo && /^https?:\/\//i.test(value))));
@@ -132,6 +153,18 @@ function withTimeout(promise, timeoutMs, label) {
   return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function boundedClose(closePromise) {
+  if (!closePromise) return;
+  await Promise.race([
+    Promise.resolve(closePromise).catch(() => {}),
+    sleep(PROVIDER_CLOSE_TIMEOUT_MS),
+  ]).catch(() => {});
+}
+
 async function triggerAndReadJson(page, matcher, trigger, picker) {
   const responsePromise = page.waitForResponse(matcher, { timeout: PROVIDER_RESPONSE_TIMEOUT_MS });
   const [response] = await Promise.all([
@@ -189,6 +222,44 @@ async function runFastVideoSave(page, target) {
   );
 }
 
+function encryptFastVideoSaveUrl(target) {
+  const cipher = createCipheriv('aes-128-ecb', FASTVIDEOSAVE_AES_KEY, null);
+  cipher.setAutoPadding(true);
+  return cipher.update(target, 'utf8', 'hex') + cipher.final('hex');
+}
+
+async function runFastVideoSaveDirect(target) {
+  const encrypted = encryptFastVideoSaveUrl(target);
+  const response = await fetch('https://api.videodropper.app/allinone', {
+    method: 'GET',
+    redirect: 'follow',
+    headers: {
+      Accept: '*/*',
+      'Accept-Language': 'en-US,en;q=0.9',
+      Origin: 'https://fastvideosave.net',
+      Referer: 'https://fastvideosave.net/',
+      'Sec-Fetch-Dest': 'empty',
+      'Sec-Fetch-Mode': 'cors',
+      'Sec-Fetch-Site': 'cross-site',
+      'User-Agent': UA,
+      url: encrypted,
+    },
+    signal: AbortSignal.timeout(FASTVIDEOSAVE_DIRECT_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error(`fastvideosave-direct-http-${response.status}`);
+  const text = await withTimeout(response.text(), 5000, 'fastvideosave-direct-body-timeout');
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new Error('fastvideosave-direct-invalid-json');
+  }
+  if (json === null || json === 'link') throw new Error('fastvideosave-direct-empty');
+  const verdict = pickFastVideoSave(json);
+  if (!verdict?.ok) throw new Error(verdict?.error || 'fastvideosave-direct-no-video');
+  return verdict.value;
+}
+
 async function launchBrowser() {
   const executablePath = await chromiumPack.executablePath();
   return playwrightChromium.launch({
@@ -224,6 +295,34 @@ async function validateProviderVideo(url, name) {
   return true;
 }
 
+async function normalizeFastVideoSaveMedia(result) {
+  try {
+    await validateProviderVideo(result.url, 'fastvideosave');
+    return { url: result.url, headers: providerHeaders('fastvideosave') };
+  } catch (directError) {
+    const proxyUrl = `https://dl.videodropper.app/?url=${encodeURIComponent(result.url)}`;
+    await validateProviderVideo(proxyUrl, 'fastvideosave');
+    console.info('[instagram-provider] direct FastVideoSave CDN needed videodropper proxy:', directError?.message || directError);
+    return { url: proxyUrl, headers: providerHeaders('fastvideosave') };
+  }
+}
+
+function shapeProviderResult(result, providerName, target, normalized = null) {
+  const finalUrl = normalized?.url || result.url;
+  return {
+    url: finalUrl,
+    sourceUrl: target,
+    quality: `Instagram ${providerName}`,
+    width: result.width ?? null,
+    height: result.height ?? null,
+    ext: 'mp4',
+    hasAudio: true,
+    source: `instagram-${providerName}`,
+    headers: normalized?.headers || providerHeaders(providerName),
+    filesize: null,
+  };
+}
+
 async function runProviderInContext(browser, provider, target, attemptTimeoutMs) {
   const context = await browser.newContext({
     userAgent: UA,
@@ -240,27 +339,18 @@ async function runProviderInContext(browser, provider, target, attemptTimeoutMs)
       'provider-attempt-timeout',
     );
     if (!result?.url) throw new Error('provider-no-url');
-    await validateProviderVideo(result.url, provider.name);
+    const normalized = provider.name === 'fastvideosave'
+      ? await normalizeFastVideoSaveMedia(result)
+      : (await validateProviderVideo(result.url, provider.name), null);
     console.info('[instagram-provider] merged Reel candidate resolved:', JSON.stringify({
       provider: provider.name,
-      host: new URL(result.url).hostname,
+      host: new URL(normalized?.url || result.url).hostname,
       quality: result.quality ?? null,
       mediaValidated: true,
     }));
-    return {
-      url: result.url,
-      sourceUrl: target,
-      quality: `Instagram ${provider.name}`,
-      width: result.width ?? null,
-      height: result.height ?? null,
-      ext: 'mp4',
-      hasAudio: true,
-      source: `instagram-${provider.name}`,
-      headers: providerHeaders(provider.name),
-      filesize: null,
-    };
+    return shapeProviderResult(result, provider.name, target, normalized);
   } finally {
-    await context.close().catch(() => {});
+    await boundedClose(context.close());
   }
 }
 
@@ -290,25 +380,41 @@ function isDefinitiveFailure(message = '') {
   return /private|removed|doesn't exist|not found|invalid url/i.test(String(message));
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export async function resolveInstagramProviderVideo(rawUrl) {
   const target = normalizeTarget(rawUrl);
   const cached = cachedProviderVideo(target);
   if (cached) return cached;
 
+  const startedAt = Date.now();
+  const failures = [];
+
+  try {
+    const direct = await runFastVideoSaveDirect(target);
+    const normalized = await normalizeFastVideoSaveMedia(direct);
+    const result = shapeProviderResult(direct, 'fastvideosave-direct', target, normalized);
+    console.info('[instagram-provider] direct FastVideoSave merged Reel candidate resolved:', JSON.stringify({
+      host: new URL(result.url).hostname,
+      quality: direct.quality ?? null,
+      ms: Date.now() - startedAt,
+    }));
+    cacheProviderVideo(target, result);
+    return result;
+  } catch (error) {
+    const message = error?.message || String(error);
+    failures.push(`fastvideosave-direct:${message}`);
+    console.warn('[instagram-provider] direct FastVideoSave failed:', message);
+  }
+
   const providers = [
-    { name: 'sssinstagram', run: runSss, attempts: 2 },
+    { name: 'sssinstagram', run: runSss, attempts: 1 },
     { name: 'fastvideosave', run: runFastVideoSave, attempts: 1 },
   ];
-  const failures = [];
-  const startedAt = Date.now();
   let browser = null;
 
   try {
-    browser = await launchBrowser();
+    const remainingForBrowser = PROVIDER_TOTAL_TIMEOUT_MS - (Date.now() - startedAt);
+    if (remainingForBrowser <= 1000) throw new Error('provider-total-timeout-before-browser');
+    browser = await withTimeout(launchBrowser(), Math.min(PROVIDER_BROWSER_TIMEOUT_MS, remainingForBrowser), 'provider-browser-launch-timeout');
 
     for (const provider of providers) {
       for (let attempt = 1; attempt <= provider.attempts; attempt += 1) {
@@ -317,8 +423,8 @@ export async function resolveInstagramProviderVideo(rawUrl) {
         if (remaining <= 1000) break;
 
         if (!browser?.isConnected()) {
-          await browser?.close().catch(() => {});
-          browser = await launchBrowser();
+          await boundedClose(browser?.close());
+          browser = await withTimeout(launchBrowser(), Math.min(PROVIDER_BROWSER_TIMEOUT_MS, remaining), 'provider-browser-relaunch-timeout');
         }
 
         try {
@@ -335,12 +441,13 @@ export async function resolveInstagramProviderVideo(rawUrl) {
           failures.push(`${provider.name}#${attempt}:${message}`);
           console.warn('[instagram-provider] provider failed:', provider.name, `attempt=${attempt}`, message);
           if (isDefinitiveFailure(message)) break;
-          if (attempt < provider.attempts) await sleep(650);
         }
       }
     }
+  } catch (error) {
+    failures.push(`browser:${error?.message || String(error)}`);
   } finally {
-    await browser?.close().catch(() => {});
+    await boundedClose(browser?.close());
   }
 
   const out = new Error(`Instagram provider fallback failed (${failures.join('; ')})`);

@@ -52,6 +52,26 @@ async function prepareStatusFromSourceUrl(url, platform) {
   return prepareWhatsAppStatusHQ({ sourceUrl: url, platform, video: best, audio });
 }
 
+async function prepareStatusFromTelegramFile(fileId, { galleryCompatible = false, requireAudio = false } = {}) {
+  const telegramVideo = await getTelegramFileSource(fileId);
+  const prepared = await prepareWhatsAppStatusHQ({
+    sourceUrl: '',
+    platform: 'telegram',
+    video: telegramVideo,
+    audio: null,
+    galleryCompatible,
+  });
+
+  if (requireAudio && !prepared?.profile?.hasAudio) {
+    await prepared?.cleanup?.().catch(() => {});
+    const error = new Error('Telegram copy of the Instagram video has no audio track.');
+    error.code = 'INSTAGRAM_TELEGRAM_AUDIO_MISSING';
+    throw error;
+  }
+
+  return prepared;
+}
+
 export async function processStatusFromLink(chatId, url, platform, fence = null) {
   let prepared = null;
   const progress = await startStatusProgress(chatId);
@@ -176,6 +196,23 @@ export async function processStatusButton(callbackQuery, context = {}) {
     } else {
       prepared = await localMediaLane(async () => {
         let sourceError = null;
+        let instagramTelegramError = null;
+
+        // A social-media video already sent by the bot is the most faithful copy
+        // of what the user actually heard before pressing Premium+ HQ. Instagram
+        // can return a video-only stream when the original Reel URL is fetched
+        // again, so preserve the Telegram copy first and verify that it has audio.
+        if (sourcePlatform === 'instagram') {
+          try {
+            return await prepareStatusFromTelegramFile(fileId, {
+              galleryCompatible: Boolean(gallery),
+              requireAudio: true,
+            });
+          } catch (error) {
+            instagramTelegramError = error;
+            console.warn('[status-hq/instagram] Telegram copy had no usable audio; trying original source recovery:', error?.code, error?.message);
+          }
+        }
 
         if (sourceUrl && sourcePlatform) {
           try {
@@ -186,14 +223,15 @@ export async function processStatusButton(callbackQuery, context = {}) {
           }
         }
 
+        if (sourcePlatform === 'instagram' && instagramTelegramError) {
+          if (sourceError) throw sourceError;
+          throw instagramTelegramError;
+        }
+
         try {
-          const telegramVideo = await getTelegramFileSource(fileId);
-          return await prepareWhatsAppStatusHQ({
-            sourceUrl: '',
-            platform: 'telegram',
-            video: telegramVideo,
-            audio: null,
+          return await prepareStatusFromTelegramFile(fileId, {
             galleryCompatible: Boolean(gallery),
+            requireAudio: false,
           });
         } catch (telegramError) {
           if (sourceError) throw sourceError;

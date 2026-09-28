@@ -1,6 +1,7 @@
 import { prepareWhatsAppStatusHQ } from '../status-hq.js';
 import { prepareWhatsAppStatusImageHQ } from '../status-image-hq.js';
 import { detectPlatform } from '../platform.js';
+import { resolveInstagramAudio } from '../instagram-audio.js';
 import { getTelegramFileSource, sendChatAction, sendMessage, sendVideoFileUpload, telegram } from '../telegram.js';
 import { dispatchHeavyMediaJob, heavyVideoLimitBytes, heavyWorkerConfigured, shouldUseHeavyWorker } from '../heavy-worker-dispatch.js';
 import { isJobFenceActive } from '../recovery.js';
@@ -25,18 +26,6 @@ async function prepareStatusFromSourceUrl(url, platform) {
     return prepareWhatsAppStatusHQ({ sourceUrl: url, platform, video: null, audio: null });
   }
 
-  // Instagram Reels can expose an adaptive/video-only direct stream even when
-  // the original post has audio. For Premium+ HQ, prefer yt-dlp against the
-  // original Reel URL so bestvideo+bestaudio is merged before the HQ encode.
-  // If this route fails, keep the old resolver/direct-stream path as fallback.
-  if (platform === 'instagram') {
-    try {
-      return await prepareWhatsAppStatusHQ({ sourceUrl: url, platform, video: null, audio: null });
-    } catch (error) {
-      console.warn('[status-hq/instagram] merged A/V source failed, trying resolver fallback:', error?.code, error?.message);
-    }
-  }
-
   const media = await resolveMedia(platform, url);
   const best = chooseBestVideo(media?.videos || []);
   if (!best) {
@@ -44,9 +33,22 @@ async function prepareStatusFromSourceUrl(url, platform) {
     error.code = 'STATUS_SOURCE_NOT_FOUND';
     throw error;
   }
-  const audio = Array.isArray(media?.audios)
+
+  let audio = Array.isArray(media?.audios)
     ? media.audios.find((item) => item?.url) || null
     : null;
+
+  if (platform === 'instagram' && !audio) {
+    try {
+      audio = await resolveInstagramAudio(url);
+    } catch (error) {
+      console.warn('[status-hq/instagram] Reel audio metadata recovery failed:', error?.code, error?.message);
+      const missing = new Error('Instagram Reel audio could not be recovered safely.');
+      missing.code = 'INSTAGRAM_AUDIO_NOT_FOUND';
+      throw missing;
+    }
+  }
+
   return prepareWhatsAppStatusHQ({ sourceUrl: url, platform, video: best, audio });
 }
 
@@ -144,7 +146,6 @@ export async function processStatusButton(callbackQuery, context = {}) {
         sourceMessageId: gallery.sourceMessageId,
         completionCallbackUrl: baseUrl ? `${baseUrl}/api/premium-hq-success` : '',
       });
-      // The worker records Premium + HQ only after sendVideo succeeds.
       return { premiumVideoDispatched: true };
     } catch (error) {
       console.error('[status-hq/heavy] dispatch failed:', error?.code, error?.message);

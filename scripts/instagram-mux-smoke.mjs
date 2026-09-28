@@ -42,7 +42,7 @@ function cleanHeaders(value = {}) {
 }
 
 async function downloadForProbe(candidate, info, filePath) {
-  const headers = cleanHeaders(candidate?.http_headers || info?.http_headers || {});
+  const headers = cleanHeaders(candidate?.headers || candidate?.http_headers || info?.http_headers || {});
   if (!headers.Referer && !headers.referer) headers.Referer = 'https://www.instagram.com/';
   const response = await fetch(candidate.url, { redirect: 'follow', headers, signal: AbortSignal.timeout(30000) });
   if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
@@ -59,6 +59,27 @@ async function downloadForProbe(candidate, info, filePath) {
   });
   await pipeline(Readable.fromWeb(response.body.pipeThrough(limiter)), createWriteStream(filePath));
   return total;
+}
+
+async function probeResolvedVideo(candidate) {
+  const temp = await mkdtemp(path.join(tmpdir(), 'ig-resolved-probe-'));
+  const filePath = path.join(temp, 'resolved.mp4');
+  try {
+    const bytes = await downloadForProbe(candidate, {}, filePath);
+    const result = await probe(filePath);
+    console.log('INSTAGRAM_RESOLVED_VIDEO_PROBE_RESULT', JSON.stringify({
+      source: candidate?.source || null,
+      claimedHasAudio: candidate?.hasAudio ?? null,
+      bytes,
+      hasVideo: result.hasVideo,
+      hasAudio: result.hasAudio,
+      video: result.video.slice(0, 220),
+      audio: result.audio.slice(0, 220),
+    }));
+    return { result, bytes };
+  } finally {
+    await rm(temp, { recursive: true, force: true }).catch(() => {});
+  }
 }
 
 async function probeProgressiveCandidates(targetUrl) {
@@ -120,14 +141,9 @@ async function probeProgressiveCandidates(targetUrl) {
           video: result.video.slice(0, 220),
           audio: result.audio.slice(0, 220),
         }));
-        if (result.hasVideo && result.hasAudio) {
-          return { candidate, result, bytes: fileStat.size || bytes };
-        }
+        if (result.hasVideo && result.hasAudio) return { candidate, result, bytes: fileStat.size || bytes };
       } catch (error) {
-        console.warn('INSTAGRAM_PROGRESSIVE_PROBE_ERROR', JSON.stringify({
-          id: candidate?.format_id || null,
-          error: error?.message || String(error),
-        }));
+        console.warn('INSTAGRAM_PROGRESSIVE_PROBE_ERROR', JSON.stringify({ id: candidate?.format_id || null, error: error?.message || String(error) }));
       }
     }
   } finally {
@@ -149,9 +165,26 @@ async function main() {
   if (!video?.url) throw new Error('Instagram mux smoke: video stream missing');
 
   if (!audio?.url) {
+    const resolved = await probeResolvedVideo(video).catch((error) => {
+      console.warn('INSTAGRAM_RESOLVED_VIDEO_PROBE_ERROR', error?.message || error);
+      return null;
+    });
+    if (resolved?.result?.hasVideo && resolved?.result?.hasAudio) {
+      console.log('INSTAGRAM_MUX_SMOKE_PASSED', JSON.stringify({
+        ok: true,
+        mode: 'resolved-provider-av',
+        ms: Date.now() - started,
+        source: video?.source || null,
+        bytes: resolved.bytes,
+        outputVideo: resolved.result.video.slice(0, 260),
+        outputAudio: resolved.result.audio.slice(0, 260),
+      }));
+      return;
+    }
+
     console.warn('INSTAGRAM_MUX_SMOKE_NO_SEPARATE_AUDIO; probing progressive MP4 candidates');
     const progressive = await probeProgressiveCandidates(media?.canonicalUrl || url);
-    if (!progressive) throw new Error('Instagram mux smoke: no separate audio and progressive MP4 files are physically silent');
+    if (!progressive) throw new Error('Instagram mux smoke: no separate audio; resolved provider and progressive MP4 files are physically silent/unavailable');
     console.log('INSTAGRAM_MUX_SMOKE_PASSED', JSON.stringify({
       ok: true,
       mode: 'progressive-av',
@@ -166,13 +199,9 @@ async function main() {
 
   let prepared = null;
   try {
-    prepared = await prepareInstagramVideoWithAudio(video, audio, 50 * 1024 * 1024, {
-      sourceUrl: media?.canonicalUrl || url,
-    });
+    prepared = await prepareInstagramVideoWithAudio(video, audio, 50 * 1024 * 1024, { sourceUrl: media?.canonicalUrl || url });
     const result = await probe(prepared.filePath);
-    if (!result.hasVideo || !result.hasAudio) {
-      throw new Error(`Instagram mux smoke output invalid: video=${result.hasVideo} audio=${result.hasAudio}`);
-    }
+    if (!result.hasVideo || !result.hasAudio) throw new Error(`Instagram mux smoke output invalid: video=${result.hasVideo} audio=${result.hasAudio}`);
     console.log('INSTAGRAM_MUX_SMOKE_PASSED', JSON.stringify({
       ok: true,
       mode: 'separate-audio-mux',

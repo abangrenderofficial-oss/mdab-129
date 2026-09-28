@@ -38,7 +38,39 @@ async function prepareStatusFromSourceUrl(url, platform) {
     ? media.audios.find((item) => item?.url) || null
     : null;
 
-  if (platform === 'instagram' && !audio) {
+  if (platform !== 'instagram') {
+    return prepareWhatsAppStatusHQ({ sourceUrl: url, platform, video: best, audio });
+  }
+
+  // IMPORTANT: Instagram resolvers can return a direct MP4 that already contains
+  // the audible Reel mix even when media.audios[] is empty. Production used to
+  // treat an empty audios[] as proof that audio was missing and immediately call
+  // the separate metadata recovery endpoint. That endpoint can be rate-limited
+  // (HTTP 403), causing Premium+ HQ to fail even though the direct MP4 itself had
+  // perfectly usable audio. Always try + verify the direct resolved video first.
+  let directPrepared = null;
+  try {
+    directPrepared = await prepareWhatsAppStatusHQ({
+      sourceUrl: '',
+      platform: 'instagram-direct',
+      video: best,
+      audio,
+    });
+    if (directPrepared?.profile?.hasAudio) {
+      console.info('[status-hq/instagram] using direct resolved Instagram video with embedded audio.');
+      return directPrepared;
+    }
+    console.warn('[status-hq/instagram] direct resolved video had no audio; trying Reel audio recovery.');
+  } catch (error) {
+    console.warn('[status-hq/instagram] direct resolved video preparation failed; trying Reel audio recovery:', error?.code, error?.message);
+  }
+
+  if (directPrepared?.cleanup) {
+    await directPrepared.cleanup().catch(() => {});
+    directPrepared = null;
+  }
+
+  if (!audio) {
     try {
       audio = await resolveInstagramAudio(url);
     } catch (error) {
@@ -49,7 +81,14 @@ async function prepareStatusFromSourceUrl(url, platform) {
     }
   }
 
-  return prepareWhatsAppStatusHQ({ sourceUrl: url, platform, video: best, audio });
+  const recovered = await prepareWhatsAppStatusHQ({ sourceUrl: url, platform, video: best, audio });
+  if (!recovered?.profile?.hasAudio) {
+    await recovered?.cleanup?.().catch(() => {});
+    const missing = new Error('Instagram Reel Premium+ HQ source still has no audio after recovery.');
+    missing.code = 'INSTAGRAM_AUDIO_MISSING_AFTER_RECOVERY';
+    throw missing;
+  }
+  return recovered;
 }
 
 async function prepareStatusFromTelegramFile(fileId, { galleryCompatible = false, requireAudio = false } = {}) {
@@ -198,10 +237,6 @@ export async function processStatusButton(callbackQuery, context = {}) {
         let sourceError = null;
         let instagramTelegramError = null;
 
-        // A social-media video already sent by the bot is the most faithful copy
-        // of what the user actually heard before pressing Premium+ HQ. Instagram
-        // can return a video-only stream when the original Reel URL is fetched
-        // again, so preserve the Telegram copy first and verify that it has audio.
         if (sourcePlatform === 'instagram') {
           try {
             return await prepareStatusFromTelegramFile(fileId, {

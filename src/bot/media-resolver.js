@@ -2,6 +2,7 @@ import { parseMedia, chooseBestVideo, needsCustomHeaders } from '../downloader.j
 import { resolveInstagramAudio } from '../instagram-audio.js';
 import { resolveInstagramYtDlpAudio } from '../instagram-ytdlp-audio.js';
 import { resolveInstagramProviderVideo } from '../instagram-provider-fallback.js';
+import { isInstagramStoryUrl, resolveInstagramStory } from '../instagram-story.js';
 import { parseThreadsPost } from '../threads.js';
 import { parseTwitterVideo } from '../twitter.js';
 import { parseYouTubeFree } from '../youtube-free.js';
@@ -162,6 +163,13 @@ async function resolveTikTok(url) {
 }
 
 async function resolveInstagram(url) {
+  // Story URLs use a different Instagram delivery path from Reels/posts. Resolve
+  // the exact Story item first so yt-dlp/Reel-specific fallbacks do not reject it.
+  if (isInstagramStoryUrl(url)) {
+    console.info('[instagram-resolver] Instagram Story URL detected; using Story resolver');
+    return resolveInstagramStory(url);
+  }
+
   const media = await parseMedia(url);
   const canonicalUrl = media?.canonicalUrl || url;
   const videos = Array.isArray(media?.videos) ? media.videos.filter((item) => item?.url) : [];

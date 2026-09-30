@@ -6,6 +6,19 @@ export const MEDIA_STATUS_HQ_ANDROID = 'media:status:a1';
 export const MEDIA_STATUS_HQ_MENU = 'media:status:m1';
 export const MEDIA_LIVE_WALLPAPER = 'media:live:v1';
 
+function decodeBase36BigInt(value = '') {
+  const text = String(value || '').toLowerCase();
+  if (!/^[0-9a-z]+$/.test(text)) return '';
+  let total = 0n;
+  for (const char of text) {
+    const code = char.charCodeAt(0);
+    const digit = code >= 48 && code <= 57 ? code - 48 : code - 87;
+    if (digit < 0 || digit >= 36) return '';
+    total = (total * 36n) + BigInt(digit);
+  }
+  return total.toString(10);
+}
+
 function compactMediaSourceToken(sourceUrl = '') {
   const raw = String(sourceUrl || '').trim();
   if (!raw) return '';
@@ -21,6 +34,19 @@ function compactMediaSourceToken(sourceUrl = '') {
         const token = parsed.pathname.split('/').filter(Boolean)[0] || '';
         if (/^[A-Za-z0-9_-]{4,40}$/.test(token)) return `vt:${token}`;
       }
+    }
+
+    if (host === 'instagram.com' || host.endsWith('.instagram.com')) {
+      const story = parsed.pathname.match(/^\/stories\/([A-Za-z0-9._]{1,30})\/(\d{8,25})/i);
+      if (story?.[1] && story?.[2]) {
+        return `s:${story[1]}:${BigInt(story[2]).toString(36)}`;
+      }
+
+      const reel = parsed.pathname.match(/^\/(?:reel|reels)\/([A-Za-z0-9_-]{4,40})/i)?.[1] || '';
+      if (reel) return `r:${reel}`;
+
+      const post = parsed.pathname.match(/^\/(?:p|tv)\/([A-Za-z0-9_-]{4,40})/i)?.[1] || '';
+      if (post) return `i:${post}`;
     }
 
     if (host === 'youtu.be' || host === 'www.youtu.be') {
@@ -142,6 +168,18 @@ export function callbackSourceUrl(action, prefix, caption = '') {
 
   const shortToken = embedded.match(/^vt:([A-Za-z0-9_-]{4,40})$/)?.[1] || '';
   if (shortToken) return `https://vt.tiktok.com/${shortToken}/`;
+
+  const storyMatch = embedded.match(/^s:([A-Za-z0-9._]{1,30}):([0-9a-z]+)$/i);
+  if (storyMatch?.[1] && storyMatch?.[2]) {
+    const storyId = decodeBase36BigInt(storyMatch[2]);
+    if (storyId) return `https://www.instagram.com/stories/${storyMatch[1]}/${storyId}/`;
+  }
+
+  const reelCode = embedded.match(/^r:([A-Za-z0-9_-]{4,40})$/)?.[1] || '';
+  if (reelCode) return `https://www.instagram.com/reel/${reelCode}/`;
+
+  const postCode = embedded.match(/^i:([A-Za-z0-9_-]{4,40})$/)?.[1] || '';
+  if (postCode) return `https://www.instagram.com/p/${postCode}/`;
 
   const youtubeId = embedded.match(/^yt:([A-Za-z0-9_-]{6,20})$/)?.[1] || '';
   if (youtubeId) return `https://www.youtube.com/watch?v=${youtubeId}`;

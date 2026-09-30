@@ -3,6 +3,8 @@ import { prepareWhatsAppStatusImageHQ } from '../status-image-hq.js';
 import { detectPlatform } from '../platform.js';
 import { resolveInstagramAudio } from '../instagram-audio.js';
 import { resolveInstagramYtDlpAudio } from '../instagram-ytdlp-audio.js';
+import { isInstagramStoryUrl } from '../instagram-story.js';
+import { prepareInstagramStoryStatusHQ } from '../instagram-story-status-hq.js';
 import { getTelegramFileSource, sendChatAction, sendMessage, sendVideoFileUpload, telegram } from '../telegram.js';
 import { dispatchHeavyMediaJob, heavyVideoLimitBytes, heavyWorkerConfigured, shouldUseHeavyWorker } from '../heavy-worker-dispatch.js';
 import { isJobFenceActive } from '../recovery.js';
@@ -22,7 +24,7 @@ function cancelled(fence) {
   return fence && !isJobFenceActive(fence);
 }
 
-async function prepareStatusFromSourceUrl(url, platform) {
+export async function prepareStatusFromSourceUrl(url, platform) {
   if (platform === 'youtube') {
     return prepareWhatsAppStatusHQ({ sourceUrl: url, platform, video: null, audio: null });
   }
@@ -41,6 +43,15 @@ async function prepareStatusFromSourceUrl(url, platform) {
 
   if (platform !== 'instagram') {
     return prepareWhatsAppStatusHQ({ sourceUrl: url, platform, video: best, audio });
+  }
+
+  // Story gets its own preservation-first Status profile. Always start from the
+  // original Story playback asset instead of Telegram's already-processed copy.
+  // The Story provider gives the final playback asset, including attached music
+  // when present, so no Reel-specific social-audio recovery is needed here.
+  if (isInstagramStoryUrl(url)) {
+    console.info('[status-hq/instagram-story] using original Story source + Story-specific compression');
+    return prepareInstagramStoryStatusHQ({ video: best, sourceUrl: url });
   }
 
   // Instagram Reels can expose a video-only MP4 while the audible Reel mix lives
@@ -165,6 +176,7 @@ export async function processStatusButton(callbackQuery, context = {}) {
   const caption = callbackQuery?.message?.caption || '';
   const sourceUrl = callbackSourceUrl(action, MEDIA_STATUS_HQ, caption);
   const sourcePlatform = sourceUrl ? detectPlatform(sourceUrl) : null;
+  const instagramStorySource = sourcePlatform === 'instagram' && isInstagramStoryUrl(sourceUrl);
   const gallery = galleryMediaMeta(action, MEDIA_STATUS_HQ);
   const fileSize = Number(video?.file_size || gallery?.fileSize || 0);
   const heavyCandidate = Boolean(!isImage && gallery && videoFileId && shouldUseHeavyWorker({ file_size: fileSize }));
@@ -248,7 +260,20 @@ export async function processStatusButton(callbackQuery, context = {}) {
         let sourceError = null;
         let instagramTelegramError = null;
 
-        if (sourcePlatform === 'instagram') {
+        // Story is intentionally source-first. Its downloaded Telegram copy may
+        // already have gone through a generation of compression, which is exactly
+        // what made Story Premium+ HQ visibly softer than Reel Premium+ HQ.
+        if (instagramStorySource) {
+          try {
+            return await prepareStatusFromSourceUrl(sourceUrl, sourcePlatform);
+          } catch (error) {
+            sourceError = error;
+            console.warn('[status-hq/instagram-story] original Story source failed; trying Telegram copy:', error?.code, error?.message);
+          }
+        }
+
+        // Keep the existing Reel behaviour untouched.
+        if (sourcePlatform === 'instagram' && !instagramStorySource) {
           try {
             return await prepareStatusFromTelegramFile(fileId, {
               galleryCompatible: Boolean(gallery),
@@ -260,7 +285,7 @@ export async function processStatusButton(callbackQuery, context = {}) {
           }
         }
 
-        if (sourceUrl && sourcePlatform) {
+        if (sourceUrl && sourcePlatform && !instagramStorySource) {
           try {
             return await prepareStatusFromSourceUrl(sourceUrl, sourcePlatform);
           } catch (error) {
@@ -269,7 +294,7 @@ export async function processStatusButton(callbackQuery, context = {}) {
           }
         }
 
-        if (sourcePlatform === 'instagram' && instagramTelegramError) {
+        if (sourcePlatform === 'instagram' && !instagramStorySource && instagramTelegramError) {
           if (sourceError) throw sourceError;
           throw instagramTelegramError;
         }

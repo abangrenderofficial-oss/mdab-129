@@ -11,8 +11,15 @@ import { promisify } from 'node:util';
 import ffmpegPath from 'ffmpeg-static';
 
 const execFileAsync = promisify(execFile);
-const url = String(process.env.INSTAGRAM_STORY_SMOKE_URL || '').trim();
+const rawUrl = String(process.env.INSTAGRAM_STORY_SMOKE_URL || '').trim();
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36';
+
+function canonicalStoryUrl(value) {
+  const input = new URL(value);
+  const match = input.pathname.match(/^\/stories\/([^/?#]+)\/(\d+)/i);
+  if (!match?.[1] || !match?.[2]) throw new Error('instagram-story-url-invalid');
+  return `https://www.instagram.com/stories/${match[1]}/${match[2]}/`;
+}
 
 function looksVideo(value = '') {
   const v = String(value || '');
@@ -61,25 +68,27 @@ async function probeUrl(mediaUrl) {
 }
 
 async function main() {
-  if (!/instagram\.com\/stories\/[^/]+\/\d+/i.test(url)) {
+  if (!/instagram\.com\/stories\/[^/]+\/\d+/i.test(rawUrl)) {
     console.log('INSTAGRAM_STORY_SSS_PROBE_SKIPPED');
     return;
   }
+  const url = canonicalStoryUrl(rawUrl);
   const started = Date.now();
   const executablePath = await chromiumPack.executablePath();
   const browser = await playwrightChromium.launch({ args: chromiumPack.args, executablePath, headless: true, timeout: 12000 });
   try {
     const context = await browser.newContext({ userAgent: UA, viewport: { width: 1280, height: 900 }, locale: 'en-US' });
     const page = await context.newPage();
-    await page.goto('https://sssinstagram.com/en1/story-saver', { waitUntil: 'domcontentloaded', timeout: 12000 });
-    const input = page.locator('input[type="text"], input[name="url"], input#main_page_text').first();
-    await input.waitFor({ timeout: 6000 });
+    await page.goto('https://sssinstagram.com/story-saver', { waitUntil: 'domcontentloaded', timeout: 12000 });
+    console.log('INSTAGRAM_STORY_SSS_PAGE', JSON.stringify({ finalUrl: page.url(), title: await page.title().catch(() => '') }));
+    const input = page.locator('input[type="text"], input[name="url"], input#main_page_text, input[placeholder*="Paste" i]').first();
+    await input.waitFor({ timeout: 8000 });
     await input.fill(url);
-    const responsePromise = page.waitForResponse((response) => /\/api\/convert/i.test(response.url()) && response.request().method() === 'POST', { timeout: 12000 });
+    const responsePromise = page.waitForResponse((response) => /\/api\/convert/i.test(response.url()) && response.request().method() === 'POST', { timeout: 15000 });
     const button = page.locator('button[type="submit"], button:has-text("Download")').first();
-    const [response] = await Promise.all([responsePromise, button.click({ timeout: 6000 })]);
+    const [response] = await Promise.all([responsePromise, button.click({ timeout: 8000 })]);
     const text = await response.text();
-    console.log('INSTAGRAM_STORY_SSS_RESPONSE', JSON.stringify({ status: response.status(), ms: Date.now() - started, bytes: text.length, prefix: text.slice(0, 160).replace(/https?:\/\/[^"' ]+/g, '<url>') }));
+    console.log('INSTAGRAM_STORY_SSS_RESPONSE', JSON.stringify({ status: response.status(), ms: Date.now() - started, bytes: text.length, prefix: text.slice(0, 180).replace(/https?:\/\/[^"' ]+/g, '<url>') }));
     const data = JSON.parse(text);
     const candidates = [...new Set(collect(data))];
     if (!candidates.length) throw new Error('sss-story-no-video');

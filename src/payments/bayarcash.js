@@ -28,6 +28,8 @@ const PAYMENT_CHANNEL_LABELS = {
   23: 'FPX B2B',
 };
 
+const PREFERRED_PAYMENT_CHANNELS = [6, 5, 1, 12, 16, 17, 18, 21, 4, 23, 7, 8, 9, 10, 11, 13, 14, 15, 19, 20, 2, 3];
+
 const TRANSACTION_CALLBACK_FIELDS = [
   'record_type',
   'transaction_id',
@@ -85,7 +87,7 @@ function normalizeAmount(value) {
 function checksum(secret, payload) {
   const values = Object.keys(payload)
     .sort()
-    .map((key) => String(payload[key] ?? ''));
+    .map((key) => String(payload[key] ?? '').trim());
   return createHmac('sha256', secret).update(values.join('|')).digest('hex');
 }
 
@@ -143,7 +145,7 @@ function payerPhone() {
   return sandboxPhone || String(process.env.BAYARCASH_PAYER_PHONE || '').trim();
 }
 
-function publicUrls(publicBaseUrl) {
+function publicUrls(publicBaseUrl, orderNumber) {
   const base = String(publicBaseUrl || process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
   if (!base) {
     const error = new Error('PUBLIC_BASE_URL is required for Bayarcash callback.');
@@ -152,7 +154,7 @@ function publicUrls(publicBaseUrl) {
   }
   return {
     callbackUrl: `${base}/api/bayarcash`,
-    returnUrl: `${base}/api/support-return`,
+    returnUrl: `${base}/api/support-return?order=${encodeURIComponent(orderNumber)}`,
   };
 }
 
@@ -190,6 +192,14 @@ async function bayarcashJsonRequest({ apiToken, path, method = 'GET', data = nul
   }
 
   return body;
+}
+
+export function choosePreferredPaymentChannel(channels = []) {
+  for (const id of PREFERRED_PAYMENT_CHANNELS) {
+    const found = channels.find((channel) => Number(channel?.id) === id);
+    if (found) return found;
+  }
+  return channels[0] || null;
 }
 
 export async function getBayarcashPortalDiagnostic() {
@@ -232,6 +242,36 @@ export async function getBayarcashPortalDiagnostic() {
   };
 }
 
+export async function getBayarcashPaymentIntent(paymentIntentId) {
+  const id = String(paymentIntentId || '').trim();
+  if (!id) {
+    const error = new Error('Payment intent ID is required.');
+    error.code = 'BAYARCASH_PAYMENT_INTENT_ID_REQUIRED';
+    throw error;
+  }
+  const apiToken = requiredCredential('API_TOKEN');
+  const body = await bayarcashJsonRequest({
+    apiToken,
+    path: `payment-intents/${encodeURIComponent(id)}`,
+    errorCode: 'BAYARCASH_PAYMENT_INTENT_LOOKUP_FAILED',
+  });
+  return body?.data && !body?.id ? body.data : body;
+}
+
+export async function getBayarcashTransactionsByOrderNumber(orderNumber) {
+  const order = String(orderNumber || '').trim();
+  if (!order) return [];
+  const apiToken = requiredCredential('API_TOKEN');
+  const body = await bayarcashJsonRequest({
+    apiToken,
+    path: `transactions?order_number=${encodeURIComponent(order)}`,
+    errorCode: 'BAYARCASH_TRANSACTION_LOOKUP_FAILED',
+  });
+  if (Array.isArray(body?.data)) return body.data;
+  if (Array.isArray(body)) return body;
+  return [];
+}
+
 async function postPaymentIntent({ apiToken, data }) {
   const body = await bayarcashJsonRequest({
     apiToken,
@@ -262,16 +302,28 @@ export async function createSupportPayment({
   const apiToken = requiredCredential('API_TOKEN');
   const apiSecret = requiredCredential('API_SECRET_KEY');
   const portalKey = requiredCredential('PORTAL_KEY');
-  const { callbackUrl, returnUrl } = publicUrls(publicBaseUrl);
   const normalizedAmount = normalizeAmount(amount);
   const finalOrderNumber = String(orderNumber || createSupportOrderNumber()).slice(0, 30);
+  const { callbackUrl, returnUrl } = publicUrls(publicBaseUrl, finalOrderNumber);
   const requestedChannel = Number(paymentChannel || 0);
-  const forcedChannel = Number.isSafeInteger(requestedChannel) && requestedChannel > 0
+  let finalChannel = Number.isSafeInteger(requestedChannel) && requestedChannel > 0
     ? requestedChannel
     : explicitPaymentChannel();
 
+  if (!finalChannel) {
+    const diagnostic = await getBayarcashPortalDiagnostic();
+    finalChannel = Number(choosePreferredPaymentChannel(diagnostic.paymentChannels)?.id || 0);
+  }
+
+  if (!Number.isSafeInteger(finalChannel) || finalChannel <= 0) {
+    const error = new Error('Bayarcash portal has no active payment channel.');
+    error.code = 'BAYARCASH_NO_ACTIVE_CHANNEL';
+    throw error;
+  }
+
   const data = {
     portal_key: portalKey,
+    payment_channel: finalChannel,
     order_number: finalOrderNumber,
     amount: normalizedAmount,
     payer_name: payerName(user),
@@ -280,23 +332,29 @@ export async function createSupportPayment({
     return_url: returnUrl,
   };
 
-  if (forcedChannel) data.payment_channel = forcedChannel;
-
   const phone = payerPhone();
   if (phone) data.payer_telephone_number = phone;
 
   data.checksum = paymentIntentChecksum(apiSecret, data);
   const result = await postPaymentIntent({ apiToken, data });
+  const rawIntent = result.body?.data && !result.body?.id ? result.body.data : result.body;
+  const paymentIntentId = rawIntent?.id || null;
+
+  console.log('[bayarcash] payment intent created', {
+    environment: isBayarcashSandbox() ? 'sandbox' : 'production',
+    order_number: finalOrderNumber,
+    payment_intent_id: paymentIntentId,
+    amount: normalizedAmount,
+    payment_channel: finalChannel,
+  });
 
   return {
     orderNumber: finalOrderNumber,
     amount: normalizedAmount,
     url: result.paymentUrl,
-    paymentIntentId: result.body?.id || result.body?.data?.id || null,
-    paymentChannel: forcedChannel,
-    paymentChannelLabel: forcedChannel
-      ? (PAYMENT_CHANNEL_LABELS[forcedChannel] || `Channel ${forcedChannel}`)
-      : 'Choose at Bayarcash checkout',
+    paymentIntentId,
+    paymentChannel: finalChannel,
+    paymentChannelLabel: PAYMENT_CHANNEL_LABELS[finalChannel] || `Channel ${finalChannel}`,
     sandbox: isBayarcashSandbox(),
     raw: result.body,
   };
@@ -308,7 +366,7 @@ export function verifyTransactionCallback(payload = {}) {
   if (!secret || !provided) return false;
 
   const signed = {};
-  for (const field of TRANSACTION_CALLBACK_FIELDS) signed[field] = String(payload?.[field] ?? '');
+  for (const field of TRANSACTION_CALLBACK_FIELDS) signed[field] = String(payload?.[field] ?? '').trim();
   const expected = checksum(secret, signed);
 
   const a = Buffer.from(expected);

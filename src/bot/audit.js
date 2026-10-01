@@ -1,5 +1,6 @@
 import { platformLabel } from '../platform.js';
-import { sendMessage, telegram } from '../telegram.js';
+import { isResetAdmin } from '../recovery.js';
+import { getTelegramChat, sendMessage, telegram } from '../telegram.js';
 
 const AUDIT_DELETE = 'audit:delete:v1';
 
@@ -47,14 +48,26 @@ async function latestProfilePhotoFileId(userId) {
   }
 }
 
+async function requireMirrorGroup(mirrorGroupId) {
+  const chat = await getTelegramChat(mirrorGroupId);
+  if (!['group', 'supergroup'].includes(chat?.type)) {
+    const error = new Error('Video monitoring destination must be a Telegram group or supergroup.');
+    error.code = 'MIRROR_GROUP_REQUIRED';
+    throw error;
+  }
+  if (String(chat.id || '') !== String(mirrorGroupId || '')) {
+    const error = new Error('Video monitoring destination does not match the connected group.');
+    error.code = 'MIRROR_GROUP_MISMATCH';
+    throw error;
+  }
+  return chat;
+}
+
 async function mirrorVideoByFileId(mirrorGroupId, sentMessage, caption, profileMessageId) {
   const fileId = String(sentMessage?.video?.file_id || '');
   if (!fileId) return false;
 
   try {
-    // Re-send the exact Telegram-hosted video instead of copying the source
-    // message presentation. Do not force width/height here: Telegram can use
-    // the stored media metadata and generate the correct group preview ratio.
     await telegram('sendVideo', {
       chat_id: mirrorGroupId,
       video: fileId,
@@ -72,6 +85,13 @@ async function mirrorVideoByFileId(mirrorGroupId, sentMessage, caption, profileM
 export async function mirrorMediaToGroup(sourceChatId, sentMessage, mirrorGroupId, from, audit = {}) {
   if (!mirrorGroupId || !sentMessage?.message_id) return false;
   if (String(sourceChatId) === String(mirrorGroupId)) return false;
+
+  try {
+    await requireMirrorGroup(mirrorGroupId);
+  } catch (error) {
+    console.error('[video-monitor] blocked invalid destination:', error?.code, error?.message);
+    return false;
+  }
 
   const caption = buildAuditCaption(from, audit);
   const profilePhotoId = await latestProfilePhotoFileId(from?.id);
@@ -149,6 +169,8 @@ export async function processAuditDelete(callbackQuery) {
 
 export async function setMirrorWebhook(baseUrl, mirrorGroupId = '', dropPendingUpdates = false) {
   if (!baseUrl) throw new Error('Public webhook base URL is unavailable.');
+  if (mirrorGroupId) await requireMirrorGroup(mirrorGroupId);
+
   const endpoint = new URL(`${baseUrl}/api/telegram`);
   if (mirrorGroupId) endpoint.searchParams.set('mirror_group', String(mirrorGroupId));
   await telegram('setWebhook', {
@@ -168,8 +190,12 @@ export async function handleConnectCommand(message, baseUrl, disconnect = false)
     await sendMessage(chatId, '❌ /connect hanya boleh digunakan di dalam group Telegram.');
     return;
   }
+  if (!isResetAdmin(userId)) {
+    await sendMessage(chatId, '❌ /connect dan /disconnect hanya untuk admin bot.');
+    return;
+  }
   if (!(await isGroupAdmin(chatId, userId))) {
-    await sendMessage(chatId, '❌ Hanya admin group boleh guna command ini.');
+    await sendMessage(chatId, '❌ Admin bot mesti juga menjadi admin group ini.');
     return;
   }
 
@@ -178,8 +204,8 @@ export async function handleConnectCommand(message, baseUrl, disconnect = false)
     await sendMessage(
       chatId,
       disconnect
-        ? '✅ Group ini sudah disconnect daripada mirror bot.'
-        : '✅ Connected. Mulai sekarang video yang user download melalui bot akan dicopy terus ke group ini bersama username user.',
+        ? '✅ Group ini sudah disconnect daripada pemantauan video.'
+        : '✅ Connected. Video pantauan hanya akan dihantar ke group ini. Channel Telegram tidak dibenarkan sebagai destination.',
     );
   } catch (error) {
     console.error('Connect webhook failed:', error?.message);

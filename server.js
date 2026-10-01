@@ -11,7 +11,11 @@ import statusDiagnosticHandler from './api/status-diagnostic.js';
 import bayarcashHandler from './api/bayarcash.js';
 import supportReturnHandler from './api/support-return.js';
 import premiumHqSuccessHandler from './api/premium-hq-success.js';
-import { isBayarcashConfigured, isBayarcashSandbox } from './src/payments/bayarcash.js';
+import {
+  getBayarcashPortalDiagnostic,
+  isBayarcashConfigured,
+  isBayarcashSandbox,
+} from './src/payments/bayarcash.js';
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
@@ -145,4 +149,22 @@ server.listen(port, '0.0.0.0', () => {
     environment: isBayarcashSandbox() ? 'sandbox' : 'production',
     configured: isBayarcashConfigured(),
   });
+
+  if (isBayarcashConfigured()) {
+    void getBayarcashPortalDiagnostic()
+      .then((diagnostic) => {
+        console.log('[bayarcash] portal diagnostic OK', {
+          environment: diagnostic.sandbox ? 'sandbox' : 'production',
+          portal_name: diagnostic.portalName,
+          active_channel_ids: diagnostic.paymentChannels.map((channel) => channel.id),
+        });
+      })
+      .catch((error) => {
+        console.error('[bayarcash] portal diagnostic FAILED', {
+          code: error?.code || null,
+          status: error?.status || null,
+          message: error?.message || String(error),
+        });
+      });
+  }
 });

@@ -127,11 +127,7 @@ async function runWebhookUpdate(update, context) {
     }
 
     if (await processLiveWallpaperButton(callbackQuery, context)) {
-      if (action.startsWith(MEDIA_LIVE_WALLPAPER) && premiumResult?.premiumVideoCompleted) {
-        await recordUsage(userId, 'live_wallpaper');
-      } else if (action.startsWith(MEDIA_LIVE_WALLPAPER)) {
-        await recordUsage(userId, 'live_wallpaper');
-      }
+      if (action.startsWith(MEDIA_LIVE_WALLPAPER)) await recordUsage(userId, 'live_wallpaper');
       return;
     }
     if (await processTikTokSlideshowChoice(callbackQuery, context)) await recordUsage(userId, 'download');

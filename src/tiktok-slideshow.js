@@ -1,5 +1,5 @@
 import { createWriteStream } from 'node:fs';
-import { readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { rm, stat, writeFile } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { execFile } from 'node:child_process';
@@ -8,6 +8,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import ffmpegPath from 'ffmpeg-static';
+import { sendAudioFileUpload } from './telegram.js';
 
 const execFileAsync = promisify(execFile);
 const TIKWM_API = 'https://www.tikwm.com/api/';
@@ -176,8 +177,6 @@ export async function prepareTikTokSound(audio) {
     await import('node:fs/promises').then(({ rename }) => rename(tempPath, finalPath));
     paths.push(finalPath);
 
-    // Keep the downloadable filename identical to the TikTok sound title.
-    // Performer/creator is sent separately as Telegram audio metadata.
     const soundTitle = cleanName(audio.title);
     return {
       filePath: finalPath,
@@ -229,9 +228,6 @@ function videoPlan(durationSeconds, maxBytes, source, safety = 0.76) {
 }
 
 async function renderSlideshow(listPath, audioPath, outputPath, duration, plan) {
-  // Never stretch. Every slide is fitted inside a canvas that has the same
-  // aspect ratio as the source TikTok slideshow, then padded only if a slide
-  // itself has a different ratio.
   const filter = [
     `scale=${plan.width}:${plan.height}:force_original_aspect_ratio=decrease:flags=lanczos`,
     `pad=${plan.width}:${plan.height}:(ow-iw)/2:(oh-ih)/2:color=black`,
@@ -332,25 +328,14 @@ export async function prepareTikTokSlideshowVideo(slideshow, maxBytes) {
 }
 
 export async function sendTikTokSoundUpload(chatId, prepared, caption = '') {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) throw new Error('Telegram bot token is not configured.');
-
-  const buffer = await readFile(prepared.filePath);
-  const ext = path.extname(prepared.fileName).replace(/^\./, '').toLowerCase();
-  const mime = ext === 'm4a' ? 'audio/mp4' : ext === 'ogg' ? 'audio/ogg' : 'audio/mpeg';
-  const form = new FormData();
-  form.set('chat_id', String(chatId));
-  if (caption) form.set('caption', String(caption).slice(0, 1024));
-  if (prepared.title) form.set('title', prepared.title);
-  if (prepared.performer) form.set('performer', prepared.performer);
-  form.set('audio', new Blob([buffer], { type: mime }), prepared.fileName);
-
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendAudio`, {
-    method: 'POST',
-    body: form,
-    signal: AbortSignal.timeout(Number(process.env.TELEGRAM_UPLOAD_TIMEOUT_MS || 55000)),
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok || !payload?.ok) throw new Error(payload?.description || `Telegram sendAudio failed (${response.status}).`);
-  return payload.result;
+  return sendAudioFileUpload(
+    chatId,
+    prepared.filePath,
+    prepared.fileName,
+    caption,
+    {
+      ...(prepared.title ? { title: prepared.title } : {}),
+      ...(prepared.performer ? { performer: prepared.performer } : {}),
+    },
+  );
 }

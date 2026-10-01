@@ -16,6 +16,7 @@ import {
   isBayarcashConfigured,
   isBayarcashSandbox,
 } from './src/payments/bayarcash.js';
+import { startSupportPromotionScheduler } from './src/support/promotion.js';
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
@@ -149,6 +150,8 @@ server.listen(port, '0.0.0.0', () => {
     environment: isBayarcashSandbox() ? 'sandbox' : 'production',
     configured: isBayarcashConfigured(),
   });
+
+  startSupportPromotionScheduler();
 
   if (isBayarcashConfigured()) {
     void getBayarcashPortalDiagnostic()

@@ -287,19 +287,12 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
     await editSupportMessage(
       callbackQuery,
       [
-        `${tier.label}`,
+        `${tier.label} !`,
         '',
-        `${modeLabel()} Bayarcash`,
         `Amount: RM${Number(amount).toFixed(2)}`,
         `Support ID: ${payment.orderNumber}`,
         `Channel: ${payment.paymentChannelLabel}`,
         payment.paymentIntentId ? `Payment Intent: ${payment.paymentIntentId}` : '',
-        '',
-        isBayarcashSandbox()
-          ? 'Sandbox test sahaja — tiada duit sebenar.'
-          : 'LIVE payment — duit hanya dicaj selepas kau authorize payment di bank/wallet.',
-        '',
-        'Selepas bayar, tekan “Check Bayarcash” untuk semak status terus daripada gateway.',
       ].filter(Boolean).join('\n'),
       { inline_keyboard: keyboard },
     );

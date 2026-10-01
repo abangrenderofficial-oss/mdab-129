@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { sendMessage, sendSupportPromotionToChannel, telegram } from '../telegram.js';
+import { supportCampaignText } from '../features/support.js';
 
 const STATS_FILE = String(process.env.STATS_FILE_PATH || '/data/bot-stats.json');
 const MALAYSIA_TIMEZONE = 'Asia/Kuala_Lumpur';
@@ -165,19 +166,8 @@ async function botUsername() {
   return cachedBotUsername;
 }
 
-function promotionText({ supporter = false } = {}) {
-  return [
-    supporter ? '❤️ Terima kasih sebab pernah support bot kita!' : '❤️ jom sama2 bantu kembangkan bot ni nak?',
-    '',
-    'Bot ni boleh mati bila2 masa if kita sama2 tak berjaya bayarkan kos sewa server.',
-    'Support korang bantu cover sewa server dan perkembangan bot supaya bot ni boleh stay dan terus korang guna.',
-    '',
-    'Sekali seumur hidup pun tak pe. Terima kasih orang baik ! 🙇🏻❤️',
-  ].join('\n');
-}
-
-async function sendPrivatePromotion(userId, supporter) {
-  await sendMessage(userId, promotionText({ supporter }), {
+async function sendPrivatePromotion(userId) {
+  await sendMessage(userId, supportCampaignText(), {
     reply_markup: {
       inline_keyboard: [[{ text: '❤️ Support Bot', callback_data: 'support:amounts' }]],
     },
@@ -187,7 +177,7 @@ async function sendPrivatePromotion(userId, supporter) {
 async function sendChannelPromotion() {
   const username = await botUsername();
   const url = username ? `https://t.me/${username}?start=support` : '';
-  await sendSupportPromotionToChannel(channelUsername(), promotionText({ supporter: false }), {
+  await sendSupportPromotionToChannel(channelUsername(), supportCampaignText(), {
     ...(url ? {
       reply_markup: {
         inline_keyboard: [[{ text: '❤️ Support Bot', url }]],
@@ -240,7 +230,7 @@ async function deliverPrivateFriday({ dateKey, monthKey }) {
     }
 
     try {
-      await sendPrivatePromotion(userId, supporter);
+      await sendPrivatePromotion(userId);
       await markDelivery('PRIVATE', userId, periodKey, 'SENT');
       sent += 1;
     } catch (error) {

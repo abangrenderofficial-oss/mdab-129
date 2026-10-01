@@ -1,4 +1,5 @@
 import { sendMessage, telegram } from '../telegram.js';
+import { isResetAdmin } from '../recovery.js';
 import {
   getQuoteModeration,
   moderateQuote,
@@ -36,8 +37,13 @@ export async function handleConnectQuoteCommand(message = {}) {
     return true;
   }
 
+  if (!isResetAdmin(userId)) {
+    await sendMessage(chatId, '❌ /connectquote hanya untuk admin bot.').catch(() => {});
+    return true;
+  }
+
   if (!(await isGroupAdmin(chatId, userId))) {
-    await sendMessage(chatId, '❌ Hanya admin group boleh guna /connectquote.').catch(() => {});
+    await sendMessage(chatId, '❌ Admin bot mesti juga menjadi admin group ini untuk guna /connectquote.').catch(() => {});
     return true;
   }
 
@@ -55,6 +61,7 @@ export async function handleConnectQuoteCommand(message = {}) {
         'akan dihantar ke group ini untuk filter dahulu.',
         '',
         'Setiap submission akan ada button ✅ Approve / ❌ Reject.',
+        'Destination ini wajib group/supergroup — channel tidak dibenarkan.',
         'Logik /connect untuk video tidak disentuh.',
       ].join('\n'),
     );

@@ -66,6 +66,13 @@ function modeLabel() {
   return isBayarcashSandbox() ? '🧪 SANDBOX' : '🔴 LIVE';
 }
 
+function escapeTelegramHtml(value = '') {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
 function supportMenuText() {
   const lines = [supportCampaignText()];
   if (!isBayarcashConfigured()) lines.push('', '⚙️ Payment gateway belum lengkap di Railway.');
@@ -89,7 +96,7 @@ export function supportMenuKeyboard() {
   };
 }
 
-async function editSupportMessage(callbackQuery, text, replyMarkup) {
+async function editSupportMessage(callbackQuery, text, replyMarkup, extra = {}) {
   const chatId = callbackQuery?.message?.chat?.id;
   const messageId = callbackQuery?.message?.message_id;
   if (!chatId || !messageId) return false;
@@ -101,6 +108,7 @@ async function editSupportMessage(callbackQuery, text, replyMarkup) {
       text,
       disable_web_page_preview: true,
       reply_markup: replyMarkup,
+      ...extra,
     });
     return true;
   } catch (error) {
@@ -278,23 +286,25 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
     const keyboard = [[{ text: `💳 Bayar RM${amount}`, url: payment.url }]];
     if (payment.paymentIntentId) {
       keyboard.push([{
-        text: '🔎 Check Bayarcash',
+        text: '🔎 Check Status',
         callback_data: `${SUPPORT_CHECK_PREFIX}${payment.paymentIntentId}`,
       }]);
     }
     keyboard.push([{ text: '← Tukar Amount', callback_data: SUPPORT_AMOUNTS_ACTION }]);
 
+    const title = `${tier.label.toUpperCase()} !`;
     await editSupportMessage(
       callbackQuery,
       [
-        `${tier.label} !`,
+        `<b>${escapeTelegramHtml(title)}</b>`,
         '',
         `Amount: RM${Number(amount).toFixed(2)}`,
-        `Support ID: ${payment.orderNumber}`,
-        `Channel: ${payment.paymentChannelLabel}`,
-        payment.paymentIntentId ? `Payment Intent: ${payment.paymentIntentId}` : '',
+        `Support ID: ${escapeTelegramHtml(payment.orderNumber)}`,
+        `Channel: ${escapeTelegramHtml(payment.paymentChannelLabel)}`,
+        payment.paymentIntentId ? `Payment Intent: ${escapeTelegramHtml(payment.paymentIntentId)}` : '',
       ].filter(Boolean).join('\n'),
       { inline_keyboard: keyboard },
+      { parse_mode: 'HTML' },
     );
   } catch (error) {
     await markSupportIntentFailed(orderNumber, error?.code || 'UNKNOWN').catch(() => {});

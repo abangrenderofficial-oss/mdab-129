@@ -31,30 +31,44 @@ export function startText(userId) {
   return [...START_BASE_LINES, '', ...OWNER_SUPPORT_LINES].join('\n');
 }
 
-export function commandMenuText(userId) {
-  const lines = [
+export function commandMenuText() {
+  return [
     '📋 Command Menu',
     '',
     '/start — Info bot',
     '/help — Bantuan ringkas',
-    '/menu — Senarai command',
+    '/menu — Senarai command user',
     '/status <link> — Buat Status HQ dari link',
     '/support — ❤️ Support perkembangan bot',
-    '/luahrasa — Luah rasa / share cerita ke channel',
+    '/luahrasa — Luah rasa / share cerita',
     '/reset — Reset sesi sendiri jika bot tersangkut',
-  ];
+  ].join('\n');
+}
 
-  if (isResetAdmin(userId)) {
-    lines.push(
-      '',
-      '👑 Owner',
-      '/supporttest — Test payment gateway',
-      '/resetadmin — Reset & recovery semua user',
-      '/connect — Sambung group pemantauan video',
-      '/connectquote — Sambung group filter quote & luah rasa',
-      '/disconnect — Putus group pemantauan video',
-      '/totaluser — Statistik penggunaan bot',
-    );
-  }
-  return lines.join('\n');
+export function adminCommandMenuText() {
+  return [
+    '👑 Admin Command Menu',
+    '',
+    'Public:',
+    '/start — Info bot',
+    '/help — Bantuan ringkas',
+    '/menu — Senarai command user',
+    '/status <link> — Buat Status HQ dari link',
+    '/support — Support perkembangan bot',
+    '/luahrasa — Luah rasa / share cerita',
+    '/reset — Reset sesi sendiri',
+    '',
+    'Admin:',
+    '/menuadmin — Senarai semua command admin',
+    '/supporttest — Test payment gateway',
+    '/resetadmin — Reset & recovery semua user',
+    '/resetchannel — Bersihkan leak Downloader Bot di channel',
+    '/connect — Sambung group pemantauan video',
+    '/disconnect — Putus group pemantauan video',
+    '/connectquote — Sambung group filter quote & luah rasa',
+    '/totaluser — Statistik penggunaan bot',
+    '/checkmember — Diagnostic membership channel',
+    '/hqlab — HQ Lab owner-only',
+    '/hqlab off — Tutup HQ Lab',
+  ].join('\n');
 }

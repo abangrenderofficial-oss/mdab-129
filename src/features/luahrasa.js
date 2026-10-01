@@ -1,11 +1,15 @@
 import { sendMessage } from '../telegram.js';
 import { getActiveSupporterTitle } from '../support/community-store.js';
-import { publishLuahRasa } from '../support/community.js';
+import {
+  clearLuahRasaSession,
+  getLuahRasaSession,
+  setLuahRasaMessage,
+  startLuahRasaSession,
+} from '../support/luahrasa-store.js';
+import { sendLuahRasaToFilter } from '../support/quote-filter.js';
 
-function commandBody(message = {}) {
-  const text = String(message?.text || message?.caption || '').trim();
-  const firstSpace = text.indexOf(' ');
-  return firstSpace >= 0 ? text.slice(firstSpace + 1).trim() : '';
+function cleanText(value, maxLength) {
+  return String(value || '').replace(/\u0000/g, '').trim().slice(0, maxLength);
 }
 
 export async function handleLuahRasaCommand(message = {}) {
@@ -23,57 +27,92 @@ export async function handleLuahRasaCommand(message = {}) {
     supporter = await getActiveSupporterTitle(userId);
   } catch (error) {
     console.warn('[luahrasa] supporter title lookup failed:', error?.message);
-    await sendMessage(chatId, 'Tak dapat semak title Supporter sekarang. Cuba lagi kejap.').catch(() => {});
-    return true;
   }
 
-  if (!supporter) {
-    await sendMessage(
-      chatId,
-      [
-        '💭 /luahrasa khas untuk Supporter yang title masih aktif.',
-        '',
-        'Lepas payment support confirmed, title Supporter aktif selama sebulan.',
-      ].join('\n'),
-    ).catch(() => {});
-    return true;
-  }
+  const tierLabel = supporter?.tierLabel || '';
 
-  const body = commandBody(message);
-  if (!body) {
-    await sendMessage(
-      chatId,
-      [
-        '💭 Luah Rasa',
-        '',
-        `Title awak: ${supporter.tierLabel}`,
-        '',
-        'Tulis luahan dalam mesej yang sama macam ni:',
-        '/luahrasa Aku nak cakap sesuatu yang aku pendam lama...',
-        '',
-        'Luahan akan dipaparkan dalam channel bersama title Supporter awak ✨',
-      ].join('\n'),
-    ).catch(() => {});
-    return true;
-  }
-
-  const messageText = body.slice(0, 1200);
   try {
-    await publishLuahRasa({
-      message: messageText,
-      tierLabel: supporter.tierLabel,
-    });
-    await sendMessage(
-      chatId,
-      `Dah share dalam channel ❤️\n\n${supporter.tierLabel} turut dipaparkan sekali ✨`,
-    );
+    await startLuahRasaSession(userId, tierLabel);
   } catch (error) {
-    console.warn('[luahrasa] channel publish failed:', error?.message);
-    await sendMessage(
-      chatId,
-      'Luahan belum berjaya dihantar ke channel. Cuba lagi kejap.',
-    ).catch(() => {});
+    console.warn('[luahrasa] start session failed:', error?.message);
+    await sendMessage(chatId, 'Luah rasa belum dapat dimulakan sekarang. Cuba lagi kejap.').catch(() => {});
+    return true;
   }
+
+  await sendMessage(
+    chatId,
+    [
+      tierLabel ? `Hi, ${tierLabel}` : 'Hi',
+      '',
+      'Awak ada apa2 nak luah dalam channel?',
+      'Boleh share ttg pengalaman menyakitkan, sedih, marah, cinta, share tips pun boleh.',
+      '',
+      'Send di sini tau.',
+    ].join('\n'),
+  ).catch(() => {});
 
   return true;
+}
+
+export async function processLuahRasaMessage(message = {}) {
+  const chatId = message?.chat?.id;
+  const userId = message?.from?.id;
+  const chatType = message?.chat?.type;
+  if (!chatId || !userId || chatType !== 'private') return false;
+
+  const rawText = String(message?.text || message?.caption || '').trim();
+  if (rawText.startsWith('/')) return false;
+
+  let session = null;
+  try {
+    session = await getLuahRasaSession(userId);
+  } catch (error) {
+    console.warn('[luahrasa] session lookup failed:', error?.message);
+    return false;
+  }
+  if (!session) return false;
+
+  if (session.state === 'AWAITING_MESSAGE') {
+    const luahan = cleanText(rawText, 1500);
+    if (!luahan) {
+      await sendMessage(chatId, 'Send luahan dalam bentuk text ya.').catch(() => {});
+      return true;
+    }
+
+    await setLuahRasaMessage(userId, luahan);
+    await sendMessage(chatId, 'nama?').catch(() => {});
+    return true;
+  }
+
+  if (session.state === 'AWAITING_NAME') {
+    const displayName = cleanText(rawText, 80);
+    if (!displayName) {
+      await sendMessage(chatId, 'Isi nama yang awak nak kita paparkan ya.').catch(() => {});
+      return true;
+    }
+
+    try {
+      await sendLuahRasaToFilter({
+        message: session.luahan,
+        displayName,
+        tierLabel: session.tierLabel,
+      });
+      await clearLuahRasaSession(userId);
+      await sendMessage(
+        chatId,
+        'Terima kasih! luahan awak kita akan filter dulu. If everything okay, kita akan share luahan awak di channel ✨.',
+      );
+    } catch (error) {
+      console.warn('[luahrasa] filter delivery failed:', error?.code, error?.message);
+      await sendMessage(
+        chatId,
+        error?.code === 'QUOTE_FILTER_NOT_CONNECTED'
+          ? 'Luahan awak dah siap, tapi group filter belum disambungkan lagi. Cuba semula kejap lagi ya.'
+          : 'Luahan awak belum berjaya dihantar untuk filter. Cuba hantar nama sekali lagi kejap lagi.',
+      ).catch(() => {});
+    }
+    return true;
+  }
+
+  return false;
 }

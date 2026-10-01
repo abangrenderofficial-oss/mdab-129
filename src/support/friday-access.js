@@ -4,6 +4,7 @@ import { supportCampaignText, supportMenuKeyboard } from '../features/support.js
 import { getActiveSupporterTitle } from './community-store.js';
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 
+export const FRIDAY_SUPPORT_MODE_OFF = 'OFF';
 export const FRIDAY_SUPPORT_MODE_NORMAL = 'NORMAL';
 export const FRIDAY_SUPPORT_MODE_FORCE = 'FORCE';
 export const FRIDAY_SUPPORT_MODE_DONATE = 'DONATE';
@@ -15,9 +16,14 @@ let cachedBotUsername = '';
 
 function validMode(value) {
   const mode = String(value || '').trim().toUpperCase();
-  return [FRIDAY_SUPPORT_MODE_NORMAL, FRIDAY_SUPPORT_MODE_FORCE, FRIDAY_SUPPORT_MODE_DONATE].includes(mode)
+  return [
+    FRIDAY_SUPPORT_MODE_OFF,
+    FRIDAY_SUPPORT_MODE_NORMAL,
+    FRIDAY_SUPPORT_MODE_FORCE,
+    FRIDAY_SUPPORT_MODE_DONATE,
+  ].includes(mode)
     ? mode
-    : FRIDAY_SUPPORT_MODE_NORMAL;
+    : FRIDAY_SUPPORT_MODE_OFF;
 }
 
 function malaysiaParts(date = new Date()) {
@@ -42,7 +48,7 @@ async function ensureSchema() {
       await db.batch([
         `CREATE TABLE IF NOT EXISTS support_friday_mode (
           environment TEXT NOT NULL PRIMARY KEY,
-          mode TEXT NOT NULL DEFAULT 'NORMAL',
+          mode TEXT NOT NULL DEFAULT 'OFF',
           updated_by TEXT NOT NULL DEFAULT '',
           updated_at TEXT NOT NULL
         )`,
@@ -81,7 +87,7 @@ export async function getFridaySupportMode() {
     sql: `SELECT mode FROM support_friday_mode WHERE environment = ? LIMIT 1`,
     args: [environment],
   });
-  return validMode(result.rows?.[0]?.mode || FRIDAY_SUPPORT_MODE_NORMAL);
+  return validMode(result.rows?.[0]?.mode || FRIDAY_SUPPORT_MODE_OFF);
 }
 
 export async function setFridaySupportMode(mode, adminUserId = '') {
@@ -244,10 +250,14 @@ async function sendDonateGate(chatId, userId, dateKey) {
 async function accessContext(userId) {
   const parts = malaysiaParts();
   if (parts.weekday !== 'Fri') {
-    return { gated: false, mode: FRIDAY_SUPPORT_MODE_NORMAL, parts, supporter: null };
+    return { gated: false, mode: FRIDAY_SUPPORT_MODE_OFF, parts, supporter: null };
   }
 
   const mode = await getFridaySupportMode();
+  if (mode === FRIDAY_SUPPORT_MODE_OFF) {
+    return { gated: false, mode, parts, supporter: null };
+  }
+
   const supporter = await getActiveSupporterTitle(userId);
   if (supporter) {
     return { gated: false, mode, parts, supporter };
@@ -318,6 +328,9 @@ export async function markFridayUsageSuccess(userId) {
 
   const parts = malaysiaParts();
   if (parts.weekday !== 'Fri') return false;
+
+  const mode = await getFridaySupportMode();
+  if (mode === FRIDAY_SUPPORT_MODE_OFF) return false;
 
   if (await getActiveSupporterTitle(id)) return false;
 
@@ -420,25 +433,74 @@ function modeHeader(mode) {
   return '✅ /normalsupport aktif.';
 }
 
-export async function handleFridaySupportModeCommand(message = {}, mode) {
+function modeCommand(mode) {
+  if (mode === FRIDAY_SUPPORT_MODE_FORCE) return '/forcesupport';
+  if (mode === FRIDAY_SUPPORT_MODE_DONATE) return '/donatesupport';
+  if (mode === FRIDAY_SUPPORT_MODE_NORMAL) return '/normalsupport';
+  return 'OFF';
+}
+
+async function validateAdminPrivate(message = {}) {
   const chatId = message?.chat?.id;
   const userId = message?.from?.id;
-  if (!chatId || !userId) return true;
+  if (!chatId || !userId) return { ok: false, chatId, userId };
 
   if (!isResetAdmin(userId)) {
     await sendMessage(chatId, '❌ Command support mode hanya untuk admin bot.').catch(() => {});
-    return true;
+    return { ok: false, chatId, userId };
   }
   if (message?.chat?.type !== 'private') {
     await sendMessage(chatId, '❌ Command support mode hanya boleh digunakan dalam private chat bot.').catch(() => {});
+    return { ok: false, chatId, userId };
+  }
+  return { ok: true, chatId, userId };
+}
+
+export async function handleFridaySupportModeCommand(message = {}, mode) {
+  const access = await validateAdminPrivate(message);
+  if (!access.ok) return true;
+
+  const saved = await setFridaySupportMode(mode, access.userId);
+  await sendMessage(
+    access.chatId,
+    [
+      modeHeader(saved),
+      'Mode ini akan berjalan setiap Jumaat selagi belum dihentikan dengan command stop yang sepadan.',
+      '',
+      supportCampaignText(),
+    ].join('\n'),
+    { reply_markup: supportMenuKeyboard() },
+  );
+  return true;
+}
+
+export async function handleFridaySupportStopCommand(message = {}, expectedMode) {
+  const access = await validateAdminPrivate(message);
+  if (!access.ok) return true;
+
+  const expected = validMode(expectedMode);
+  const current = await getFridaySupportMode();
+
+  if (current === FRIDAY_SUPPORT_MODE_OFF) {
+    await sendMessage(
+      access.chatId,
+      '⏹ Friday Support System memang dah STOP. Guna /forcesupport, /donatesupport atau /normalsupport untuk aktifkan semula.',
+    );
     return true;
   }
 
-  const saved = await setFridaySupportMode(mode, userId);
+  if (current !== expected) {
+    await sendMessage(
+      access.chatId,
+      `⚠️ ${modeCommand(expected)} bukan mode yang sedang aktif. Mode sekarang: ${modeCommand(current)}. Sistem tak diubah.`,
+    );
+    return true;
+  }
+
+  await setFridaySupportMode(FRIDAY_SUPPORT_MODE_OFF, access.userId);
   await sendMessage(
-    chatId,
-    [modeHeader(saved), '', supportCampaignText()].join('\n'),
-    { reply_markup: supportMenuKeyboard() },
+    access.chatId,
+    `⏹ ${modeCommand(expected)} dihentikan. Friday Support System tak akan berjalan lagi sehingga kau command /forcesupport, /donatesupport atau /normalsupport.`,
   );
   return true;
 }

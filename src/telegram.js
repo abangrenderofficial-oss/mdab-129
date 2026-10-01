@@ -4,10 +4,44 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import ffmpegPath from 'ffmpeg-static';
+import {
+  prepareChannelPolicyLedger,
+  recordChannelPolicyEvent,
+} from './bot/channel-policy.js';
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_TELEGRAM_API_BASE = 'https://api.telegram.org';
 const DEFAULT_CLOUD_UPLOAD_LIMIT = 50 * 1024 * 1024;
+const CHANNEL_PROMOTION_PURPOSE = Symbol('support-promotion-only');
+const CHANNEL_RESET_PURPOSE = Symbol('channel-reset-delete-only');
+const CHAT_TYPE_CACHE_TTL_MS = 10 * 60 * 1000;
+const chatTypeCache = new Map();
+
+const CHAT_WRITE_METHODS = new Set([
+  'sendMessage',
+  'sendPhoto',
+  'sendVideo',
+  'sendAudio',
+  'sendDocument',
+  'sendAnimation',
+  'sendVoice',
+  'sendVideoNote',
+  'sendSticker',
+  'sendMediaGroup',
+  'sendPoll',
+  'sendDice',
+  'sendLocation',
+  'sendVenue',
+  'sendContact',
+  'sendChatAction',
+  'copyMessage',
+  'forwardMessage',
+  'editMessageText',
+  'editMessageCaption',
+  'editMessageMedia',
+  'editMessageReplyMarkup',
+  'deleteMessage',
+]);
 
 function botToken() {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -40,35 +74,6 @@ function productionBaseUrl() {
   if (productionHost) return `https://${productionHost}`;
   const deploymentHost = String(process.env.VERCEL_URL || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
   return deploymentHost ? `https://${deploymentHost}` : '';
-}
-
-async function ensureInteractiveWebhook() {
-  const baseUrl = productionBaseUrl();
-  const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (!baseUrl || !process.env.TELEGRAM_BOT_TOKEN) return false;
-
-  try {
-    const current = await telegram('getWebhookInfo').catch(() => null);
-    const next = new URL(`${baseUrl}/api/telegram`);
-    if (current?.url) {
-      try {
-        const existing = new URL(current.url);
-        const mirrorGroup = existing.searchParams.get('mirror_group');
-        if (mirrorGroup) next.searchParams.set('mirror_group', mirrorGroup);
-      } catch {}
-    }
-
-    await telegram('setWebhook', {
-      url: next.toString(),
-      ...(webhookSecret ? { secret_token: webhookSecret } : {}),
-      allowed_updates: ['message', 'edited_message', 'callback_query'],
-      drop_pending_updates: false,
-    });
-    return true;
-  } catch (error) {
-    console.warn('Interactive webhook refresh failed:', error?.message);
-    return false;
-  }
 }
 
 function sourceHeaders(headers) {
@@ -166,7 +171,7 @@ async function parseTelegramResponse(response, method) {
   return result.result;
 }
 
-export async function telegram(method, payload = {}) {
+async function rawTelegram(method, payload = {}) {
   const response = await fetch(telegramEndpoint(method), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -174,6 +179,148 @@ export async function telegram(method, payload = {}) {
     signal: AbortSignal.timeout(25000),
   });
   return parseTelegramResponse(response, method);
+}
+
+function privateChatId(chatId) {
+  return /^\d+$/.test(String(chatId || '').trim());
+}
+
+async function destinationInfo(chatId) {
+  const key = String(chatId || '').trim();
+  if (!key) return { id: '', type: '' };
+  if (privateChatId(key)) return { id: key, type: 'private' };
+
+  const cached = chatTypeCache.get(key);
+  if (cached && Date.now() - cached.at < CHAT_TYPE_CACHE_TTL_MS) return cached.value;
+
+  let chat;
+  try {
+    chat = await rawTelegram('getChat', { chat_id: chatId });
+  } catch (error) {
+    const blocked = new Error('Telegram destination could not be verified. Channel/group write blocked fail-closed.');
+    blocked.code = 'TELEGRAM_DESTINATION_UNVERIFIED';
+    blocked.cause = error;
+    throw blocked;
+  }
+
+  const value = {
+    id: String(chat?.id || key),
+    type: String(chat?.type || ''),
+    username: chat?.username ? `@${String(chat.username).replace(/^@/, '')}` : '',
+  };
+  chatTypeCache.set(key, { at: Date.now(), value });
+  if (value.id) chatTypeCache.set(value.id, { at: Date.now(), value });
+  if (value.username) chatTypeCache.set(value.username, { at: Date.now(), value });
+  return value;
+}
+
+async function assertChatWriteAllowed(method, payload = {}, purpose = null) {
+  if (!CHAT_WRITE_METHODS.has(String(method || ''))) return null;
+  const chatId = payload?.chat_id;
+  if (chatId === undefined || chatId === null || chatId === '') return null;
+
+  const destination = await destinationInfo(chatId);
+  if (destination.type !== 'channel') return destination;
+
+  const supportPromotion = purpose === CHANNEL_PROMOTION_PURPOSE && method === 'sendMessage';
+  const safetyDelete = purpose === CHANNEL_RESET_PURPOSE && method === 'deleteMessage';
+  if (supportPromotion || safetyDelete) return destination;
+
+  void recordChannelPolicyEvent({
+    chatId: destination.id || chatId,
+    method,
+    purpose: 'BLOCKED_NON_PROMOTION',
+    status: 'BLOCKED',
+    detail: 'Downloader channel firewall denied a non-support-promotion channel write.',
+  }).catch(() => {});
+
+  const error = new Error('Downloader Bot channel firewall: only support promotion posts are allowed in channels.');
+  error.code = 'DOWNLOADER_CHANNEL_WRITE_BLOCKED';
+  throw error;
+}
+
+async function telegramWithPolicy(method, payload = {}, purpose = null) {
+  await assertChatWriteAllowed(method, payload, purpose);
+  return rawTelegram(method, payload);
+}
+
+export async function telegram(method, payload = {}) {
+  return telegramWithPolicy(method, payload, null);
+}
+
+export async function getTelegramChat(chatId) {
+  return destinationInfo(chatId);
+}
+
+export async function sendSupportPromotionToChannel(chatId, text, extra = {}) {
+  await prepareChannelPolicyLedger();
+  const destination = await destinationInfo(chatId);
+  if (destination.type !== 'channel') {
+    const error = new Error('Support promotion target is not a Telegram channel.');
+    error.code = 'SUPPORT_PROMOTION_TARGET_NOT_CHANNEL';
+    throw error;
+  }
+
+  const result = await telegramWithPolicy('sendMessage', {
+    chat_id: chatId,
+    text,
+    disable_web_page_preview: true,
+    ...extra,
+  }, CHANNEL_PROMOTION_PURPOSE);
+
+  await recordChannelPolicyEvent({
+    chatId: destination.id || chatId,
+    messageId: result?.message_id || '',
+    method: 'sendMessage',
+    purpose: 'SUPPORT_PROMOTION',
+    status: 'SENT',
+    detail: 'Authorized downloader support promotion.',
+  }).catch((error) => {
+    console.warn('[channel-firewall] promotion ledger write failed:', error?.message);
+  });
+  return result;
+}
+
+export async function deleteChannelMessageForSafety(chatId, messageId) {
+  const destination = await destinationInfo(chatId);
+  if (destination.type !== 'channel') {
+    const error = new Error('Safety delete target is not a Telegram channel.');
+    error.code = 'CHANNEL_RESET_TARGET_NOT_CHANNEL';
+    throw error;
+  }
+  return telegramWithPolicy('deleteMessage', {
+    chat_id: destination.id || chatId,
+    message_id: Number(messageId),
+  }, CHANNEL_RESET_PURPOSE);
+}
+
+async function ensureInteractiveWebhook() {
+  const baseUrl = productionBaseUrl();
+  const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!baseUrl || !process.env.TELEGRAM_BOT_TOKEN) return false;
+
+  try {
+    const current = await telegram('getWebhookInfo').catch(() => null);
+    const next = new URL(`${baseUrl}/api/telegram`);
+    if (current?.url) {
+      try {
+        const existing = new URL(current.url);
+        const mirrorGroup = existing.searchParams.get('mirror_group');
+        if (mirrorGroup) next.searchParams.set('mirror_group', mirrorGroup);
+      } catch {}
+    }
+
+    await telegram('setWebhook', {
+      url: next.toString(),
+      ...(webhookSecret ? { secret_token: webhookSecret } : {}),
+      allowed_updates: ['message', 'edited_message', 'callback_query'],
+      drop_pending_updates: false,
+    });
+    return true;
+  } catch (error) {
+    console.warn('Interactive webhook refresh failed:', error?.message);
+    return false;
+  }
 }
 
 export async function getTelegramFileSource(fileId) {
@@ -232,6 +379,7 @@ export function sendVideoUrl(chatId, url, caption = '', extra = {}) {
 
 export async function sendVideoUpload(chatId, item, caption = '', extra = {}) {
   if (!item?.url) throw new Error('Video source URL is missing.');
+  await assertChatWriteAllowed('sendVideo', { chat_id: chatId });
 
   const limit = uploadLimitBytes();
   const knownSize = Number(item.filesize || 0);
@@ -295,6 +443,7 @@ export async function sendVideoUpload(chatId, item, caption = '', extra = {}) {
 
 export async function sendVideoFileUpload(chatId, filePath, caption = '', extra = {}) {
   if (!filePath) throw new Error('Local video path is missing.');
+  await assertChatWriteAllowed('sendVideo', { chat_id: chatId });
 
   const fileStat = await stat(filePath);
   const limit = uploadLimitBytes();

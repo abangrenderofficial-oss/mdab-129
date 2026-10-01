@@ -5,6 +5,24 @@ function firstQueryValue(value) {
   return Array.isArray(value) ? String(value[0] || '') : String(value || '');
 }
 
+function parseReturnIdentifiers(query = {}) {
+  let orderNumber = firstQueryValue(query?.order).trim();
+  let paymentIntentId = firstQueryValue(query?.payment_intent_id).trim();
+
+  // Bayarcash may append `?payment_intent_id=...` to an existing return URL
+  // instead of using `&payment_intent_id=...`. In that case URLSearchParams
+  // treats it as part of the `order` value, so split it back out here.
+  const malformedIntentMarker = '?payment_intent_id=';
+  const markerIndex = orderNumber.indexOf(malformedIntentMarker);
+  if (markerIndex >= 0) {
+    const embedded = orderNumber.slice(markerIndex + malformedIntentMarker.length).split(/[&#]/)[0].trim();
+    orderNumber = orderNumber.slice(0, markerIndex).trim();
+    if (!paymentIntentId && embedded) paymentIntentId = embedded;
+  }
+
+  return { orderNumber, paymentIntentId };
+}
+
 function escapeHtml(value) {
   return String(value || '')
     .replace(/&/g, '&amp;')
@@ -20,15 +38,16 @@ export default async function handler(req, res) {
     return res.status(405).json({ ok: false, error: 'method_not_allowed' });
   }
 
-  const orderNumber = firstQueryValue(req?.query?.order).trim();
+  const { orderNumber, paymentIntentId } = parseReturnIdentifiers(req?.query || {});
   let reconciliation = null;
   let lookupError = null;
 
-  if (orderNumber) {
+  if (orderNumber || paymentIntentId) {
     try {
-      reconciliation = await reconcileSupportPayment({ orderNumber });
+      reconciliation = await reconcileSupportPayment({ orderNumber, paymentIntentId });
       console.log('[support-return] Bayarcash reconciliation', {
-        order_number: orderNumber,
+        order_number: orderNumber || reconciliation?.orderNumber || null,
+        payment_intent_id: paymentIntentId || reconciliation?.paymentIntentId || null,
         paid: reconciliation?.paid || false,
         intent_status: reconciliation?.intentStatus || null,
         transaction_status: reconciliation?.transactionStatus || null,
@@ -79,6 +98,7 @@ export default async function handler(req, res) {
     <h1>${escapeHtml(title)}</h1>
     <p>${escapeHtml(detail)}</p>
     ${orderNumber ? `<p class="meta">Support ID: ${escapeHtml(orderNumber)}</p>` : ''}
+    ${paymentIntentId ? `<p class="meta">Payment Intent: ${escapeHtml(paymentIntentId)}</p>` : ''}
     <p class="meta">Bayarcash status: ${escapeHtml(status)}</p>
     <p>Boleh kembali ke Telegram dan tekan “Check Bayarcash” jika mahu semak sekali lagi.</p>
   </main>

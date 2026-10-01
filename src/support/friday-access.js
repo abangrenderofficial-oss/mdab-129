@@ -178,7 +178,7 @@ async function sendDonateGate(chatId) {
       'Kalau belum jadi Supporter, tolong share bot ni ke 3 group yang lain ya ❤️',
       '',
       'Lepas share, tekan button “✅ Dah Share 3 Group”.',
-      'Kita guna sistem percaya — tak ada verification ketat ✨',
+      'Terima kasih sebab bantu bot ni sampai dekat lebih ramai orang ✨',
     ].join('\n'),
     {
       reply_markup: {

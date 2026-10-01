@@ -22,36 +22,71 @@ function transactionPayload(transaction = {}, fallback = {}) {
   };
 }
 
-function selectBestTransaction(transactions = []) {
-  if (!transactions.length) return null;
-  return transactions.find((item) => String(item?.status ?? '') === '3')
-    || transactions[0]
-    || null;
+function successTransaction(transactions = []) {
+  return transactions.find((item) => String(item?.status ?? '') === '3') || null;
+}
+
+function firstTransaction(transactions = []) {
+  return transactions[0] || null;
+}
+
+function paidIntentAsTransaction(intent = {}) {
+  const id = String(intent?.id || '').trim();
+  const orderNumber = String(intent?.order_number || '').trim();
+  const amount = String(intent?.amount ?? '').trim();
+  if (!id || !orderNumber || !amount) return null;
+  return {
+    id: `intent:${id}`,
+    order_number: orderNumber,
+    currency: intent?.currency || 'MYR',
+    amount,
+    payer_name: intent?.payer_name || '',
+    payer_email: intent?.payer_email || '',
+    status: 3,
+    status_description: 'Payment intent confirmed paid by Bayarcash API',
+    datetime: intent?.paid_at || intent?.updated_at || new Date().toISOString(),
+  };
 }
 
 export async function reconcileSupportPayment({ paymentIntentId = '', orderNumber = '' } = {}) {
   let intent = null;
   let finalOrderNumber = String(orderNumber || '').trim();
   let transaction = null;
+  let transactionLookupError = null;
+  let attempts = [];
 
   if (paymentIntentId) {
     intent = await getBayarcashPaymentIntent(paymentIntentId);
     finalOrderNumber = finalOrderNumber || String(intent?.order_number || '').trim();
-    const attempts = Array.isArray(intent?.attempts) ? intent.attempts : [];
-    transaction = selectBestTransaction(attempts);
+    attempts = Array.isArray(intent?.attempts) ? intent.attempts : [];
   }
 
-  if (!transaction && finalOrderNumber) {
-    const transactions = await getBayarcashTransactionsByOrderNumber(finalOrderNumber);
-    transaction = selectBestTransaction(transactions);
+  let transactions = [];
+  if (finalOrderNumber) {
+    try {
+      transactions = await getBayarcashTransactionsByOrderNumber(finalOrderNumber);
+    } catch (error) {
+      transactionLookupError = error;
+      console.warn('[support/reconcile] transaction lookup failed:', error?.code, error?.status, error?.message);
+    }
+  }
+
+  transaction = successTransaction(transactions)
+    || successTransaction(attempts)
+    || firstTransaction(transactions)
+    || firstTransaction(attempts)
+    || null;
+
+  const intentStatus = String(intent?.status || '').trim().toLowerCase();
+  if (intentStatus === 'paid' && String(transaction?.status ?? '') !== '3') {
+    transaction = paidIntentAsTransaction(intent) || transaction;
   }
 
   let result = null;
-  if (transaction) {
+  if (transaction && String(transaction?.order_number || finalOrderNumber || '').trim()) {
     result = await applyBayarcashTransaction(transactionPayload(transaction, intent || {}));
   }
 
-  const intentStatus = String(intent?.status || '').trim().toLowerCase();
   const transactionStatus = String(transaction?.status ?? '').trim();
   const paid = transactionStatus === '3' || intentStatus === 'paid' || Boolean(result?.paid);
 
@@ -64,6 +99,9 @@ export async function reconcileSupportPayment({ paymentIntentId = '', orderNumbe
     transactionId: String(transaction?.id || transaction?.transaction_id || ''),
     amount: String(transaction?.amount ?? intent?.amount ?? ''),
     statusDescription: String(transaction?.status_description || ''),
+    transactionLookupError: transactionLookupError
+      ? { code: transactionLookupError?.code || null, status: transactionLookupError?.status || null }
+      : null,
     result,
     intent,
     transaction,

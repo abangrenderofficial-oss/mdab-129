@@ -11,12 +11,14 @@ import statusDiagnosticHandler from './api/status-diagnostic.js';
 import bayarcashHandler from './api/bayarcash.js';
 import supportReturnHandler from './api/support-return.js';
 import premiumHqSuccessHandler from './api/premium-hq-success.js';
+import contentBridgeConnectHandler from './api/content-bridge-connect.js';
 import {
   getBayarcashPortalDiagnostic,
   isBayarcashConfigured,
   isBayarcashSandbox,
 } from './src/payments/bayarcash.js';
 import { startSupportPromotionScheduler } from './src/support/promotion.js';
+import { deliverApprovedBacklog, isContentBridgeConfigured } from './src/support/content-bridge.js';
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
@@ -31,6 +33,7 @@ const routes = new Map([
   ['/api/bayarcash', bayarcashHandler],
   ['/api/support-return', supportReturnHandler],
   ['/api/premium-hq-success', premiumHqSuccessHandler],
+  ['/api/content-bridge/connect', contentBridgeConnectHandler],
 ]);
 
 function addResponseHelpers(res) {
@@ -152,6 +155,15 @@ server.listen(port, '0.0.0.0', () => {
   });
 
   startSupportPromotionScheduler();
+
+  if (isContentBridgeConfigured()) {
+    console.log('[content-bridge] retry scheduler started');
+    setInterval(() => {
+      void deliverApprovedBacklog(20).catch((error) => {
+        console.error('[content-bridge] backlog retry failed:', error?.message);
+      });
+    }, 60_000).unref();
+  }
 
   if (isBayarcashConfigured()) {
     void getBayarcashPortalDiagnostic()

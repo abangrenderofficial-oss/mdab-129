@@ -22,6 +22,7 @@ const [
   webhook,
   commands,
   resetFeature,
+  channelPolicy,
 ] = await Promise.all([
   text('src/telegram.js'),
   text('src/support/promotion.js'),
@@ -32,6 +33,7 @@ const [
   text('api/telegram.js'),
   text('src/bot/commands.js'),
   text('src/features/channel-reset.js'),
+  text('src/bot/channel-policy.js'),
 ]);
 
 requireContains(telegram, 'DOWNLOADER_CHANNEL_WRITE_BLOCKED', 'generic channel firewall must exist');
@@ -50,6 +52,6 @@ requireContains(webhook, "command === '/resetchannel'", 'channel reset command m
 requireContains(webhook, "message?.chat?.type !== 'private'", 'admin-sensitive commands must enforce private chat');
 requireContains(commands, '/resetchannel — Bersihkan leak Downloader Bot di channel', 'admin menu must list channel reset');
 requireContains(resetFeature, 'deleteChannelMessageForSafety', 'channel reset must use protected delete capability');
-requireContains(resetFeature, "purpose <> 'SUPPORT_PROMOTION'", '');
+requireContains(channelPolicy, "purpose <> 'SUPPORT_PROMOTION'", 'channel reset ledger must never select authorized support promotions');
 
 console.log('Channel security check passed: downloader channel writes are support-promotion-only; monitoring and quote destinations are group-only.');

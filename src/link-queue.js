@@ -6,7 +6,10 @@ import { processStandardDownload } from './features/downloader.js';
 import { processStatusFromLink } from './features/status-hq.js';
 import { sendTikTokSlideshowChoice } from './features/tiktok-slideshow.js';
 import { maybePromptChannelAfterSuccess } from './features/channel-gate.js';
-import { enforceFridaySupportForMessage } from './support/friday-access.js';
+import {
+  enforceFridaySupportForMessage,
+  markFridayUsageSuccess,
+} from './support/friday-access.js';
 
 function hasDownloadableMedia(result) {
   if (!result || result.cancelled) return false;
@@ -15,9 +18,16 @@ function hasDownloadableMedia(result) {
   return Array.isArray(result?.media?.audios) && result.media.audios.length > 0;
 }
 
+async function markFridaySuccess(userId, label) {
+  await markFridayUsageSuccess(userId).catch((error) => {
+    console.warn(`[friday-support] ${label} mark failed:`, error?.message);
+  });
+}
+
 async function recordPremiumHqSuccess(userId, chatId) {
   await recordUsage(userId, 'status_hq');
   await markPremiumHqCompleted(userId);
+  await markFridaySuccess(userId, 'status link');
   await maybePromptChannelAfterSuccess(chatId, userId);
 }
 
@@ -26,6 +36,8 @@ async function runLinkJob({ message, context, url, platform, statusMode }) {
   const userId = message?.from?.id;
   if (!chatId || !userId) return;
 
+  // Re-check when the queued job actually begins. After one successful use, the
+  // next queued job must obey FORCE / DONATE mode instead of slipping through.
   if (await enforceFridaySupportForMessage(message)) return;
 
   if (statusMode) {
@@ -39,6 +51,7 @@ async function runLinkJob({ message, context, url, platform, statusMode }) {
     await sendTikTokSlideshowChoice(chatId, url);
   } else if (hasDownloadableMedia(result)) {
     await recordUsage(userId, 'download');
+    await markFridaySuccess(userId, 'download');
   }
 }
 

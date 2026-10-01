@@ -21,6 +21,16 @@ import { handleCheckMemberCommand } from '../src/features/channel-diagnostic.js'
 import { handleResetChannelCommand } from '../src/features/channel-reset.js';
 import { enforceChannelGateForCallback, enforceChannelGateForMessage, maybePromptChannelAfterSuccess, processChannelGateCallback } from '../src/features/channel-gate.js';
 import { scheduleLinkJob } from '../src/link-queue.js';
+import {
+  FRIDAY_SUPPORT_MODE_DONATE,
+  FRIDAY_SUPPORT_MODE_FORCE,
+  FRIDAY_SUPPORT_MODE_NORMAL,
+  enforceFridaySupportForCallback,
+  enforceFridaySupportForMessage,
+  handleFridaySupportModeCommand,
+  markFridayUsageSuccess,
+  processFridaySupportCallback,
+} from '../src/support/friday-access.js';
 
 function json(res, status, body) { res.status(status).json(body); }
 
@@ -58,6 +68,9 @@ function startPayload(message) {
 async function recordPremiumHqSuccess(userId, chatId) {
   await recordUsage(userId, 'status_hq');
   await markPremiumHqCompleted(userId);
+  await markFridayUsageSuccess(userId).catch((error) => {
+    console.warn('[friday-support] premium success mark failed:', error?.message);
+  });
   await maybePromptChannelAfterSuccess(chatId, userId);
 }
 
@@ -80,8 +93,14 @@ async function processMessage(message, context) {
   if (await handleHqLabCommand(message, context)) return;
   if (await processHqLabMessage(message, context)) return;
 
-  if (Array.isArray(message?.photo) && message.photo.length) return processUploadedPhoto(message, context);
-  if (message?.video?.file_id) return processUploadedVideo(message, context);
+  if (Array.isArray(message?.photo) && message.photo.length) {
+    if (await enforceFridaySupportForMessage(message)) return;
+    return processUploadedPhoto(message, context);
+  }
+  if (message?.video?.file_id) {
+    if (await enforceFridaySupportForMessage(message)) return;
+    return processUploadedVideo(message, context);
+  }
 
   const statusMode = command === '/status' || command === 'status';
   const url = extractFirstUrl(text);
@@ -109,13 +128,20 @@ async function runWebhookUpdate(update, context) {
     const chatId = callbackQuery?.message?.chat?.id;
 
     if (await processQuoteFilterCallback(callbackQuery)) return;
+    if (await processFridaySupportCallback(callbackQuery)) return;
     if (await processChannelGateCallback(callbackQuery)) return;
     if (await processSupportCallback(callbackQuery, context)) return;
     if (await enforceChannelGateForCallback(callbackQuery)) return;
+    if (await enforceFridaySupportForCallback(callbackQuery)) return;
     if (await processAuditDelete(callbackQuery)) return;
     if (await processStatusProfileMenu(callbackQuery, context)) return;
     if (await processStatusAndroidButton(callbackQuery, context)) {
-      if (action.startsWith(MEDIA_STATUS_HQ_ANDROID)) await recordUsage(userId, 'status_hq');
+      if (action.startsWith(MEDIA_STATUS_HQ_ANDROID)) {
+        await recordUsage(userId, 'status_hq');
+        await markFridayUsageSuccess(userId).catch((error) => {
+          console.warn('[friday-support] android status mark failed:', error?.message);
+        });
+      }
       return;
     }
 
@@ -128,10 +154,20 @@ async function runWebhookUpdate(update, context) {
     }
 
     if (await processLiveWallpaperButton(callbackQuery, context)) {
-      if (action.startsWith(MEDIA_LIVE_WALLPAPER)) await recordUsage(userId, 'live_wallpaper');
+      if (action.startsWith(MEDIA_LIVE_WALLPAPER)) {
+        await recordUsage(userId, 'live_wallpaper');
+        await markFridayUsageSuccess(userId).catch((error) => {
+          console.warn('[friday-support] live wallpaper mark failed:', error?.message);
+        });
+      }
       return;
     }
-    if (await processTikTokSlideshowChoice(callbackQuery, context)) await recordUsage(userId, 'download');
+    if (await processTikTokSlideshowChoice(callbackQuery, context)) {
+      await recordUsage(userId, 'download');
+      await markFridayUsageSuccess(userId).catch((error) => {
+        console.warn('[friday-support] slideshow mark failed:', error?.message);
+      });
+    }
     return;
   }
 
@@ -186,6 +222,18 @@ export default async function handler(req, res) {
       }
       await sendMessage(message.chat.id, adminCommandMenuText()).catch((error) => console.warn('Admin menu reply failed:', error?.message));
       return json(res, 200, { ok: true, menuadmin: true });
+    }
+    if (command === '/forcesupport') {
+      await handleFridaySupportModeCommand(message, FRIDAY_SUPPORT_MODE_FORCE);
+      return json(res, 200, { ok: true, friday_support_mode: 'FORCE' });
+    }
+    if (command === '/donatesupport') {
+      await handleFridaySupportModeCommand(message, FRIDAY_SUPPORT_MODE_DONATE);
+      return json(res, 200, { ok: true, friday_support_mode: 'DONATE' });
+    }
+    if (command === '/supportnormal') {
+      await handleFridaySupportModeCommand(message, FRIDAY_SUPPORT_MODE_NORMAL);
+      return json(res, 200, { ok: true, friday_support_mode: 'NORMAL' });
     }
     if (command === '/resetchannel') {
       await handleResetChannelCommand(message);

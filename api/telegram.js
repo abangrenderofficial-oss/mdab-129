@@ -47,6 +47,13 @@ function commandFromMessage(message) {
   return (text.split(/\s+/)[0]?.toLowerCase() || '').split('@')[0];
 }
 
+function startPayload(message) {
+  const text = String(message?.text || '').trim();
+  const parts = text.split(/\s+/);
+  if (!parts[0]?.toLowerCase().startsWith('/start')) return '';
+  return String(parts[1] || '').trim().toLowerCase();
+}
+
 async function recordPremiumHqSuccess(userId, chatId) {
   await recordUsage(userId, 'status_hq');
   await markPremiumHqCompleted(userId);
@@ -62,8 +69,9 @@ async function processMessage(message, context) {
   if (command === '/connect') return handleConnectCommand(message, context.baseUrl, false);
   if (command === '/disconnect') return handleConnectCommand(message, context.baseUrl, true);
   if (command === '/connectquote') return handleConnectQuoteCommand(message);
+  if (command === '/start' && startPayload(message) === 'support') return handleSupportCommand(message, context);
   if (command === '/start' || command === '/help') return sendMessage(chatId, startText(message?.from?.id));
-  if (command === '/support') return isResetAdmin(message?.from?.id) ? handleSupportCommand(message, context) : true;
+  if (command === '/support') return handleSupportCommand(message, context);
   if (command === '/luahrasa') return handleLuahRasaCommand(message, context);
   if (await processLuahRasaMessage(message, context)) return;
   if (await processSupportMessage(message, context)) return;
@@ -119,7 +127,11 @@ async function runWebhookUpdate(update, context) {
     }
 
     if (await processLiveWallpaperButton(callbackQuery, context)) {
-      if (action.startsWith(MEDIA_LIVE_WALLPAPER)) await recordUsage(userId, 'live_wallpaper');
+      if (action.startsWith(MEDIA_LIVE_WALLPAPER) && premiumResult?.premiumVideoCompleted) {
+        await recordUsage(userId, 'live_wallpaper');
+      } else if (action.startsWith(MEDIA_LIVE_WALLPAPER)) {
+        await recordUsage(userId, 'live_wallpaper');
+      }
       return;
     }
     if (await processTikTokSlideshowChoice(callbackQuery, context)) await recordUsage(userId, 'download');

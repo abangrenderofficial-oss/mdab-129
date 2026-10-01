@@ -16,7 +16,7 @@ import { processTikTokSlideshowChoice } from '../src/features/tiktok-slideshow.j
 import { handleSupportTestCommand } from '../src/features/support-test.js';
 import { handleSupportCommand, processSupportCallback, processSupportMessage } from '../src/features/support.js';
 import { handleLuahRasaCommand, processLuahRasaMessage } from '../src/features/luahrasa.js';
-import { handleConnectQuoteCommand } from '../src/features/quote-filter.js';
+import { handleConnectQuoteCommand, processQuoteFilterCallback } from '../src/features/quote-filter.js';
 import { handleCheckMemberCommand } from '../src/features/channel-diagnostic.js';
 import { enforceChannelGateForCallback, enforceChannelGateForMessage, maybePromptChannelAfterSuccess, processChannelGateCallback } from '../src/features/channel-gate.js';
 import { scheduleLinkJob } from '../src/link-queue.js';
@@ -99,6 +99,7 @@ async function runWebhookUpdate(update, context) {
     const userId = callbackQuery?.from?.id;
     const chatId = callbackQuery?.message?.chat?.id;
 
+    if (await processQuoteFilterCallback(callbackQuery)) return;
     if (await processChannelGateCallback(callbackQuery)) return;
     if (await processSupportCallback(callbackQuery, context)) return;
     if (await enforceChannelGateForCallback(callbackQuery)) return;

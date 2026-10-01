@@ -21,6 +21,17 @@ function addOneCalendarMonth(value) {
   return date;
 }
 
+function normalizedTier(row = {}) {
+  const amountCents = Number(row.amount_cents || 0);
+  if (amountCents === 100) {
+    return { key: 'coffee', label: '☕️ Cofee Supporter' };
+  }
+  return {
+    key: String(row.tier_key || ''),
+    label: String(row.tier_label || '') || '❤️ Supporter',
+  };
+}
+
 export async function saveSupportTestimonial(orderNumber, supportMessage, displayName) {
   const order = String(orderNumber || '').trim();
   if (!order) return null;
@@ -78,10 +89,11 @@ export async function getActiveSupporterTitle(userId) {
     .map((row) => {
       const expiresAt = addOneCalendarMonth(row.paid_at);
       if (!expiresAt || expiresAt.getTime() <= now) return null;
+      const tier = normalizedTier(row);
       return {
         orderNumber: String(row.order_number || ''),
-        tierKey: String(row.tier_key || ''),
-        tierLabel: String(row.tier_label || '') || '❤️ Supporter',
+        tierKey: tier.key,
+        tierLabel: tier.label,
         amount: (Number(row.amount_cents || 0) / 100).toFixed(2),
         displayName: String(row.display_name || ''),
         paidAt: String(row.paid_at || ''),

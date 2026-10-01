@@ -475,6 +475,36 @@ export async function sendVideoFileUpload(chatId, filePath, caption = '', extra 
   return parseTelegramResponse(response, 'sendVideo');
 }
 
+export async function sendAudioFileUpload(chatId, filePath, fileName, caption = '', extra = {}) {
+  if (!filePath) throw new Error('Local audio path is missing.');
+  await assertChatWriteAllowed('sendAudio', { chat_id: chatId });
+
+  const fileStat = await stat(filePath);
+  const limit = uploadLimitBytes();
+  if (fileStat.size > limit) {
+    const err = new Error(`Audio is too large for the configured Telegram upload limit (${fileStat.size} bytes).`);
+    err.code = 'TELEGRAM_FILE_TOO_LARGE';
+    throw err;
+  }
+
+  const buffer = await readFile(filePath);
+  const safeName = String(fileName || path.basename(filePath) || 'audio.mp3').slice(0, 180);
+  const extension = path.extname(safeName).replace(/^\./, '').toLowerCase();
+  const contentType = extension === 'm4a' ? 'audio/mp4' : extension === 'ogg' ? 'audio/ogg' : 'audio/mpeg';
+  const form = new FormData();
+  form.set('chat_id', String(chatId));
+  if (caption) form.set('caption', String(caption).slice(0, 1024));
+  appendFormExtra(form, extra);
+  form.set('audio', new Blob([buffer], { type: contentType }), safeName);
+
+  const response = await fetch(telegramEndpoint('sendAudio'), {
+    method: 'POST',
+    body: form,
+    signal: AbortSignal.timeout(Number(process.env.TELEGRAM_UPLOAD_TIMEOUT_MS || 55000)),
+  });
+  return parseTelegramResponse(response, 'sendAudio');
+}
+
 export function sendPhotoUrl(chatId, url, caption = '') {
   return telegram('sendPhoto', {
     chat_id: chatId,

@@ -47,9 +47,7 @@ function supportCommandText() {
     'Terima kasih, Orang baik!',
     'Sebab Sama2 nak bantu hidupkan Bot 🙇🏻✨',
     '',
-    'Pilih Type Of Support korang :',
-    '',
-    '🤍 RM10 — S | 🌟 RM20 — Ss | 💎 RM30 — Ps | 🏆 RM50 — Us | 👑 RM100 — Ls',
+    'Pilih Type Of Support korang 🤍',
   ].join('\n');
 }
 

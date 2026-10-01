@@ -10,7 +10,7 @@
     "start": "node server.js",
     "postinstall": "node scripts/install-ytdlp.mjs && npm run check",
     "diag:tiktok": "node scripts/diag-tiktok-providers.mjs",
-    "check": "node scripts/check-feature-boundaries.mjs"
+    "check": "node scripts/check-feature-boundaries.mjs && node scripts/channel-security-selftest.mjs"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",

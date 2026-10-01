@@ -40,7 +40,7 @@ export function commandMenuText(userId) {
     '/help — Bantuan ringkas',
     '/menu — Senarai command',
     '/status <link> — Buat Status HQ dari link',
-    '/luahrasa <mesej> — Kongsi luahan ke channel (Supporter aktif)',
+    '/luahrasa — Luah rasa / share cerita ke channel',
     '/reset — Reset sesi sendiri jika bot tersangkut',
   ];
 
@@ -51,8 +51,9 @@ export function commandMenuText(userId) {
       '/support — ❤️ Support bot',
       '/supporttest — Test payment gateway',
       '/resetadmin — Reset & recovery semua user',
-      '/connect — Sambung group pemantauan',
-      '/disconnect — Putus group pemantauan',
+      '/connect — Sambung group pemantauan video',
+      '/connectquote — Sambung group filter quote & luah rasa',
+      '/disconnect — Putus group pemantauan video',
       '/totaluser — Statistik penggunaan bot',
     );
   }

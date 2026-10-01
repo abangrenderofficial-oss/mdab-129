@@ -1,5 +1,5 @@
 import { currentSupportEnvironment, getSupportDb } from './store.js';
-import { sendMessage } from '../telegram.js';
+import { getTelegramChat, sendMessage } from '../telegram.js';
 
 let quoteSchemaPromise = null;
 
@@ -48,6 +48,13 @@ async function ensureQuoteFilterSchema() {
 export async function setQuoteFilterGroup(chatId, title = '') {
   const groupId = String(chatId || '').trim();
   if (!/^-?\d+$/.test(groupId)) throw new Error('Invalid quote filter group ID.');
+
+  const chat = await getTelegramChat(groupId);
+  if (!['group', 'supergroup'].includes(chat?.type)) {
+    const error = new Error('Quote filter destination must be a Telegram group or supergroup.');
+    error.code = 'QUOTE_FILTER_GROUP_REQUIRED';
+    throw error;
+  }
 
   await ensureQuoteFilterSchema();
   const db = await getSupportDb();
@@ -192,6 +199,21 @@ function moderationKeyboard(id) {
   };
 }
 
+async function requireConnectedFilterGroup(groupId) {
+  const chat = await getTelegramChat(groupId);
+  if (!['group', 'supergroup'].includes(chat?.type)) {
+    const error = new Error('Connected quote destination is not a Telegram group.');
+    error.code = 'QUOTE_FILTER_DESTINATION_INVALID';
+    throw error;
+  }
+  if (String(chat.id || '') !== String(groupId || '')) {
+    const error = new Error('Connected quote destination no longer matches the saved group.');
+    error.code = 'QUOTE_FILTER_DESTINATION_MISMATCH';
+    throw error;
+  }
+  return chat;
+}
+
 async function sendToQuoteFilter({ kind, text, body, displayName, tierLabel = '' }) {
   const target = await getQuoteFilterGroup();
   if (!target?.groupId) {
@@ -200,6 +222,7 @@ async function sendToQuoteFilter({ kind, text, body, displayName, tierLabel = ''
     throw error;
   }
 
+  await requireConnectedFilterGroup(target.groupId);
   const moderationId = await createModeration({ kind, body, displayName, tierLabel });
   try {
     const sent = await sendMessage(target.groupId, text, {

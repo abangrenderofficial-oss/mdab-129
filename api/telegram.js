@@ -1,7 +1,7 @@
 import { detectPlatform, extractFirstUrl } from '../src/platform.js';
 import { sendMessage } from '../src/telegram.js';
 import { beginUpdate, captureJobFence, isResetAdmin, resetGlobalFence, resetUserFence } from '../src/recovery.js';
-import { commandMenuText, startText } from '../src/bot/commands.js';
+import { adminCommandMenuText, commandMenuText, startText } from '../src/bot/commands.js';
 import { handleConnectCommand, processAuditDelete, setMirrorWebhook } from '../src/bot/audit.js';
 import { MEDIA_LIVE_WALLPAPER, MEDIA_STATUS_HQ, MEDIA_STATUS_HQ_ANDROID } from '../src/bot/media-actions.js';
 import { handleTotalUserCommand, markPremiumHqCompleted, recordUsage } from '../src/bot/stats.js';
@@ -18,6 +18,7 @@ import { handleSupportCommand, processSupportCallback, processSupportMessage } f
 import { handleLuahRasaCommand, processLuahRasaMessage } from '../src/features/luahrasa.js';
 import { handleConnectQuoteCommand, processQuoteFilterCallback } from '../src/features/quote-filter.js';
 import { handleCheckMemberCommand } from '../src/features/channel-diagnostic.js';
+import { handleResetChannelCommand } from '../src/features/channel-reset.js';
 import { enforceChannelGateForCallback, enforceChannelGateForMessage, maybePromptChannelAfterSuccess, processChannelGateCallback } from '../src/features/channel-gate.js';
 import { scheduleLinkJob } from '../src/link-queue.js';
 
@@ -147,6 +148,7 @@ export default async function handler(req, res) {
       mirror_connected: Boolean(mirrorGroupFromRequest(req)),
       architecture: 'isolated-features-v1',
       recovery: 'sync-recovery-v3',
+      channel_policy: 'support-promotion-only',
     });
   }
   if (req.method !== 'POST') {
@@ -169,9 +171,25 @@ export default async function handler(req, res) {
 
     const command = commandFromMessage(message);
     if (command === '/menu') {
+      await sendMessage(message.chat.id, commandMenuText()).catch((error) => console.warn('Menu reply failed:', error?.message));
+      return json(res, 200, { ok: true, menu: 'user' });
+    }
+    if (command === '/menuadmin') {
       const userId = message?.from?.id;
-      await sendMessage(message.chat.id, commandMenuText(userId)).catch((error) => console.warn('Menu reply failed:', error?.message));
-      return json(res, 200, { ok: true, menu: isResetAdmin(userId) ? 'owner' : 'user' });
+      if (!isResetAdmin(userId)) {
+        await sendMessage(message.chat.id, '❌ /menuadmin hanya untuk admin bot.').catch(() => {});
+        return json(res, 200, { ok: true, menuadmin: false, reason: 'not_admin' });
+      }
+      if (message?.chat?.type !== 'private') {
+        await sendMessage(message.chat.id, '❌ /menuadmin hanya boleh digunakan dalam private chat bot.').catch(() => {});
+        return json(res, 200, { ok: true, menuadmin: false, reason: 'private_only' });
+      }
+      await sendMessage(message.chat.id, adminCommandMenuText()).catch((error) => console.warn('Admin menu reply failed:', error?.message));
+      return json(res, 200, { ok: true, menuadmin: true });
+    }
+    if (command === '/resetchannel') {
+      await handleResetChannelCommand(message);
+      return json(res, 200, { ok: true, channel_reset: true });
     }
     if (command === '/totaluser') {
       await handleTotalUserCommand(message, context);
@@ -198,10 +216,14 @@ export default async function handler(req, res) {
         await sendMessage(message.chat.id, '❌ /resetadmin hanya untuk owner bot.').catch(() => {});
         return json(res, 200, { ok: true, reset: false, reason: 'not_owner' });
       }
+      if (message?.chat?.type !== 'private') {
+        await sendMessage(message.chat.id, '❌ /resetadmin hanya boleh digunakan dalam private chat bot.').catch(() => {});
+        return json(res, 200, { ok: true, reset: false, reason: 'private_only' });
+      }
       resetGlobalFence(update);
       try {
-        await setMirrorWebhook(context.baseUrl, context.mirrorGroupId, true);
-        await sendMessage(message.chat.id, '♻️ ADMIN RESET selesai.\nPending update lama dibuang dan semua proses lama ditandakan batal. Bot kembali ke keadaan bersih.');
+        await setMirrorWebhook(context.baseUrl, '', true);
+        await sendMessage(message.chat.id, '♻️ ADMIN RESET selesai.\nPending update lama dibuang, pemantauan group di-clear dan semua proses lama ditandakan batal. Bot kembali ke keadaan bersih.');
       } catch (error) {
         console.error('Admin reset failed:', error?.message);
         await sendMessage(message.chat.id, '❌ Admin reset tak dapat disiapkan sepenuhnya. Cuba sekali lagi.').catch(() => {});

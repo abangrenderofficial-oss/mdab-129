@@ -4,6 +4,7 @@ import {
   moderateQuote,
   setQuoteFilterGroup,
 } from '../support/quote-filter.js';
+import { deliverApprovedModeration } from '../support/content-bridge.js';
 
 async function isGroupAdmin(chatId, userId) {
   if (!chatId || !userId) return false;
@@ -137,6 +138,12 @@ export async function processQuoteFilterCallback(callbackQuery = {}) {
       callbackQuery,
       approved ? 'Approved ✅' : 'Rejected ❌',
     );
+
+    if (approved) {
+      void deliverApprovedModeration(finalRecord).catch((error) => {
+        console.error('[quote-filter] approved delivery failed:', error?.message);
+      });
+    }
   } catch (error) {
     console.error('[quote-filter] moderation callback failed:', error?.message);
     await answerCallback(callbackQuery, 'Tak berjaya update filter sekarang. Cuba lagi.', true);

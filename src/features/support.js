@@ -17,7 +17,7 @@ const SUPPORT_BACK_ACTION = 'support:back';
 const SUPPORT_AMOUNTS = new Set([1, 10, 20, 30, 50, 100]);
 
 const SUPPORT_TIERS = new Map([
-  [1, { key: 'admin_test', label: '🧪 RM1 Admin Test' }],
+  [1, { key: 'coffee', label: '☕️ Cofee Supporter' }],
   [10, { key: 'supporter', label: '🤍 Supporter' }],
   [20, { key: 'super', label: '🌟 Super Supporter' }],
   [30, { key: 'power', label: '💎 Power Supporter' }],

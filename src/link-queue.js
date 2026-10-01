@@ -6,6 +6,10 @@ import { processStandardDownload } from './features/downloader.js';
 import { processStatusFromLink } from './features/status-hq.js';
 import { sendTikTokSlideshowChoice } from './features/tiktok-slideshow.js';
 import { maybePromptChannelAfterSuccess } from './features/channel-gate.js';
+import {
+  enforceFridaySupportForMessage,
+  markFridayUsageSuccess,
+} from './support/friday-access.js';
 
 function hasDownloadableMedia(result) {
   if (!result || result.cancelled) return false;
@@ -17,6 +21,9 @@ function hasDownloadableMedia(result) {
 async function recordPremiumHqSuccess(userId, chatId) {
   await recordUsage(userId, 'status_hq');
   await markPremiumHqCompleted(userId);
+  await markFridayUsageSuccess(userId).catch((error) => {
+    console.warn('[friday-support] status success mark failed:', error?.message);
+  });
   await maybePromptChannelAfterSuccess(chatId, userId);
 }
 
@@ -25,6 +32,10 @@ async function runLinkJob({ message, context, url, platform, statusMode }) {
   const userId = message?.from?.id;
   if (!chatId || !userId) return;
 
+  // Re-check when the queued job actually starts. This closes the loophole where a
+  // user queues several links before their first free FORCE-mode download finishes.
+  if (await enforceFridaySupportForMessage(message)) return;
+
   if (statusMode) {
     const completed = await processStatusFromLink(chatId, url, platform, context.fence);
     if (completed) await recordPremiumHqSuccess(userId, chatId);
@@ -32,14 +43,23 @@ async function runLinkJob({ message, context, url, platform, statusMode }) {
   }
 
   const result = await processStandardDownload({ chatId, url, platform, context, message });
-  if (result?.slideshow) await sendTikTokSlideshowChoice(chatId, url);
-  else if (hasDownloadableMedia(result)) await recordUsage(userId, 'download');
+  if (result?.slideshow) {
+    await sendTikTokSlideshowChoice(chatId, url);
+  } else if (hasDownloadableMedia(result)) {
+    await recordUsage(userId, 'download');
+    await markFridayUsageSuccess(userId).catch((error) => {
+      console.warn('[friday-support] download success mark failed:', error?.message);
+    });
+  }
 }
 
 export async function scheduleLinkJob({ message, context = {}, url, platform, statusMode = false }) {
   const chatId = message?.chat?.id;
   const userId = message?.from?.id;
   if (!chatId || !userId) return false;
+
+  // Fast pre-check so an already locked user does not enter the heavy queue at all.
+  if (await enforceFridaySupportForMessage(message)) return true;
 
   const queued = enqueueUserHeavyJob(
     userId,

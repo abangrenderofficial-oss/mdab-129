@@ -1,7 +1,7 @@
 import { detectPlatform, extractFirstUrl } from '../src/platform.js';
 import { sendMessage } from '../src/telegram.js';
 import { beginUpdate, captureJobFence, isResetAdmin, resetGlobalFence, resetUserFence } from '../src/recovery.js';
-import { commandMenuText, START_TEXT } from '../src/bot/commands.js';
+import { commandMenuText, startText } from '../src/bot/commands.js';
 import { handleConnectCommand, processAuditDelete, setMirrorWebhook } from '../src/bot/audit.js';
 import { MEDIA_LIVE_WALLPAPER, MEDIA_STATUS_HQ, MEDIA_STATUS_HQ_ANDROID } from '../src/bot/media-actions.js';
 import { handleTotalUserCommand, markPremiumHqCompleted, recordUsage } from '../src/bot/stats.js';
@@ -59,8 +59,8 @@ async function processMessage(message, context) {
   const command = commandFromMessage(message);
   if (command === '/connect') return handleConnectCommand(message, context.baseUrl, false);
   if (command === '/disconnect') return handleConnectCommand(message, context.baseUrl, true);
-  if (command === '/start' || command === '/help') return sendMessage(chatId, START_TEXT);
-  if (command === '/support') return handleSupportCommand(message, context);
+  if (command === '/start' || command === '/help') return sendMessage(chatId, startText(message?.from?.id));
+  if (command === '/support') return isResetAdmin(message?.from?.id) ? handleSupportCommand(message, context) : true;
   if (await processSupportMessage(message, context)) return;
   if (await enforceChannelGateForMessage(message)) return;
   if (await handleHqLabCommand(message, context)) return;

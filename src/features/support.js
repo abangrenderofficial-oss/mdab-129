@@ -2,6 +2,7 @@ import { createSupportOrderNumber, createSupportPayment, isBayarcashConfigured }
 import { createPendingSupport, markSupportIntentCreated, markSupportIntentFailed } from '../support/store.js';
 import { createSupportSubmission, markSupportSubmissionCheckout } from '../support/submissions.js';
 import { sendMessage, telegram } from '../telegram.js';
+import { isResetAdmin } from '../recovery.js';
 
 const SUPPORT_SELECT_PREFIX = 'support:select:';
 const SUPPORT_AMOUNTS_ACTION = 'support:amounts';
@@ -90,6 +91,9 @@ export async function handleSupportCommand(message = {}) {
   const userId = message?.from?.id;
   if (!chatId || !userId) return true;
 
+  // Temporarily owner-only while Bayarcash support flow is being tested.
+  if (!isResetAdmin(userId)) return true;
+
   await sendMessage(chatId, supportMenuText(), {
     reply_markup: supportMenuKeyboard(),
   });
@@ -114,6 +118,19 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
   const messageId = callbackQuery?.message?.message_id;
   const user = callbackQuery?.from || {};
   if (!chatId || !user?.id) return true;
+
+  // Old support keyboards in user chats are disabled as well.
+  if (!isResetAdmin(user.id)) {
+    await answerSupportCallback(callbackQuery, 'Fungsi ini sedang ditutup sementara.');
+    if (messageId) {
+      await editSupportMessage(
+        callbackQuery,
+        '⚙️ Fungsi ini sedang ditutup sementara.',
+        { inline_keyboard: [] },
+      );
+    }
+    return true;
+  }
 
   if (action === SUPPORT_BACK_ACTION) {
     await answerSupportCallback(callbackQuery);

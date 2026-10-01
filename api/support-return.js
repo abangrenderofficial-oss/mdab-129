@@ -1,7 +1,7 @@
 import { reconcileSupportPayment } from '../src/support/reconcile.js';
 import { getSupportSubmission, markSupportSubmissionAnnounced } from '../src/support/submissions.js';
 import { saveSupportTestimonial } from '../src/support/community-store.js';
-import { publishSupportTestimonial } from '../src/support/community.js';
+import { sendSupportQuoteToFilter } from '../src/support/quote-filter.js';
 import { sendMessage } from '../src/telegram.js';
 
 function firstQueryValue(value) {
@@ -77,7 +77,7 @@ function htmlPage({
 
     ${alreadyShared ? `
       <div class="done-box">
-        <strong>Kata-kata support dah dihantar ❤️</strong>
+        <strong>Kata-kata support dah dihantar untuk filter ❤️</strong>
         <p>Terima kasih sebab support bot kita.</p>
       </div>
     ` : `
@@ -90,16 +90,16 @@ function htmlPage({
           <textarea id="support_message" name="support_message" maxlength="500" required placeholder="Tulis kata-kata support korang...">${safeMessage}</textarea>
           <label for="display_name">Nama</label>
           <input id="display_name" name="display_name" type="text" maxlength="80" required placeholder="Nama yang korang nak paparkan" value="${safeName}">
-          <button type="submit">Hantar ke Channel ❤️</button>
+          <button type="submit">Hantar ❤️</button>
         </form>
-        <p class="small">Kata-kata support korang akan di-share dalam channel ❤️.</p>
+        <p class="small">Kata-kata support korang akan kita filter dulu sebelum di-share dalam channel ❤️.</p>
       </div>
     `}
 
     <div class="luah">
       <strong>💭 /luahrasa</strong>
       <p>Korang juga boleh command di bot <b>/luahrasa</b>. Korang boleh luah apa sahaja yang korang nak ahli channel baca, menumpang rasa sekali.</p>
-      <p>Title korang sebagai supporter pun akan dipaparkan sekali tau! ✨</p>
+      <p>Kalau korang ada title supporter yang masih aktif, title tu akan dipaparkan sekali tau! ✨</p>
     </div>
   `;
 
@@ -226,23 +226,25 @@ export default async function handler(req, res) {
       notice = 'Payment dah confirmed, tapi rekod supporter tak dijumpai. Kata-kata belum dihantar.';
       noticeType = 'error';
     } else if (submission.announcedAt) {
-      notice = 'Kata-kata support ni dah dihantar ke channel sebelum ni ❤️';
+      notice = 'Kata-kata support ni dah dihantar untuk filter sebelum ni ❤️';
     } else if (!submittedMessage || !submittedName) {
       notice = 'Isi kata-kata support dan nama dulu ya.';
       noticeType = 'error';
     } else {
       try {
         const saved = await saveSupportTestimonial(orderNumber, submittedMessage, submittedName);
-        await publishSupportTestimonial({
+        await sendSupportQuoteToFilter({
           displayName: saved?.displayName || submittedName,
           supportMessage: saved?.supportMessage || submittedMessage,
           tierLabel: saved?.tierLabel || tierLabel,
         });
         submission = await markSupportSubmissionAnnounced(orderNumber);
-        notice = 'Dah hantar ❤️ Kata-kata support korang dah masuk ke channel.';
+        notice = 'Terima kasih! Kata-kata support korang kita akan filter dulu. If everything okay, kita akan share dalam channel ❤️';
       } catch (error) {
-        console.error('[support-return] testimonial publish failed:', error?.message);
-        notice = 'Payment dah confirmed, tapi kata-kata support belum berjaya dihantar ke channel. Cuba tekan hantar sekali lagi.';
+        console.error('[support-return] quote filter delivery failed:', error?.code, error?.message);
+        notice = error?.code === 'QUOTE_FILTER_NOT_CONNECTED'
+          ? 'Group filter belum disambungkan lagi. Admin perlu guna /connectquote dahulu.'
+          : 'Payment dah confirmed, tapi kata-kata support belum berjaya dihantar untuk filter. Cuba tekan hantar sekali lagi.';
         noticeType = 'error';
         submission = await getSupportSubmission(orderNumber).catch(() => submission);
       }

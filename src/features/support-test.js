@@ -1,6 +1,8 @@
 import {
+  choosePreferredPaymentChannel,
   createSupportOrderNumber,
   createSupportPayment,
+  getBayarcashPaymentIntent,
   getBayarcashPortalDiagnostic,
   isBayarcashConfigured,
   isBayarcashSandbox,
@@ -9,23 +11,15 @@ import { createPendingSupport, markSupportIntentCreated, markSupportIntentFailed
 import { sendMessage } from '../telegram.js';
 import { isResetAdmin } from '../recovery.js';
 
-const SUPPORT_AMOUNTS = [10, 20, 30, 50, 100];
-const TEST_CHANNEL_PRIORITY = [1, 5, 6, 12, 16, 17, 18, 21, 4, 23, 7, 8, 9, 10, 11, 13, 14, 15, 19, 20, 2, 3];
+const SUPPORT_AMOUNTS = [1, 10, 20, 30, 50, 100];
+const SUPPORT_CHECK_PREFIX = 'support:check:';
 
 function commandAmount(message = {}) {
   const text = String(message?.text || '').trim();
   const [, raw] = text.split(/\s+/);
-  const amount = Number(raw || 10);
+  const amount = Number(raw || 1);
   if (!SUPPORT_AMOUNTS.includes(amount)) return null;
   return amount;
-}
-
-function chooseTestChannel(channels = []) {
-  for (const id of TEST_CHANNEL_PRIORITY) {
-    const found = channels.find((channel) => Number(channel?.id) === id);
-    if (found) return found;
-  }
-  return channels[0] || null;
 }
 
 function channelSummary(channels = []) {
@@ -33,6 +27,28 @@ function channelSummary(channels = []) {
   return channels
     .map((channel) => `${channel.id} ${channel.name || channel.label || channel.code || 'Channel'}`)
     .join(', ');
+}
+
+function assertPaymentIntentReadBack(intent, payment) {
+  const returnedId = String(intent?.id || '');
+  const returnedOrder = String(intent?.order_number || '');
+  const returnedAmount = Number(intent?.amount || 0);
+
+  if (!returnedId || returnedId !== String(payment.paymentIntentId || '')) {
+    const error = new Error('Bayarcash read-back returned a different payment intent ID.');
+    error.code = 'BAYARCASH_READBACK_ID_MISMATCH';
+    throw error;
+  }
+  if (!returnedOrder || returnedOrder !== String(payment.orderNumber || '')) {
+    const error = new Error('Bayarcash read-back returned a different order number.');
+    error.code = 'BAYARCASH_READBACK_ORDER_MISMATCH';
+    throw error;
+  }
+  if (!Number.isFinite(returnedAmount) || Math.abs(returnedAmount - Number(payment.amount)) > 0.0001) {
+    const error = new Error('Bayarcash read-back returned a different amount.');
+    error.code = 'BAYARCASH_READBACK_AMOUNT_MISMATCH';
+    throw error;
+  }
 }
 
 export async function handleSupportTestCommand(message, context = {}) {
@@ -46,7 +62,7 @@ export async function handleSupportTestCommand(message, context = {}) {
   }
 
   const sandbox = isBayarcashSandbox();
-  const modeLabel = sandbox ? '🧪 SANDBOX' : '🔴 PRODUCTION';
+  const modeLabel = sandbox ? '🧪 SANDBOX' : '🔴 LIVE';
 
   if (!isBayarcashConfigured()) {
     const required = sandbox
@@ -61,18 +77,18 @@ export async function handleSupportTestCommand(message, context = {}) {
 
   const amount = commandAmount(message);
   if (!amount) {
-    await sendMessage(chatId, 'Guna: /supporttest 10\nPilihan test: RM10, RM20, RM30, RM50 atau RM100.');
+    await sendMessage(chatId, 'Guna: /supporttest 1\nPilihan: RM1, RM10, RM20, RM30, RM50 atau RM100.');
     return true;
   }
 
   let orderNumber = '';
   try {
-    await sendMessage(chatId, `${modeLabel}\n🔎 Checking Bayarcash API token, portal & payment channels...`).catch(() => {});
+    await sendMessage(chatId, `${modeLabel}\n🔎 Checking API token, portal & payment channels...`).catch(() => {});
 
     const diagnostic = await getBayarcashPortalDiagnostic();
-    const testChannel = chooseTestChannel(diagnostic.paymentChannels);
+    const testChannel = choosePreferredPaymentChannel(diagnostic.paymentChannels);
     if (!testChannel) {
-      const error = new Error('Portal dijumpai tetapi tiada payment channel aktif. Enable sekurang-kurangnya satu channel dalam Bayarcash portal.');
+      const error = new Error('Portal dijumpai tetapi tiada payment channel aktif.');
       error.code = 'BAYARCASH_NO_ACTIVE_CHANNEL';
       throw error;
     }
@@ -84,7 +100,7 @@ export async function handleSupportTestCommand(message, context = {}) {
         '✅ Bayarcash API connection OK.',
         `Portal: ${diagnostic.portalName}`,
         `Active channels: ${channelSummary(diagnostic.paymentChannels)}`,
-        `Test channel: ${testChannel.id} ${testChannel.name || testChannel.label || testChannel.code || ''}`.trim(),
+        `Selected channel: ${testChannel.id} ${testChannel.name || testChannel.label || testChannel.code || ''}`.trim(),
       ].join('\n'),
     ).catch(() => {});
 
@@ -96,7 +112,7 @@ export async function handleSupportTestCommand(message, context = {}) {
       amount,
     });
 
-    await sendMessage(chatId, `${modeLabel}\n⏳ Creating Bayarcash support payment RM${amount}...`).catch(() => {});
+    await sendMessage(chatId, `${modeLabel}\n⏳ Creating Bayarcash payment intent RM${amount}...`).catch(() => {});
 
     const payment = await createSupportPayment({
       amount,
@@ -107,23 +123,39 @@ export async function handleSupportTestCommand(message, context = {}) {
     });
     await markSupportIntentCreated(orderNumber, payment.paymentIntentId);
 
+    if (!payment.paymentIntentId) {
+      const error = new Error('Bayarcash accepted checkout but did not return payment intent ID.');
+      error.code = 'BAYARCASH_PAYMENT_INTENT_ID_MISSING';
+      throw error;
+    }
+
+    const readBack = await getBayarcashPaymentIntent(payment.paymentIntentId);
+    assertPaymentIntentReadBack(readBack, payment);
+
+    const keyboard = [
+      [{ text: `${sandbox ? '🧪 Test' : '💳 Bayar'} RM${amount}`, url: payment.url }],
+      [{ text: '🔎 Check Bayarcash', callback_data: `${SUPPORT_CHECK_PREFIX}${payment.paymentIntentId}` }],
+    ];
+
     await sendMessage(
       chatId,
       [
         `${modeLabel}`,
-        '✅ Bayarcash support payment berjaya dibuat.',
+        '✅ BAYARCASH ACCEPTED + READ-BACK OK',
         '',
         `Amount: RM${payment.amount}`,
         `Support ID: ${payment.orderNumber}`,
+        `Payment Intent: ${payment.paymentIntentId}`,
         `Channel: ${payment.paymentChannelLabel}`,
+        `Gateway status sekarang: ${readBack?.status || 'new/pending'}`,
         '',
-        `Tekan button bawah untuk buka payment page.${sandbox ? ' Ini Sandbox — tiada duit sebenar digunakan.' : ''}`,
+        sandbox
+          ? 'Sandbox sahaja — tiada duit sebenar digunakan.'
+          : 'LIVE — RM1 sebenar hanya dicaj selepas kau authorize di bank/wallet.',
+        '',
+        'Selepas payment selesai, tekan “Check Bayarcash”.',
       ].join('\n'),
-      {
-        reply_markup: {
-          inline_keyboard: [[{ text: `${sandbox ? '🧪 Test' : '❤️ Support'} RM${amount}`, url: payment.url }]],
-        },
-      },
+      { reply_markup: { inline_keyboard: keyboard } },
     );
   } catch (error) {
     if (orderNumber) await markSupportIntentFailed(orderNumber, error?.code || 'UNKNOWN').catch(() => {});

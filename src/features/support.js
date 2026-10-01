@@ -1,15 +1,23 @@
-import { createSupportOrderNumber, createSupportPayment, isBayarcashConfigured } from '../payments/bayarcash.js';
+import {
+  createSupportOrderNumber,
+  createSupportPayment,
+  isBayarcashConfigured,
+  isBayarcashSandbox,
+} from '../payments/bayarcash.js';
 import { createPendingSupport, markSupportIntentCreated, markSupportIntentFailed } from '../support/store.js';
 import { createSupportSubmission, markSupportSubmissionCheckout } from '../support/submissions.js';
+import { reconcileSupportPayment } from '../support/reconcile.js';
 import { sendMessage, telegram } from '../telegram.js';
 import { isResetAdmin } from '../recovery.js';
 
 const SUPPORT_SELECT_PREFIX = 'support:select:';
+const SUPPORT_CHECK_PREFIX = 'support:check:';
 const SUPPORT_AMOUNTS_ACTION = 'support:amounts';
 const SUPPORT_BACK_ACTION = 'support:back';
-const SUPPORT_AMOUNTS = new Set([10, 20, 30, 50, 100]);
+const SUPPORT_AMOUNTS = new Set([1, 10, 20, 30, 50, 100]);
 
 const SUPPORT_TIERS = new Map([
+  [1, { key: 'admin_test', label: '🧪 RM1 Admin Test' }],
   [10, { key: 'supporter', label: '🤍 Supporter' }],
   [20, { key: 'super', label: '🌟 Super Supporter' }],
   [30, { key: 'power', label: '💎 Power Supporter' }],
@@ -27,22 +35,26 @@ function tierForAmount(amount) {
   return SUPPORT_TIERS.get(Number(amount)) || { key: 'supporter', label: '🤍 Supporter' };
 }
 
+function modeLabel() {
+  return isBayarcashSandbox() ? '🧪 SANDBOX' : '🔴 LIVE';
+}
+
 function supportMenuText() {
   return [
-    '❤️Selamatkan Bot kita !',
+    '🧪 ADMIN PAYMENT TEST',
     '',
-    'Hi korang, best tak guna bot ni? Utk pengetahuan korang. Bot ni adalah bot kita semua. Hak kita semua.',
+    `${modeLabel()} Bayarcash`,
+    'Menu ini sementara hanya boleh dibuka oleh owner/admin.',
     '',
-    'Tapi sayang, bot ni untuk kekal hidup kita kena bayarkan kos sewa server utk dia. Jom kita saling membantu hidupkan bot ni nak? Sekali seumur hidup pun tak apa. Terima kasih orang baik !🤍',
-    '',
-    'Korang boleh pilih amount yg korang mampu 🙇🏻',
-    ...(!isBayarcashConfigured() ? ['', '⚙️ Payment gateway tengah disediakan. Cuba lagi kejap nanti.'] : []),
+    'Guna RM1 untuk test aliran payment sebenar dengan kos minimum.',
+    ...(!isBayarcashConfigured() ? ['', '⚙️ Payment gateway belum lengkap di Railway.'] : []),
   ].join('\n');
 }
 
 function supportMenuKeyboard() {
   return {
     inline_keyboard: [
+      [{ text: '🧪 RM1 TEST', callback_data: `${SUPPORT_SELECT_PREFIX}1` }],
       [
         { text: 'RM10', callback_data: `${SUPPORT_SELECT_PREFIX}10` },
         { text: 'RM20', callback_data: `${SUPPORT_SELECT_PREFIX}20` },
@@ -78,11 +90,11 @@ async function editSupportMessage(callbackQuery, text, replyMarkup) {
   }
 }
 
-async function answerSupportCallback(callbackQuery, text = '') {
+async function answerSupportCallback(callbackQuery, text = '', showAlert = false) {
   await telegram('answerCallbackQuery', {
     callback_query_id: callbackQuery?.id,
     ...(text ? { text } : {}),
-    show_alert: false,
+    show_alert: Boolean(showAlert),
   }).catch(() => {});
 }
 
@@ -91,7 +103,7 @@ export async function handleSupportCommand(message = {}) {
   const userId = message?.from?.id;
   if (!chatId || !userId) return true;
 
-  // Temporarily owner-only while Bayarcash support flow is being tested.
+  // Temporarily owner-only while Bayarcash support flow is being verified.
   if (!isResetAdmin(userId)) return true;
 
   await sendMessage(chatId, supportMenuText(), {
@@ -101,15 +113,65 @@ export async function handleSupportCommand(message = {}) {
 }
 
 // Feedback/name capture is intentionally disabled for now.
-// Returning false ensures normal text and downloader links continue to the normal bot flow.
 export async function processSupportMessage() {
   return false;
+}
+
+async function handlePaymentCheck(callbackQuery, paymentIntentId) {
+  await answerSupportCallback(callbackQuery, '🔎 Semak terus dengan Bayarcash...');
+
+  try {
+    const status = await reconcileSupportPayment({ paymentIntentId });
+    const statusText = status.intentStatus || status.transactionStatus || 'pending';
+
+    if (!status.paid) {
+      await answerSupportCallback(
+        callbackQuery,
+        `Bayarcash: ${statusText}. Belum confirmed paid.`,
+        true,
+      );
+      return true;
+    }
+
+    const lines = [
+      '✅ BAYARCASH CONFIRMED PAYMENT',
+      '',
+      `${modeLabel()}`,
+      status.amount ? `Amount: RM${Number(status.amount).toFixed(2)}` : '',
+      status.orderNumber ? `Support ID: ${status.orderNumber}` : '',
+      status.transactionId ? `Transaction: ${status.transactionId}` : '',
+      `Status: ${status.intentStatus || status.transactionStatus || 'paid'}`,
+      '',
+      'Bayarcash API telah sahkan payment ini sebagai berjaya.',
+    ].filter(Boolean);
+
+    await editSupportMessage(
+      callbackQuery,
+      lines.join('\n'),
+      {
+        inline_keyboard: [
+          [{ text: '← Test Amount Lain', callback_data: SUPPORT_AMOUNTS_ACTION }],
+        ],
+      },
+    );
+    return true;
+  } catch (error) {
+    console.error('[support] Bayarcash reconciliation failed:', error?.code, error?.status, error?.message);
+    await answerSupportCallback(
+      callbackQuery,
+      `Semakan Bayarcash gagal: ${error?.code || error?.message || 'UNKNOWN'}`,
+      true,
+    );
+    return true;
+  }
 }
 
 export async function processSupportCallback(callbackQuery = {}, context = {}) {
   const action = String(callbackQuery?.data || '');
   const amount = amountFromCallback(action);
+  const isCheckAction = action.startsWith(SUPPORT_CHECK_PREFIX);
   const isSupportAction = Boolean(amount)
+    || isCheckAction
     || action === SUPPORT_AMOUNTS_ACTION
     || action === SUPPORT_BACK_ACTION;
   if (!isSupportAction) return false;
@@ -130,6 +192,15 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
       );
     }
     return true;
+  }
+
+  if (isCheckAction) {
+    const paymentIntentId = action.slice(SUPPORT_CHECK_PREFIX.length).trim();
+    if (!paymentIntentId) {
+      await answerSupportCallback(callbackQuery, 'Payment intent ID tak dijumpai.', true);
+      return true;
+    }
+    return handlePaymentCheck(callbackQuery, paymentIntentId);
   }
 
   if (action === SUPPORT_BACK_ACTION) {
@@ -155,7 +226,7 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
   if (!isBayarcashConfigured()) {
     await editSupportMessage(
       callbackQuery,
-      '⚙️ Payment gateway tengah disediakan. Cuba lagi kejap nanti.',
+      '⚙️ Payment gateway belum lengkap di Railway.',
       { inline_keyboard: [[{ text: '← Tukar Amount', callback_data: SUPPORT_AMOUNTS_ACTION }]] },
     );
     return true;
@@ -163,8 +234,6 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
 
   const orderNumber = createSupportOrderNumber();
   try {
-    // Keep a lightweight submission only so the selected tier is retained for payment confirmation.
-    // No feedback message or display name is requested or stored.
     await createSupportSubmission({
       orderNumber,
       userId: user.id,
@@ -191,19 +260,35 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
     await markSupportIntentCreated(orderNumber, payment.paymentIntentId);
     await markSupportSubmissionCheckout(orderNumber, payment.url, payment.paymentIntentId);
 
+    const keyboard = [
+      [{ text: `💳 Bayar RM${amount}`, url: payment.url }],
+    ];
+    if (payment.paymentIntentId) {
+      keyboard.push([{
+        text: '🔎 Check Bayarcash',
+        callback_data: `${SUPPORT_CHECK_PREFIX}${payment.paymentIntentId}`,
+      }]);
+    }
+    keyboard.push([{ text: '← Tukar Amount', callback_data: SUPPORT_AMOUNTS_ACTION }]);
+
     await editSupportMessage(
       callbackQuery,
       [
-        `🤍 Support RM${amount} dipilih — ${tier.label}!`,
+        `${tier.label}`,
         '',
-        'Tekan button di bawah untuk terus ke payment.',
-      ].join('\n'),
-      {
-        inline_keyboard: [
-          [{ text: `💳 Bayar RM${amount}`, url: payment.url }],
-          [{ text: '← Tukar Amount', callback_data: SUPPORT_AMOUNTS_ACTION }],
-        ],
-      },
+        `${modeLabel()} Bayarcash`,
+        `Amount: RM${Number(amount).toFixed(2)}`,
+        `Support ID: ${payment.orderNumber}`,
+        `Channel: ${payment.paymentChannelLabel}`,
+        payment.paymentIntentId ? `Payment Intent: ${payment.paymentIntentId}` : '',
+        '',
+        isBayarcashSandbox()
+          ? 'Sandbox test sahaja — tiada duit sebenar.'
+          : 'LIVE payment — duit hanya dicaj selepas kau authorize payment di bank/wallet.',
+        '',
+        'Selepas bayar, tekan “Check Bayarcash” untuk semak status terus daripada gateway.',
+      ].filter(Boolean).join('\n'),
+      { inline_keyboard: keyboard },
     );
   } catch (error) {
     await markSupportIntentFailed(orderNumber, error?.code || 'UNKNOWN').catch(() => {});
@@ -212,7 +297,7 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
       callbackQuery,
       error?.code === 'BAYARCASH_PAYER_EMAIL_REQUIRED'
         ? '⚙️ Support payment belum ready sepenuhnya. Admin tengah lengkapkan email payment gateway.'
-        : '❌ Payment page tak dapat dibuat sekarang. Cuba /support semula kejap lagi.',
+        : `❌ Payment page tak dapat dibuat. ${error?.code || error?.message || 'UNKNOWN'}`,
       { inline_keyboard: [[{ text: '← Tukar Amount', callback_data: SUPPORT_AMOUNTS_ACTION }]] },
     );
   }

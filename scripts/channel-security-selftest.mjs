@@ -1,7 +1,25 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-async function text(path) {
-  return readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+async function text(relativePath) {
+  return readFile(path.join(repoRoot, relativePath), 'utf8');
+}
+
+async function jsFilesUnder(relativeDir) {
+  const root = path.join(repoRoot, relativeDir);
+  const files = [];
+  async function walk(dir) {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.isFile() && entry.name.endsWith('.js')) files.push(full);
+    }
+  }
+  await walk(root);
+  return files;
 }
 
 function requireContains(source, needle, label) {
@@ -54,4 +72,28 @@ requireContains(commands, '/resetchannel — Bersihkan leak Downloader Bot di ch
 requireContains(resetFeature, 'deleteChannelMessageForSafety', 'channel reset must use protected delete capability');
 requireContains(channelPolicy, "purpose <> 'SUPPORT_PROMOTION'", 'channel reset ledger must never select authorized support promotions');
 
-console.log('Channel security check passed: downloader channel writes are support-promotion-only; monitoring and quote destinations are group-only.');
+const productionFiles = [
+  ...(await jsFilesUnder('src')),
+  ...(await jsFilesUnder('api')),
+  path.join(repoRoot, 'server.js'),
+];
+for (const file of productionFiles) {
+  const rel = path.relative(repoRoot, file).replaceAll('\\', '/');
+  const source = await readFile(file, 'utf8');
+
+  if (source.includes('sendSupportPromotionToChannel')
+      && !['src/telegram.js', 'src/support/promotion.js'].includes(rel)) {
+    throw new Error(`CHANNEL_SECURITY_CHECK_FAILED: support promotion channel capability imported outside promotion module: ${rel}`);
+  }
+
+  if (source.includes('deleteChannelMessageForSafety')
+      && !['src/telegram.js', 'src/features/channel-reset.js'].includes(rel)) {
+    throw new Error(`CHANNEL_SECURITY_CHECK_FAILED: channel safety-delete capability imported outside reset module: ${rel}`);
+  }
+
+  if (source.includes('api.telegram.org/bot') && rel !== 'src/telegram.js') {
+    throw new Error(`CHANNEL_SECURITY_CHECK_FAILED: raw Telegram Bot API channel bypass path found: ${rel}`);
+  }
+}
+
+console.log('Channel security check passed: downloader channel writes are support-promotion-only; monitoring and quote destinations are group-only; channel capabilities are exclusively owned.');

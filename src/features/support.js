@@ -42,6 +42,17 @@ export function supportCampaignText() {
   ].join('\n');
 }
 
+function supportCommandText() {
+  return [
+    'Terima kasih, Orang baik!',
+    'Sebab Sama2 nak bantu hidupkan Bot 🙇🏻✨',
+    '',
+    'Pilih Type Of Support korang :',
+    '',
+    '🤍 RM10 — S | 🌟 RM20 — Ss | 💎 RM30 — Ps | 🏆 RM50 — Us | 👑 RM100 — Ls',
+  ].join('\n');
+}
+
 function selectedAmountFromCallback(action = '') {
   if (!String(action).startsWith(SUPPORT_SELECT_PREFIX)) return null;
   const amount = Number(String(action).slice(SUPPORT_SELECT_PREFIX.length));
@@ -74,7 +85,7 @@ function escapeTelegramHtml(value = '') {
 }
 
 function supportMenuText() {
-  const lines = [supportCampaignText()];
+  const lines = [supportCommandText()];
   if (!isBayarcashConfigured()) lines.push('', '⚙️ Payment gateway belum lengkap di Railway.');
   return lines.join('\n');
 }

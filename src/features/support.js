@@ -13,9 +13,12 @@ const SUPPORT_SELECT_PREFIX = 'support:select:';
 const SUPPORT_CHECK_PREFIX = 'support:check:';
 const SUPPORT_AMOUNTS_ACTION = 'support:amounts';
 const SUPPORT_BACK_ACTION = 'support:back';
-const SUPPORT_AMOUNTS = new Set([1, 10, 20, 30, 50, 100]);
+const SUPPORT_AMOUNTS = new Set([10, 20, 30, 50, 100]);
+const RETIRED_SUPPORT_AMOUNTS = new Set([1]);
 
 const SUPPORT_TIERS = new Map([
+  // RM1 is kept only for historical supporter records / old callbacks.
+  // It is no longer offered as a public payment option.
   [1, { key: 'coffee', label: '☕️ Cofee Supporter' }],
   [10, { key: 'supporter', label: '🤍 Supporter' }],
   [20, { key: 'super', label: '🌟 Super Supporter' }],
@@ -24,10 +27,20 @@ const SUPPORT_TIERS = new Map([
   [100, { key: 'legend', label: '👑 Legend Supporter' }],
 ]);
 
-function amountFromCallback(action = '') {
+function selectedAmountFromCallback(action = '') {
   if (!String(action).startsWith(SUPPORT_SELECT_PREFIX)) return null;
   const amount = Number(String(action).slice(SUPPORT_SELECT_PREFIX.length));
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function amountFromCallback(action = '') {
+  const amount = selectedAmountFromCallback(action);
   return SUPPORT_AMOUNTS.has(amount) ? amount : null;
+}
+
+function retiredAmountFromCallback(action = '') {
+  const amount = selectedAmountFromCallback(action);
+  return RETIRED_SUPPORT_AMOUNTS.has(amount) ? amount : null;
 }
 
 function tierForAmount(amount) {
@@ -48,7 +61,6 @@ function supportMenuText() {
     'Sekali seumur hidup pun tak pe. Terima kasih orang baik ! 🙇🏻❤️',
     '',
     'Pilih amount support:',
-    '☕️ RM1 — Cofee Supporter',
     '🤍 RM10 — Supporter',
     '🌟 RM20 — Super Supporter',
     '💎 RM30 — Power Supporter',
@@ -63,7 +75,6 @@ function supportMenuText() {
 function supportMenuKeyboard() {
   return {
     inline_keyboard: [
-      [{ text: '☕️ RM1', callback_data: `${SUPPORT_SELECT_PREFIX}1` }],
       [
         { text: 'RM10', callback_data: `${SUPPORT_SELECT_PREFIX}10` },
         { text: 'RM20', callback_data: `${SUPPORT_SELECT_PREFIX}20` },
@@ -180,8 +191,10 @@ async function handlePaymentCheck(callbackQuery, paymentIntentId) {
 export async function processSupportCallback(callbackQuery = {}, context = {}) {
   const action = String(callbackQuery?.data || '');
   const amount = amountFromCallback(action);
+  const retiredAmount = retiredAmountFromCallback(action);
   const isCheckAction = action.startsWith(SUPPORT_CHECK_PREFIX);
   const isSupportAction = Boolean(amount)
+    || Boolean(retiredAmount)
     || isCheckAction
     || action === SUPPORT_AMOUNTS_ACTION
     || action === SUPPORT_BACK_ACTION;
@@ -195,6 +208,12 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
 
   if (chatType && chatType !== 'private') {
     await answerSupportCallback(callbackQuery, 'Buka private chat bot untuk support ya ❤️', true);
+    return true;
+  }
+
+  if (retiredAmount) {
+    await answerSupportCallback(callbackQuery, 'RM1 ialah option test lama dan dah ditutup. Pilih RM10 atau amount lain ya ❤️', true);
+    await editSupportMessage(callbackQuery, supportMenuText(), supportMenuKeyboard());
     return true;
   }
 

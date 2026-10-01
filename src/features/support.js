@@ -17,8 +17,6 @@ const SUPPORT_AMOUNTS = new Set([10, 20, 30, 50, 100]);
 const RETIRED_SUPPORT_AMOUNTS = new Set([1]);
 
 const SUPPORT_TIERS = new Map([
-  // RM1 is kept only for historical supporter records / old callbacks.
-  // It is no longer offered as a public payment option.
   [1, { key: 'coffee', label: '☕️ Cofee Supporter' }],
   [10, { key: 'supporter', label: '🤍 Supporter' }],
   [20, { key: 'super', label: '🌟 Super Supporter' }],
@@ -26,6 +24,32 @@ const SUPPORT_TIERS = new Map([
   [50, { key: 'ultimate', label: '🏆 Ultimate Supporter' }],
   [100, { key: 'legend', label: '👑 Legend Supporter' }],
 ]);
+
+export function supportCampaignText() {
+  return [
+    'Salam JUMAAT , Yaum Al - Mubarak 🌙',
+    '',
+    'Hi, Semua!',
+    'Macam mana pengalaman korang guna bot ni, best tak? Bestkan Whatsapp Dah Premium boleh post HD ✨',
+    '',
+    '❌No more watermark,',
+    '❌No more terpaksa download apps baru, ❌No mote tambah komitmen bulanan subsription 💸!',
+    '',
+    'Bot ni adalah milik dan hak kita semua 🤍🇲🇾',
+    'Tapi malangnya bot ni boleh mati bila2 masa if kita tak mampu bayarkan kos sewa server.',
+    '',
+    'Jadi dengan sangat merendah hati, sudilah kiranya if korang mampu kita support sedikit ikut ammount yg korang mampu support. Setahun sekali pun tak apa, terima kasih orang baik. 🙇🏻',
+    '',
+    'Semoga di murahkan lagi rezeki korang yg support, yang sakit di beri kesembuhan segera, yg sihat semoga kekal sihat, yg di landa masalah Allaah bantu selesaikan, di panjangkan usia 🤲🏻❤️',
+    '',
+    'Pilih type of support korang:',
+    '🤍 RM10 - Supporter',
+    '🌟 RM20 - Super Supporter',
+    '💎 RM30 - Power Supporter',
+    '🏆 RM50 - Ultimate Supporter',
+    '👑 RM100 - Legend Supporter',
+  ].join('\n');
+}
 
 function selectedAmountFromCallback(action = '') {
   if (!String(action).startsWith(SUPPORT_SELECT_PREFIX)) return null;
@@ -52,27 +76,12 @@ function modeLabel() {
 }
 
 function supportMenuText() {
-  return [
-    '❤️ Support Perkembangan Bot',
-    '',
-    'Bot ni free untuk korang guna. Kalau rasa bot ni membantu, korang boleh support ikut kemampuan.',
-    '',
-    'Support korang bantu cover sewa server dan perkembangan bot supaya bot ni boleh stay dan terus korang guna.',
-    'Sekali seumur hidup pun tak pe. Terima kasih orang baik ! 🙇🏻❤️',
-    '',
-    'Pilih amount support:',
-    '🤍 RM10 — Supporter',
-    '🌟 RM20 — Super Supporter',
-    '💎 RM30 — Power Supporter',
-    '🏆 RM50 — Ultimate Supporter',
-    '👑 RM100 — Legend Supporter',
-    '',
-    `${modeLabel()} Bayarcash`,
-    ...(!isBayarcashConfigured() ? ['', '⚙️ Payment gateway belum lengkap di Railway.'] : []),
-  ].join('\n');
+  const lines = [supportCampaignText()];
+  if (!isBayarcashConfigured()) lines.push('', '⚙️ Payment gateway belum lengkap di Railway.');
+  return lines.join('\n');
 }
 
-function supportMenuKeyboard() {
+export function supportMenuKeyboard() {
   return {
     inline_keyboard: [
       [
@@ -134,7 +143,6 @@ export async function handleSupportCommand(message = {}) {
   return true;
 }
 
-// Feedback/name capture is intentionally disabled for now.
 export async function processSupportMessage() {
   return false;
 }
@@ -170,11 +178,7 @@ async function handlePaymentCheck(callbackQuery, paymentIntentId) {
     await editSupportMessage(
       callbackQuery,
       lines.join('\n'),
-      {
-        inline_keyboard: [
-          [{ text: '← Support Amount Lain', callback_data: SUPPORT_AMOUNTS_ACTION }],
-        ],
-      },
+      { inline_keyboard: [[{ text: '← Support Amount Lain', callback_data: SUPPORT_AMOUNTS_ACTION }]] },
     );
     return true;
   } catch (error) {
@@ -229,10 +233,7 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
   if (action === SUPPORT_BACK_ACTION) {
     await answerSupportCallback(callbackQuery);
     if (messageId) {
-      await telegram('deleteMessage', {
-        chat_id: chatId,
-        message_id: messageId,
-      }).catch(() => {});
+      await telegram('deleteMessage', { chat_id: chatId, message_id: messageId }).catch(() => {});
     }
     return true;
   }
@@ -283,9 +284,7 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
     await markSupportIntentCreated(orderNumber, payment.paymentIntentId);
     await markSupportSubmissionCheckout(orderNumber, payment.url, payment.paymentIntentId);
 
-    const keyboard = [
-      [{ text: `💳 Bayar RM${amount}`, url: payment.url }],
-    ];
+    const keyboard = [[{ text: `💳 Bayar RM${amount}`, url: payment.url }]];
     if (payment.paymentIntentId) {
       keyboard.push([{
         text: '🔎 Check Bayarcash',

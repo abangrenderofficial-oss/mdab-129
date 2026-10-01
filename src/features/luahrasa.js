@@ -85,7 +85,7 @@ export async function processLuahRasaMessage(message = {}) {
     }
 
     await setLuahRasaMessage(userId, luahan);
-    await sendMessage(chatId, 'nama?').catch(() => {});
+    await sendMessage(chatId, 'Boleh saya tahu nama awak?').catch(() => {});
     return true;
   }
 

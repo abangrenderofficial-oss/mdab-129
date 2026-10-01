@@ -38,7 +38,10 @@ export function supportCampaignText() {
     'Bot ni adalah milik dan hak kita semua 🤍🇲🇾',
     'Sayangnya bot ni boleh mati bila2 masa, if kita tak mampu bayarkan kos sewa server.',
     '',
-    'Jd kalau korang suka bot ni, jom kita sama2 support bg bot ni always hidup. Terima kasih orang baik 🙇🏻✨',
+    'Jd kalau korang suka bot ni, jom kita sama2 support bg bot ni always hidup. ❤️',
+    '',
+    'Setahun Sekali Sahaja Support Pun Boleh,',
+    'Terima kasih orang baik 🙇🏻✨',
   ].join('\n');
 }
 

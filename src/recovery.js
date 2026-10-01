@@ -68,7 +68,7 @@ export function beginUpdate(update = {}) {
   const updateId = Number(update?.update_id || 0);
   const key = userKeyFrom(update);
   const command = commandName(update);
-  const resetCommand = command === '/reset' || command === '/resetadmin';
+  const resetCommand = command === '/reset' || command === '/resetadmin' || command === '/resetchannel';
 
   if (Number.isFinite(updateId) && updateId > 0) {
     if (s.globalResetFloor && updateId < s.globalResetFloor) {
@@ -84,8 +84,6 @@ export function beginUpdate(update = {}) {
     s.seenUpdates.set(updateId, now);
   }
 
-  // Old webhook deliveries are safe to discard for this downloader: users can
-  // simply resend the link. Reset/start/help are always allowed through.
   if (!resetCommand && command !== '/start' && command !== '/help') {
     const messageTime = messageTimestampMs(update);
     const staleAfter = numericEnv('UPDATE_STALE_AFTER_MS', DEFAULT_STALE_AFTER_MS);

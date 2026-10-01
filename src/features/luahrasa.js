@@ -42,12 +42,17 @@ export async function handleLuahRasaCommand(message = {}) {
   await sendMessage(
     chatId,
     [
-      tierLabel ? `Hi, ${tierLabel}` : 'Hi',
+      tierLabel ? `Hi, ${tierLabel}!` : 'Hi!',
       '',
       'Awak ada apa2 nak luah dalam channel?',
-      'Boleh share ttg pengalaman menyakitkan, sedih, marah, cinta, share tips pun boleh.',
+      'Boleh share ttg :',
+      'i.Perasaan 🤍',
+      'ii.Pengalaman kisah hidup korang seram/happy/sedih/kecewa 😇',
+      'iii.Nasihat/Tips anything✍🏻',
       '',
-      'Send di sini tau.',
+      'apa2 ja semua boleh ✨',
+      '',
+      'Tulis sekarang & Send di sini tau!',
     ].join('\n'),
   ).catch(() => {});
 

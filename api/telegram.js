@@ -15,7 +15,8 @@ import { handleHqLabCommand, processHqLabMessage } from '../src/features/hq-lab.
 import { processTikTokSlideshowChoice } from '../src/features/tiktok-slideshow.js';
 import { handleSupportTestCommand } from '../src/features/support-test.js';
 import { handleSupportCommand, processSupportCallback, processSupportMessage } from '../src/features/support.js';
-import { handleLuahRasaCommand } from '../src/features/luahrasa.js';
+import { handleLuahRasaCommand, processLuahRasaMessage } from '../src/features/luahrasa.js';
+import { handleConnectQuoteCommand } from '../src/features/quote-filter.js';
 import { handleCheckMemberCommand } from '../src/features/channel-diagnostic.js';
 import { enforceChannelGateForCallback, enforceChannelGateForMessage, maybePromptChannelAfterSuccess, processChannelGateCallback } from '../src/features/channel-gate.js';
 import { scheduleLinkJob } from '../src/link-queue.js';
@@ -60,9 +61,11 @@ async function processMessage(message, context) {
   const command = commandFromMessage(message);
   if (command === '/connect') return handleConnectCommand(message, context.baseUrl, false);
   if (command === '/disconnect') return handleConnectCommand(message, context.baseUrl, true);
+  if (command === '/connectquote') return handleConnectQuoteCommand(message);
   if (command === '/start' || command === '/help') return sendMessage(chatId, startText(message?.from?.id));
   if (command === '/support') return isResetAdmin(message?.from?.id) ? handleSupportCommand(message, context) : true;
   if (command === '/luahrasa') return handleLuahRasaCommand(message, context);
+  if (await processLuahRasaMessage(message, context)) return;
   if (await processSupportMessage(message, context)) return;
   if (await enforceChannelGateForMessage(message)) return;
   if (await handleHqLabCommand(message, context)) return;
@@ -141,7 +144,7 @@ export default async function handler(req, res) {
     res.setHeader('Allow', 'GET, POST');
     return json(res, 405, { ok: false, error: 'method_not_allowed' });
   }
-  if (!isAuthorizedWebhook(req)) return json(res, 401, { ok: false, error: 'invalid_webhook_secret' });
+  if (!isAuthorizedWebhook(req)) return json(res, 401).json({ ok: false, error: 'invalid_webhook_secret' });
 
   try {
     const update = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;

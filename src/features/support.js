@@ -293,16 +293,18 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
     keyboard.push([{ text: '← Tukar Amount', callback_data: SUPPORT_AMOUNTS_ACTION }]);
 
     const title = `${tier.label.toUpperCase()} !`;
+    const detailLines = [
+      `Amount: RM${Number(amount).toFixed(2)}`,
+      `Support ID: ${escapeTelegramHtml(payment.orderNumber)}`,
+      `Channel: ${escapeTelegramHtml(payment.paymentChannelLabel)}`,
+    ];
+    if (payment.paymentIntentId) {
+      detailLines.push(`Payment Intent: ${escapeTelegramHtml(payment.paymentIntentId)}`);
+    }
+
     await editSupportMessage(
       callbackQuery,
-      [
-        `<b>${escapeTelegramHtml(title)}</b>`,
-        '',
-        `Amount: RM${Number(amount).toFixed(2)}`,
-        `Support ID: ${escapeTelegramHtml(payment.orderNumber)}`,
-        `Channel: ${escapeTelegramHtml(payment.paymentChannelLabel)}`,
-        payment.paymentIntentId ? `Payment Intent: ${escapeTelegramHtml(payment.paymentIntentId)}` : '',
-      ].filter(Boolean).join('\n'),
+      [`<b>${escapeTelegramHtml(title)}</b>`, '', ...detailLines].join('\n'),
       { inline_keyboard: keyboard },
       { parse_mode: 'HTML' },
     );

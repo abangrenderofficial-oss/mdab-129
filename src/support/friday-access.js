@@ -54,6 +54,15 @@ async function ensureSchema() {
           created_at TEXT NOT NULL,
           PRIMARY KEY (environment, telegram_user_id, date_key, slot)
         )`,
+        `CREATE TABLE IF NOT EXISTS support_friday_usage_state (
+          environment TEXT NOT NULL,
+          telegram_user_id TEXT NOT NULL,
+          date_key TEXT NOT NULL,
+          used_once INTEGER NOT NULL DEFAULT 0,
+          post_use_prompt_sent INTEGER NOT NULL DEFAULT 0,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (environment, telegram_user_id, date_key)
+        )`,
       ], 'write');
       return true;
     })().catch((error) => {
@@ -91,6 +100,49 @@ export async function setFridaySupportMode(mode, adminUserId = '') {
     args: [environment, normalized, String(adminUserId || ''), now],
   });
   return normalized;
+}
+
+async function usageState(userId, dateKey) {
+  await ensureSchema();
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const result = await db.execute({
+    sql: `SELECT used_once, post_use_prompt_sent
+          FROM support_friday_usage_state
+          WHERE environment = ? AND telegram_user_id = ? AND date_key = ?
+          LIMIT 1`,
+    args: [environment, String(userId), String(dateKey)],
+  });
+  return {
+    usedOnce: Number(result.rows?.[0]?.used_once || 0) === 1,
+    promptSent: Number(result.rows?.[0]?.post_use_prompt_sent || 0) === 1,
+  };
+}
+
+async function markFirstUseAndClaimPrompt(userId, dateKey) {
+  await ensureSchema();
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const now = new Date().toISOString();
+
+  await db.execute({
+    sql: `INSERT INTO support_friday_usage_state (
+            environment, telegram_user_id, date_key, used_once, post_use_prompt_sent, updated_at
+          ) VALUES (?, ?, ?, 1, 0, ?)
+          ON CONFLICT(environment, telegram_user_id, date_key) DO UPDATE SET
+            used_once = 1,
+            updated_at = excluded.updated_at`,
+    args: [environment, String(userId), String(dateKey), now],
+  });
+
+  const claimed = await db.execute({
+    sql: `UPDATE support_friday_usage_state
+          SET post_use_prompt_sent = 1, updated_at = ?
+          WHERE environment = ? AND telegram_user_id = ? AND date_key = ?
+            AND post_use_prompt_sent = 0`,
+    args: [now, environment, String(userId), String(dateKey)],
+  });
+  return Number(claimed.rowsAffected || 0) > 0;
 }
 
 async function shareSlots(userId, dateKey) {
@@ -144,10 +196,16 @@ function isUsageAttempt(message = {}) {
   return /https?:\/\/\S+/i.test(text);
 }
 
+async function sendPostUseSupportPrompt(chatId) {
+  await sendMessage(chatId, supportCampaignText(), {
+    reply_markup: supportMenuKeyboard(),
+  });
+}
+
 async function sendForceLock(chatId) {
   await sendMessage(
     chatId,
-    ['Please Support kita dulu utk guna bot ❤️', '', supportCampaignText()].join('\n'),
+    'Please Support Kita dulu utk guna Bot ❤️',
     { reply_markup: supportMenuKeyboard() },
   );
 }
@@ -167,14 +225,12 @@ async function donateText(userId, dateKey) {
   return {
     slots,
     text: [
-      supportCampaignText(),
-      '',
-      '🤝 Kalau belum Supporter, share bot ni ke 3 group lain atau mana-mana platform sosial media dulu untuk guna bot hari Jumaat ni.',
+      'Please Share bot ni ke 3 group sosial media dulu',
       '',
       `Link bot: ${link}`,
-      '',
       `Progress share: ${slots.size}/3`,
-      'Lepas setiap kali share, tekan button Share #1, kemudian #2, kemudian #3.',
+      '',
+      'Tekan Share #1, kemudian Share #2, kemudian Share #3 selepas korang share.',
       'Kita guna sistem percaya — bot tak verify tempat korang share ❤️',
     ].join('\n'),
   };
@@ -192,17 +248,18 @@ async function accessContext(userId) {
   }
 
   const mode = await getFridaySupportMode();
-  if (mode === FRIDAY_SUPPORT_MODE_NORMAL) {
-    return { gated: false, mode, parts, supporter: null };
-  }
-
   const supporter = await getActiveSupporterTitle(userId);
   if (supporter) {
     return { gated: false, mode, parts, supporter };
   }
 
+  const state = await usageState(userId, parts.dateKey);
+  if (!state.usedOnce || mode === FRIDAY_SUPPORT_MODE_NORMAL) {
+    return { gated: false, mode, parts, supporter: null, state };
+  }
+
   if (mode === FRIDAY_SUPPORT_MODE_FORCE) {
-    return { gated: true, mode, parts, supporter: null };
+    return { gated: true, mode, parts, supporter: null, state };
   }
 
   const slots = await shareSlots(userId, parts.dateKey);
@@ -211,6 +268,7 @@ async function accessContext(userId) {
     mode,
     parts,
     supporter: null,
+    state,
     slots,
   };
 }
@@ -242,8 +300,8 @@ export async function enforceFridaySupportForCallback(callbackQuery = {}) {
   await telegram('answerCallbackQuery', {
     callback_query_id: callbackQuery?.id,
     text: context.mode === FRIDAY_SUPPORT_MODE_FORCE
-      ? 'Please Support kita dulu utk guna bot ❤️'
-      : `Share dulu ya ❤️ Progress ${context.slots?.size || 0}/3`,
+      ? 'Please Support Kita dulu utk guna Bot ❤️'
+      : `Please Share bot ni ke 3 group sosial media dulu (${context.slots?.size || 0}/3)`,
     show_alert: true,
   }).catch(() => {});
 
@@ -254,22 +312,38 @@ export async function enforceFridaySupportForCallback(callbackQuery = {}) {
   return true;
 }
 
+export async function markFridayUsageSuccess(userId) {
+  const id = Number(userId || 0);
+  if (!Number.isSafeInteger(id) || id <= 0 || isResetAdmin(id)) return false;
+
+  const parts = malaysiaParts();
+  if (parts.weekday !== 'Fri') return false;
+
+  if (await getActiveSupporterTitle(id)) return false;
+
+  const shouldPrompt = await markFirstUseAndClaimPrompt(id, parts.dateKey);
+  if (!shouldPrompt) return false;
+
+  await sendPostUseSupportPrompt(id).catch((error) => {
+    console.warn('[friday-support] post-use support prompt failed:', error?.message);
+  });
+  return true;
+}
+
 async function updateDonateMessage(callbackQuery, userId, dateKey, slots) {
   const chatId = callbackQuery?.message?.chat?.id;
   const messageId = callbackQuery?.message?.message_id;
   if (!chatId || !messageId) return;
   const link = await botShareLink();
   const text = [
-    supportCampaignText(),
-    '',
-    '🤝 Kalau belum Supporter, share bot ni ke 3 group lain atau mana-mana platform sosial media dulu untuk guna bot hari Jumaat ni.',
+    'Please Share bot ni ke 3 group sosial media dulu',
     '',
     `Link bot: ${link}`,
-    '',
     `Progress share: ${slots.size}/3`,
+    '',
     slots.size >= 3
       ? '✅ Selesai 3/3. Bot dah unlock untuk Jumaat ni.'
-      : 'Lepas setiap kali share, tekan button Share #1, kemudian #2, kemudian #3.',
+      : 'Tekan Share #1, kemudian Share #2, kemudian Share #3 selepas korang share.',
     'Kita guna sistem percaya — bot tak verify tempat korang share ❤️',
   ].join('\n');
 

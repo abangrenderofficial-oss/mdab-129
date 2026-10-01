@@ -42,21 +42,28 @@ export default async function handler(req, res) {
   try {
     const connected = await getContentBridgeGroup();
     if (!connected?.groupId || String(connected.groupId) !== filterChatId) {
-      return json(res, 409, { ok: true, approved: false, error: 'filter_group_not_connected' });
+      return json(res, 200, { ok: true, approved: false, error: 'filter_group_not_connected' });
     }
 
     const db = await getSupportDb();
     const environment = currentSupportEnvironment();
     const result = await db.execute({
-      sql: `SELECT id, kind, body, display_name, tier_label, status, filter_chat_id
-            FROM support_quote_moderation
-            WHERE environment = ? AND id = ?
+      sql: `SELECT m.id, m.kind, m.body, m.display_name, m.tier_label,
+                   m.status, m.filter_chat_id, d.status AS delivery_status,
+                   d.channel_message_id
+            FROM support_quote_moderation m
+            LEFT JOIN support_quote_content_delivery d
+              ON d.environment = m.environment AND d.moderation_id = m.id
+            WHERE m.environment = ? AND m.id = ?
             LIMIT 1`,
       args: [environment, moderationId],
     });
     const row = result.rows?.[0];
     if (!row || String(row.status || '') !== 'APPROVED') {
       return json(res, 200, { ok: true, approved: false, error: 'not_approved' });
+    }
+    if (String(row.delivery_status || '') !== 'SENDING' || row.channel_message_id) {
+      return json(res, 200, { ok: true, approved: false, error: 'delivery_not_claimed' });
     }
 
     const matches = String(row.filter_chat_id || '') === filterChatId

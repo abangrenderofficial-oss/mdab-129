@@ -11,6 +11,7 @@ import statusDiagnosticHandler from './api/status-diagnostic.js';
 import bayarcashHandler from './api/bayarcash.js';
 import supportReturnHandler from './api/support-return.js';
 import premiumHqSuccessHandler from './api/premium-hq-success.js';
+import { isBayarcashConfigured, isBayarcashSandbox } from './src/payments/bayarcash.js';
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
@@ -140,4 +141,8 @@ const server = http.createServer(async (req, res) => {
 const port = Number(process.env.PORT || 3000);
 server.listen(port, '0.0.0.0', () => {
   console.log(`Downloader bot listening on 0.0.0.0:${port}`);
+  console.log('[bayarcash] runtime', {
+    environment: isBayarcashSandbox() ? 'sandbox' : 'production',
+    configured: isBayarcashConfigured(),
+  });
 });

@@ -40,6 +40,7 @@ export function commandMenuText(userId) {
     '/help — Bantuan ringkas',
     '/menu — Senarai command',
     '/status <link> — Buat Status HQ dari link',
+    '/luahrasa <mesej> — Kongsi luahan ke channel (Supporter aktif)',
     '/reset — Reset sesi sendiri jika bot tersangkut',
   ];
 

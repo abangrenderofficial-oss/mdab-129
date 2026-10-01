@@ -1,6 +1,4 @@
-import { isResetAdmin } from '../recovery.js';
-
-const START_BASE_LINES = [
+const START_LINES = [
   '📥 Social Downloader Bot',
   '',
   'Hantar link public daripada:',
@@ -12,11 +10,13 @@ const START_BASE_LINES = [
   'Bot akan cuba hantar semula media dalam chat dan user boleh download.',
   '',
   'Boleh juga upload media video atau photo dari gallery untuk:',
-  '• 📱 Status HQ',
+  '• 📱 Status HQ - Status Whatsapp HD',
   '• 🍎 Live Wallpaper iPhone',
-];
-
-const OWNER_SUPPORT_LINES = [
+  '',
+  'Boleh luahkan perasaan | Nasihat | Cerita | Tips korang di channel',
+  '',
+  'Tekan sini /luahrasa',
+  '',
   '❤️ jom sama2 bantu kembangkan bot ni nak?',
   '',
   'Bot ni boleh mati bila2 masa if kita sama2 tak berjaya bayarkan kos sewa server. Sekali seumur hidup pun tak pe, Terima kasih orang baik ! 🙇🏻',
@@ -24,11 +24,10 @@ const OWNER_SUPPORT_LINES = [
   'Tekan sini /support',
 ];
 
-export const START_TEXT = START_BASE_LINES.join('\n');
+export const START_TEXT = START_LINES.join('\n');
 
-export function startText(userId) {
-  if (!isResetAdmin(userId)) return START_TEXT;
-  return [...START_BASE_LINES, '', ...OWNER_SUPPORT_LINES].join('\n');
+export function startText() {
+  return START_TEXT;
 }
 
 export function commandMenuText() {

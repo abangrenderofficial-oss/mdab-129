@@ -24,7 +24,6 @@ const OWNER_SUPPORT_LINES = [
   'Tekan sini /support',
 ];
 
-// Safe public /start and /help text. Support is intentionally hidden from normal users for now.
 export const START_TEXT = START_BASE_LINES.join('\n');
 
 export function startText(userId) {
@@ -40,6 +39,7 @@ export function commandMenuText(userId) {
     '/help — Bantuan ringkas',
     '/menu — Senarai command',
     '/status <link> — Buat Status HQ dari link',
+    '/support — ❤️ Support perkembangan bot',
     '/luahrasa — Luah rasa / share cerita ke channel',
     '/reset — Reset sesi sendiri jika bot tersangkut',
   ];
@@ -48,7 +48,6 @@ export function commandMenuText(userId) {
     lines.push(
       '',
       '👑 Owner',
-      '/support — ❤️ Support bot',
       '/supporttest — Test payment gateway',
       '/resetadmin — Reset & recovery semua user',
       '/connect — Sambung group pemantauan video',

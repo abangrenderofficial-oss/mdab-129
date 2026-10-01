@@ -1,5 +1,6 @@
 import { isResetAdmin } from '../recovery.js';
 import { sendMessage, telegram } from '../telegram.js';
+import { supportCampaignText, supportMenuKeyboard } from '../features/support.js';
 import { getActiveSupporterTitle } from './community-store.js';
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 
@@ -8,7 +9,7 @@ export const FRIDAY_SUPPORT_MODE_FORCE = 'FORCE';
 export const FRIDAY_SUPPORT_MODE_DONATE = 'DONATE';
 
 const MALAYSIA_TIMEZONE = 'Asia/Kuala_Lumpur';
-const DONATE_CONFIRM_CALLBACK = 'friday:shared3';
+const SHARE_CALLBACK_PREFIX = 'friday:share:';
 let schemaPromise = null;
 let cachedBotUsername = '';
 
@@ -45,14 +46,13 @@ async function ensureSchema() {
           updated_by TEXT NOT NULL DEFAULT '',
           updated_at TEXT NOT NULL
         )`,
-        `CREATE TABLE IF NOT EXISTS support_friday_access (
+        `CREATE TABLE IF NOT EXISTS support_friday_share_clicks (
           environment TEXT NOT NULL,
           telegram_user_id TEXT NOT NULL,
           date_key TEXT NOT NULL,
-          force_success_count INTEGER NOT NULL DEFAULT 0,
-          donate_unlocked INTEGER NOT NULL DEFAULT 0,
-          updated_at TEXT NOT NULL,
-          PRIMARY KEY (environment, telegram_user_id, date_key)
+          slot INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY (environment, telegram_user_id, date_key, slot)
         )`,
       ], 'write');
       return true;
@@ -93,37 +93,31 @@ export async function setFridaySupportMode(mode, adminUserId = '') {
   return normalized;
 }
 
-async function getUserFridayState(userId, dateKey) {
+async function shareSlots(userId, dateKey) {
   await ensureSchema();
   const db = await getSupportDb();
   const environment = currentSupportEnvironment();
   const result = await db.execute({
-    sql: `SELECT force_success_count, donate_unlocked
-          FROM support_friday_access
+    sql: `SELECT slot FROM support_friday_share_clicks
           WHERE environment = ? AND telegram_user_id = ? AND date_key = ?
-          LIMIT 1`,
+          ORDER BY slot ASC`,
     args: [environment, String(userId), String(dateKey)],
   });
-  return {
-    forceSuccessCount: Number(result.rows?.[0]?.force_success_count || 0),
-    donateUnlocked: Number(result.rows?.[0]?.donate_unlocked || 0) === 1,
-  };
+  return new Set((result.rows || []).map((row) => Number(row.slot)).filter((slot) => slot >= 1 && slot <= 3));
 }
 
-async function setDonateUnlocked(userId, dateKey) {
+async function markShareSlot(userId, dateKey, slot) {
   await ensureSchema();
   const db = await getSupportDb();
   const environment = currentSupportEnvironment();
   const now = new Date().toISOString();
   await db.execute({
-    sql: `INSERT INTO support_friday_access (
-            environment, telegram_user_id, date_key, force_success_count, donate_unlocked, updated_at
-          ) VALUES (?, ?, ?, 0, 1, ?)
-          ON CONFLICT(environment, telegram_user_id, date_key) DO UPDATE SET
-            donate_unlocked = 1,
-            updated_at = excluded.updated_at`,
-    args: [environment, String(userId), String(dateKey), now],
+    sql: `INSERT OR IGNORE INTO support_friday_share_clicks (
+            environment, telegram_user_id, date_key, slot, created_at
+          ) VALUES (?, ?, ?, ?, ?)`,
+    args: [environment, String(userId), String(dateKey), Number(slot), now],
   });
+  return shareSlots(userId, dateKey);
 }
 
 async function botUsername() {
@@ -137,59 +131,58 @@ async function botUsername() {
   return cachedBotUsername;
 }
 
-async function shareUrl() {
+async function botShareLink() {
   const username = await botUsername();
-  const botUrl = username ? `https://t.me/${username}` : 'https://t.me/ar_downloaderbot';
-  const text = 'Bot ni boleh download TikTok, Instagram, Threads, X/Twitter & YouTube. Cuba sini 👇';
-  return `https://t.me/share/url?url=${encodeURIComponent(botUrl)}&text=${encodeURIComponent(text)}`;
+  return username ? `https://t.me/${username}` : 'https://t.me/ar_downloaderbot';
+}
+
+function isUsageAttempt(message = {}) {
+  if (Array.isArray(message?.photo) && message.photo.length) return true;
+  if (message?.video?.file_id) return true;
+  const text = String(message?.text || message?.caption || '').trim();
+  if (/^\/status(?:@\w+)?(?:\s|$)/i.test(text)) return true;
+  return /https?:\/\/\S+/i.test(text);
 }
 
 async function sendForceLock(chatId) {
   await sendMessage(
     chatId,
-    [
-      '❤️ Support Bot Untuk Terus Guna',
-      '',
-      'Free use Jumaat untuk hari ni dah digunakan.',
-      'Untuk penggunaan seterusnya, bot dibuka untuk Supporter sahaja.',
-      '',
-      'Minimum support RM10 dan status Supporter aktif selama 1 bulan.',
-      'Lepas payment confirmed, bot terus unlock automatik ✨',
-    ].join('\n'),
-    {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '🤍 Support RM10 & Unlock', callback_data: 'support:select:10' }],
-          [{ text: '💎 Pilih Tier Lain', callback_data: 'support:amounts' }],
-        ],
-      },
-    },
+    ['Please Support kita dulu utk guna bot ❤️', '', supportCampaignText()].join('\n'),
+    { reply_markup: supportMenuKeyboard() },
   );
 }
 
-async function sendDonateGate(chatId) {
-  const url = await shareUrl();
-  await sendMessage(
-    chatId,
-    [
-      '🤝 Friday Share Support',
+function donateKeyboard(slots = new Set()) {
+  return {
+    inline_keyboard: [1, 2, 3].map((slot) => [{
+      text: slots.has(slot) ? `✅ Share #${slot} dikira` : `📤 Share #${slot}`,
+      callback_data: `${SHARE_CALLBACK_PREFIX}${slot}`,
+    }]),
+  };
+}
+
+async function donateText(userId, dateKey) {
+  const slots = await shareSlots(userId, dateKey);
+  const link = await botShareLink();
+  return {
+    slots,
+    text: [
+      supportCampaignText(),
       '',
-      'Hari Jumaat ni tak perlu bayar untuk terus guna bot.',
-      'Kalau belum jadi Supporter, tolong share bot ni ke 3 group yang lain ya ❤️',
+      '🤝 Kalau belum Supporter, share bot ni ke 3 group lain atau mana-mana platform sosial media dulu untuk guna bot hari Jumaat ni.',
       '',
-      'Lepas share, tekan button “✅ Dah Share 3 Group”.',
-      'Terima kasih sebab bantu bot ni sampai dekat lebih ramai orang ✨',
+      `Link bot: ${link}`,
+      '',
+      `Progress share: ${slots.size}/3`,
+      'Lepas setiap kali share, tekan button Share #1, kemudian #2, kemudian #3.',
+      'Kita guna sistem percaya — bot tak verify tempat korang share ❤️',
     ].join('\n'),
-    {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '📤 Share Bot ke Group', url }],
-          [{ text: '✅ Dah Share 3 Group', callback_data: DONATE_CONFIRM_CALLBACK }],
-          [{ text: '❤️ Jadi Supporter', callback_data: 'support:amounts' }],
-        ],
-      },
-    },
-  );
+  };
+}
+
+async function sendDonateGate(chatId, userId, dateKey) {
+  const view = await donateText(userId, dateKey);
+  await sendMessage(chatId, view.text, { reply_markup: donateKeyboard(view.slots) });
 }
 
 async function accessContext(userId) {
@@ -208,23 +201,17 @@ async function accessContext(userId) {
     return { gated: false, mode, parts, supporter };
   }
 
-  const state = await getUserFridayState(userId, parts.dateKey);
   if (mode === FRIDAY_SUPPORT_MODE_FORCE) {
-    return {
-      gated: state.forceSuccessCount >= 1,
-      mode,
-      parts,
-      supporter: null,
-      state,
-    };
+    return { gated: true, mode, parts, supporter: null };
   }
 
+  const slots = await shareSlots(userId, parts.dateKey);
   return {
-    gated: !state.donateUnlocked,
+    gated: slots.size < 3,
     mode,
     parts,
     supporter: null,
-    state,
+    slots,
   };
 }
 
@@ -232,13 +219,13 @@ export async function enforceFridaySupportForMessage(message = {}) {
   const chatId = message?.chat?.id;
   const userId = message?.from?.id;
   if (!chatId || !userId || message?.chat?.type !== 'private') return false;
-  if (isResetAdmin(userId)) return false;
+  if (isResetAdmin(userId) || !isUsageAttempt(message)) return false;
 
   const context = await accessContext(userId);
   if (!context.gated) return false;
 
   if (context.mode === FRIDAY_SUPPORT_MODE_FORCE) await sendForceLock(chatId);
-  else if (context.mode === FRIDAY_SUPPORT_MODE_DONATE) await sendDonateGate(chatId);
+  else if (context.mode === FRIDAY_SUPPORT_MODE_DONATE) await sendDonateGate(chatId, userId, context.parts.dateKey);
   return true;
 }
 
@@ -255,49 +242,54 @@ export async function enforceFridaySupportForCallback(callbackQuery = {}) {
   await telegram('answerCallbackQuery', {
     callback_query_id: callbackQuery?.id,
     text: context.mode === FRIDAY_SUPPORT_MODE_FORCE
-      ? 'Free use Jumaat dah digunakan. Support RM10+ untuk terus guna ❤️'
-      : 'Share ke 3 group dulu, kemudian tekan “Dah Share 3 Group” ya ❤️',
+      ? 'Please Support kita dulu utk guna bot ❤️'
+      : `Share dulu ya ❤️ Progress ${context.slots?.size || 0}/3`,
     show_alert: true,
   }).catch(() => {});
 
   if (context.mode === FRIDAY_SUPPORT_MODE_FORCE) await sendForceLock(chatId).catch(() => {});
-  else if (context.mode === FRIDAY_SUPPORT_MODE_DONATE) await sendDonateGate(chatId).catch(() => {});
+  else if (context.mode === FRIDAY_SUPPORT_MODE_DONATE) {
+    await sendDonateGate(chatId, userId, context.parts.dateKey).catch(() => {});
+  }
   return true;
 }
 
-export async function markFridayUsageSuccess(userId) {
-  const id = Number(userId || 0);
-  if (!Number.isSafeInteger(id) || id <= 0 || isResetAdmin(id)) return false;
+async function updateDonateMessage(callbackQuery, userId, dateKey, slots) {
+  const chatId = callbackQuery?.message?.chat?.id;
+  const messageId = callbackQuery?.message?.message_id;
+  if (!chatId || !messageId) return;
+  const link = await botShareLink();
+  const text = [
+    supportCampaignText(),
+    '',
+    '🤝 Kalau belum Supporter, share bot ni ke 3 group lain atau mana-mana platform sosial media dulu untuk guna bot hari Jumaat ni.',
+    '',
+    `Link bot: ${link}`,
+    '',
+    `Progress share: ${slots.size}/3`,
+    slots.size >= 3
+      ? '✅ Selesai 3/3. Bot dah unlock untuk Jumaat ni.'
+      : 'Lepas setiap kali share, tekan button Share #1, kemudian #2, kemudian #3.',
+    'Kita guna sistem percaya — bot tak verify tempat korang share ❤️',
+  ].join('\n');
 
-  const parts = malaysiaParts();
-  if (parts.weekday !== 'Fri') return false;
-  const mode = await getFridaySupportMode();
-  if (mode !== FRIDAY_SUPPORT_MODE_FORCE) return false;
-  if (await getActiveSupporterTitle(id)) return false;
-
-  await ensureSchema();
-  const db = await getSupportDb();
-  const environment = currentSupportEnvironment();
-  const now = new Date().toISOString();
-  await db.execute({
-    sql: `INSERT INTO support_friday_access (
-            environment, telegram_user_id, date_key, force_success_count, donate_unlocked, updated_at
-          ) VALUES (?, ?, ?, 1, 0, ?)
-          ON CONFLICT(environment, telegram_user_id, date_key) DO UPDATE SET
-            force_success_count = CASE
-              WHEN support_friday_access.force_success_count < 1 THEN 1
-              ELSE support_friday_access.force_success_count
-            END,
-            updated_at = excluded.updated_at`,
-    args: [environment, String(id), parts.dateKey, now],
+  await telegram('editMessageText', {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    disable_web_page_preview: true,
+    reply_markup: slots.size >= 3 ? { inline_keyboard: [] } : donateKeyboard(slots),
+  }).catch((error) => {
+    if (!String(error?.message || '').includes('message is not modified')) throw error;
   });
-  return true;
 }
 
 export async function processFridaySupportCallback(callbackQuery = {}) {
   const action = String(callbackQuery?.data || '');
-  if (action !== DONATE_CONFIRM_CALLBACK) return false;
+  const match = action.match(/^friday:share:([123])$/);
+  if (!match) return false;
 
+  const slot = Number(match[1]);
   const chatId = callbackQuery?.message?.chat?.id;
   const userId = callbackQuery?.from?.id;
   if (!chatId || !userId || callbackQuery?.message?.chat?.type !== 'private') return true;
@@ -307,7 +299,7 @@ export async function processFridaySupportCallback(callbackQuery = {}) {
   if (parts.weekday !== 'Fri' || mode !== FRIDAY_SUPPORT_MODE_DONATE) {
     await telegram('answerCallbackQuery', {
       callback_query_id: callbackQuery?.id,
-      text: 'Friday Share Mode tak aktif sekarang.',
+      text: 'Donate/Share mode tak aktif sekarang.',
       show_alert: true,
     }).catch(() => {});
     return true;
@@ -322,50 +314,36 @@ export async function processFridaySupportCallback(callbackQuery = {}) {
     return true;
   }
 
-  await setDonateUnlocked(userId, parts.dateKey);
+  const before = await shareSlots(userId, parts.dateKey);
+  for (let required = 1; required < slot; required += 1) {
+    if (!before.has(required)) {
+      await telegram('answerCallbackQuery', {
+        callback_query_id: callbackQuery?.id,
+        text: `Tekan Share #${required} dulu ya ❤️`,
+        show_alert: true,
+      }).catch(() => {});
+      return true;
+    }
+  }
+
+  const slots = before.has(slot) ? before : await markShareSlot(userId, parts.dateKey, slot);
   await telegram('answerCallbackQuery', {
     callback_query_id: callbackQuery?.id,
-    text: 'Terima kasih support share bot ni ❤️',
+    text: slots.size >= 3
+      ? 'Terima kasih ❤️ 3/3 selesai. Bot dah unlock untuk Jumaat ni.'
+      : `Share #${slot} dikira ✅ Progress ${slots.size}/3`,
     show_alert: false,
   }).catch(() => {});
-  await sendMessage(
-    chatId,
-    '✅ Dah unlock untuk Jumaat ni. Terima kasih sebab bantu share bot ni ❤️\n\nBoleh terus guna macam biasa.',
-  ).catch(() => {});
+  await updateDonateMessage(callbackQuery, userId, parts.dateKey, slots).catch((error) => {
+    console.warn('[friday-support] share message update failed:', error?.message);
+  });
   return true;
 }
 
-function modeReply(mode) {
-  if (mode === FRIDAY_SUPPORT_MODE_FORCE) {
-    return [
-      '🔒 Friday Support Mode: FORCE',
-      '',
-      'Setiap Jumaat:',
-      '• Supporter aktif → terus guna bot',
-      '• Non-supporter → 1 successful use free',
-      '• Lepas tu lock → minimum support RM10 untuk unlock',
-      '',
-      'Mode ni kekal sehingga admin tukar ke /donatesupport atau /supportnormal.',
-    ].join('\n');
-  }
-  if (mode === FRIDAY_SUPPORT_MODE_DONATE) {
-    return [
-      '🤝 Friday Support Mode: DONATE / SHARE',
-      '',
-      'Setiap Jumaat:',
-      '• Supporter aktif → terus guna bot',
-      '• Non-supporter → diminta share bot ke 3 group',
-      '• Verification longgar: user tekan “Dah Share 3 Group” untuk unlock Jumaat itu',
-      '',
-      'Mode ni kekal sehingga admin tukar ke /forcesupport atau /supportnormal.',
-    ].join('\n');
-  }
-  return [
-    '✅ Friday Support Mode: NORMAL',
-    '',
-    'Tiada payment lock dan tiada share gate pada hari Jumaat.',
-    'Promo support biasa masih boleh berjalan seperti scheduler sedia ada.',
-  ].join('\n');
+function modeHeader(mode) {
+  if (mode === FRIDAY_SUPPORT_MODE_FORCE) return '🔒 /forcesupport aktif.';
+  if (mode === FRIDAY_SUPPORT_MODE_DONATE) return '🤝 /donatesupport aktif.';
+  return '✅ /normalsupport aktif.';
 }
 
 export async function handleFridaySupportModeCommand(message = {}, mode) {
@@ -383,6 +361,10 @@ export async function handleFridaySupportModeCommand(message = {}, mode) {
   }
 
   const saved = await setFridaySupportMode(mode, userId);
-  await sendMessage(chatId, modeReply(saved));
+  await sendMessage(
+    chatId,
+    [modeHeader(saved), '', supportCampaignText()].join('\n'),
+    { reply_markup: supportMenuKeyboard() },
+  );
   return true;
 }

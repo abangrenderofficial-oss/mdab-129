@@ -8,7 +8,6 @@ import { createPendingSupport, markSupportIntentCreated, markSupportIntentFailed
 import { createSupportSubmission, markSupportSubmissionCheckout } from '../support/submissions.js';
 import { reconcileSupportPayment } from '../support/reconcile.js';
 import { sendMessage, telegram } from '../telegram.js';
-import { isResetAdmin } from '../recovery.js';
 
 const SUPPORT_SELECT_PREFIX = 'support:select:';
 const SUPPORT_CHECK_PREFIX = 'support:check:';
@@ -41,12 +40,22 @@ function modeLabel() {
 
 function supportMenuText() {
   return [
-    '🧪 ADMIN PAYMENT TEST',
+    '❤️ Support Perkembangan Bot',
+    '',
+    'Bot ni free untuk korang guna. Kalau rasa bot ni membantu, korang boleh support ikut kemampuan.',
+    '',
+    'Support korang bantu cover sewa server dan perkembangan bot supaya bot ni boleh stay dan terus korang guna.',
+    'Sekali seumur hidup pun tak pe. Terima kasih orang baik ! 🙇🏻❤️',
+    '',
+    'Pilih amount support:',
+    '☕️ RM1 — Cofee Supporter',
+    '🤍 RM10 — Supporter',
+    '🌟 RM20 — Super Supporter',
+    '💎 RM30 — Power Supporter',
+    '🏆 RM50 — Ultimate Supporter',
+    '👑 RM100 — Legend Supporter',
     '',
     `${modeLabel()} Bayarcash`,
-    'Menu ini sementara hanya boleh dibuka oleh owner/admin.',
-    '',
-    'Guna RM1 untuk test aliran payment sebenar dengan kos minimum.',
     ...(!isBayarcashConfigured() ? ['', '⚙️ Payment gateway belum lengkap di Railway.'] : []),
   ].join('\n');
 }
@@ -54,7 +63,7 @@ function supportMenuText() {
 function supportMenuKeyboard() {
   return {
     inline_keyboard: [
-      [{ text: '🧪 RM1 TEST', callback_data: `${SUPPORT_SELECT_PREFIX}1` }],
+      [{ text: '☕️ RM1', callback_data: `${SUPPORT_SELECT_PREFIX}1` }],
       [
         { text: 'RM10', callback_data: `${SUPPORT_SELECT_PREFIX}10` },
         { text: 'RM20', callback_data: `${SUPPORT_SELECT_PREFIX}20` },
@@ -103,8 +112,10 @@ export async function handleSupportCommand(message = {}) {
   const userId = message?.from?.id;
   if (!chatId || !userId) return true;
 
-  // Temporarily owner-only while Bayarcash support flow is being verified.
-  if (!isResetAdmin(userId)) return true;
+  if (message?.chat?.type && message.chat.type !== 'private') {
+    await sendMessage(chatId, '❤️ Guna /support dalam private chat dengan bot ya.').catch(() => {});
+    return true;
+  }
 
   await sendMessage(chatId, supportMenuText(), {
     reply_markup: supportMenuKeyboard(),
@@ -150,7 +161,7 @@ async function handlePaymentCheck(callbackQuery, paymentIntentId) {
       lines.join('\n'),
       {
         inline_keyboard: [
-          [{ text: '← Test Amount Lain', callback_data: SUPPORT_AMOUNTS_ACTION }],
+          [{ text: '← Support Amount Lain', callback_data: SUPPORT_AMOUNTS_ACTION }],
         ],
       },
     );
@@ -178,19 +189,12 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
 
   const chatId = callbackQuery?.message?.chat?.id;
   const messageId = callbackQuery?.message?.message_id;
+  const chatType = callbackQuery?.message?.chat?.type;
   const user = callbackQuery?.from || {};
   if (!chatId || !user?.id) return true;
 
-  // Old support keyboards in user chats are disabled as well.
-  if (!isResetAdmin(user.id)) {
-    await answerSupportCallback(callbackQuery, 'Fungsi ini sedang ditutup sementara.');
-    if (messageId) {
-      await editSupportMessage(
-        callbackQuery,
-        '⚙️ Fungsi ini sedang ditutup sementara.',
-        { inline_keyboard: [] },
-      );
-    }
+  if (chatType && chatType !== 'private') {
+    await answerSupportCallback(callbackQuery, 'Buka private chat bot untuk support ya ❤️', true);
     return true;
   }
 

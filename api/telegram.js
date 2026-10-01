@@ -15,6 +15,7 @@ import { handleHqLabCommand, processHqLabMessage } from '../src/features/hq-lab.
 import { processTikTokSlideshowChoice } from '../src/features/tiktok-slideshow.js';
 import { handleSupportTestCommand } from '../src/features/support-test.js';
 import { handleSupportCommand, processSupportCallback, processSupportMessage } from '../src/features/support.js';
+import { handleLuahRasaCommand } from '../src/features/luahrasa.js';
 import { handleCheckMemberCommand } from '../src/features/channel-diagnostic.js';
 import { enforceChannelGateForCallback, enforceChannelGateForMessage, maybePromptChannelAfterSuccess, processChannelGateCallback } from '../src/features/channel-gate.js';
 import { scheduleLinkJob } from '../src/link-queue.js';
@@ -61,6 +62,7 @@ async function processMessage(message, context) {
   if (command === '/disconnect') return handleConnectCommand(message, context.baseUrl, true);
   if (command === '/start' || command === '/help') return sendMessage(chatId, startText(message?.from?.id));
   if (command === '/support') return isResetAdmin(message?.from?.id) ? handleSupportCommand(message, context) : true;
+  if (command === '/luahrasa') return handleLuahRasaCommand(message, context);
   if (await processSupportMessage(message, context)) return;
   if (await enforceChannelGateForMessage(message)) return;
   if (await handleHqLabCommand(message, context)) return;

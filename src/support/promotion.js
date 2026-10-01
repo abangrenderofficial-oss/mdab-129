@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { sendMessage, sendSupportPromotionToChannel, telegram } from '../telegram.js';
 import { supportCampaignText, supportMenuKeyboard } from '../features/support.js';
+import { FRIDAY_SUPPORT_MODE_OFF, getFridaySupportMode } from './friday-access.js';
 
 const STATS_FILE = String(process.env.STATS_FILE_PATH || '/data/bot-stats.json');
 const MALAYSIA_TIMEZONE = 'Asia/Kuala_Lumpur';
@@ -208,13 +209,18 @@ export async function runSupportPromotionCycle({ force = false } = {}) {
   if (cycleRunning) return { skipped: true, reason: 'already_running' };
   cycleRunning = true;
   try {
+    const mode = await getFridaySupportMode();
+    if (mode === FRIDAY_SUPPORT_MODE_OFF) {
+      return { skipped: true, reason: 'support_mode_off' };
+    }
+
     const parts = malaysiaParts();
-    if (!force && parts.weekday !== 'Fri') return { skipped: true, reason: 'not_friday', parts };
-    if (!force && parts.hour < promoHour()) return { skipped: true, reason: 'too_early', parts };
+    if (!force && parts.weekday !== 'Fri') return { skipped: true, reason: 'not_friday', parts, mode };
+    if (!force && parts.hour < promoHour()) return { skipped: true, reason: 'too_early', parts, mode };
 
     const channelSent = await deliverChannelFriday(parts.dateKey);
     const privateResult = await deliverPrivateFriday(parts);
-    return { skipped: false, channelSent, privateResult, parts };
+    return { skipped: false, channelSent, privateResult, parts, mode };
   } finally {
     cycleRunning = false;
   }

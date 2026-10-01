@@ -12,6 +12,7 @@ import bayarcashHandler from './api/bayarcash.js';
 import supportReturnHandler from './api/support-return.js';
 import premiumHqSuccessHandler from './api/premium-hq-success.js';
 import contentBridgeConnectHandler from './api/content-bridge-connect.js';
+import contentBridgeVerifyHandler from './api/content-bridge-verify.js';
 import {
   getBayarcashPortalDiagnostic,
   isBayarcashConfigured,
@@ -34,6 +35,7 @@ const routes = new Map([
   ['/api/support-return', supportReturnHandler],
   ['/api/premium-hq-success', premiumHqSuccessHandler],
   ['/api/content-bridge/connect', contentBridgeConnectHandler],
+  ['/api/content-bridge/verify', contentBridgeVerifyHandler],
 ]);
 
 function addResponseHelpers(res) {

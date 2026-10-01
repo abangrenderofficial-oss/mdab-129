@@ -144,7 +144,7 @@ export default async function handler(req, res) {
     res.setHeader('Allow', 'GET, POST');
     return json(res, 405, { ok: false, error: 'method_not_allowed' });
   }
-  if (!isAuthorizedWebhook(req)) return json(res, 401).json({ ok: false, error: 'invalid_webhook_secret' });
+  if (!isAuthorizedWebhook(req)) return json(res, 401, { ok: false, error: 'invalid_webhook_secret' });
 
   try {
     const update = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;

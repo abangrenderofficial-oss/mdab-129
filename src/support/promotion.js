@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { currentSupportEnvironment, getSupportDb } from './store.js';
-import { sendMessage, telegram } from '../telegram.js';
+import { sendMessage, sendSupportPromotionToChannel, telegram } from '../telegram.js';
 
 const STATS_FILE = String(process.env.STATS_FILE_PATH || '/data/bot-stats.json');
 const MALAYSIA_TIMEZONE = 'Asia/Kuala_Lumpur';
@@ -187,7 +187,7 @@ async function sendPrivatePromotion(userId, supporter) {
 async function sendChannelPromotion() {
   const username = await botUsername();
   const url = username ? `https://t.me/${username}?start=support` : '';
-  await sendMessage(channelUsername(), promotionText({ supporter: false }), {
+  await sendSupportPromotionToChannel(channelUsername(), promotionText({ supporter: false }), {
     ...(url ? {
       reply_markup: {
         inline_keyboard: [[{ text: '❤️ Support Bot', url }]],

@@ -36,18 +36,9 @@ export function supportCampaignText() {
     '❌No more terpaksa download apps baru, ❌No mote tambah komitmen bulanan subsription 💸!',
     '',
     'Bot ni adalah milik dan hak kita semua 🤍🇲🇾',
-    'Tapi malangnya bot ni boleh mati bila2 masa if kita tak mampu bayarkan kos sewa server.',
+    'Sayangnya bot ni boleh mati bila2 masa, if kita tak mampu bayarkan kos sewa server.',
     '',
-    'Jadi dengan sangat merendah hati, sudilah kiranya if korang mampu kita support sedikit ikut ammount yg korang mampu support. Setahun sekali pun tak apa, terima kasih orang baik. 🙇🏻',
-    '',
-    'Semoga di murahkan lagi rezeki korang yg support, yang sakit di beri kesembuhan segera, yg sihat semoga kekal sihat, yg di landa masalah Allaah bantu selesaikan, di panjangkan usia 🤲🏻❤️',
-    '',
-    'Pilih type of support korang:',
-    '🤍 RM10 - Supporter',
-    '🌟 RM20 - Super Supporter',
-    '💎 RM30 - Power Supporter',
-    '🏆 RM50 - Ultimate Supporter',
-    '👑 RM100 - Legend Supporter',
+    'Jd kalau korang suka bot ni, jom kita sama2 support bg bot ni always hidup. Terima kasih orang baik 🙇🏻✨',
   ].join('\n');
 }
 

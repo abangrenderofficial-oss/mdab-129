@@ -21,7 +21,7 @@ import { handleCheckMemberCommand } from '../src/features/channel-diagnostic.js'
 import { handleResetChannelCommand } from '../src/features/channel-reset.js';
 import { enforceChannelGateForCallback, enforceChannelGateForMessage, maybePromptChannelAfterSuccess, processChannelGateCallback } from '../src/features/channel-gate.js';
 import { scheduleLinkJob } from '../src/link-queue.js';
-import { FRIDAY_SUPPORT_MODE_DONATE, FRIDAY_SUPPORT_MODE_FORCE, FRIDAY_SUPPORT_MODE_NORMAL, enforceFridaySupportForCallback, enforceFridaySupportForMessage, handleFridaySupportModeCommand, processFridaySupportCallback } from '../src/support/friday-access.js';
+import { FRIDAY_SUPPORT_MODE_DONATE, FRIDAY_SUPPORT_MODE_FORCE, FRIDAY_SUPPORT_MODE_NORMAL, enforceFridaySupportForCallback, enforceFridaySupportForMessage, handleFridaySupportModeCommand, markFridayUsageSuccess, processFridaySupportCallback } from '../src/support/friday-access.js';
 
 function json(res, status, body) { res.status(status).json(body); }
 function isAuthorizedWebhook(req) {
@@ -50,9 +50,15 @@ function startPayload(message) {
   if (!parts[0]?.toLowerCase().startsWith('/start')) return '';
   return String(parts[1] || '').trim().toLowerCase();
 }
+async function markFridaySuccess(userId, label) {
+  await markFridayUsageSuccess(userId).catch((error) => {
+    console.warn(`[friday-support] ${label} mark failed:`, error?.message);
+  });
+}
 async function recordPremiumHqSuccess(userId, chatId) {
   await recordUsage(userId, 'status_hq');
   await markPremiumHqCompleted(userId);
+  await markFridaySuccess(userId, 'premium hq');
   await maybePromptChannelAfterSuccess(chatId, userId);
 }
 
@@ -110,7 +116,10 @@ async function runWebhookUpdate(update, context) {
     if (await processAuditDelete(callbackQuery)) return;
     if (await processStatusProfileMenu(callbackQuery, context)) return;
     if (await processStatusAndroidButton(callbackQuery, context)) {
-      if (action.startsWith(MEDIA_STATUS_HQ_ANDROID)) await recordUsage(userId, 'status_hq');
+      if (action.startsWith(MEDIA_STATUS_HQ_ANDROID)) {
+        await recordUsage(userId, 'status_hq');
+        await markFridaySuccess(userId, 'android status');
+      }
       return;
     }
     const premiumResult = await processStatusButton(callbackQuery, context);
@@ -119,10 +128,16 @@ async function runWebhookUpdate(update, context) {
       return;
     }
     if (await processLiveWallpaperButton(callbackQuery, context)) {
-      if (action.startsWith(MEDIA_LIVE_WALLPAPER)) await recordUsage(userId, 'live_wallpaper');
+      if (action.startsWith(MEDIA_LIVE_WALLPAPER)) {
+        await recordUsage(userId, 'live_wallpaper');
+        await markFridaySuccess(userId, 'live wallpaper');
+      }
       return;
     }
-    if (await processTikTokSlideshowChoice(callbackQuery, context)) await recordUsage(userId, 'download');
+    if (await processTikTokSlideshowChoice(callbackQuery, context)) {
+      await recordUsage(userId, 'download');
+      await markFridaySuccess(userId, 'slideshow');
+    }
     return;
   }
   const message = update?.message ?? update?.edited_message;

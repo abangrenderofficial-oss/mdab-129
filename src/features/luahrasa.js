@@ -105,7 +105,12 @@ export async function processLuahRasaMessage(message = {}) {
       await clearLuahRasaSession(userId);
       await sendMessage(
         chatId,
-        'Terima kasih! luahan awak kita akan filter dulu. If everything okay, kita akan share luahan awak di channel ✨.',
+        [
+          session.tierLabel ? `Terima kasih, ${session.tierLabel}!` : 'Terima kasih!',
+          '',
+          'Luahan awak kita akan filter dulu.',
+          'If everything okay, kita akan share luahan awak di channel ✨.',
+        ].join('\n'),
       );
     } catch (error) {
       console.warn('[luahrasa] filter delivery failed:', error?.code, error?.message);

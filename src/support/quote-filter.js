@@ -11,12 +11,31 @@ async function ensureQuoteFilterSchema() {
   if (!quoteSchemaPromise) {
     quoteSchemaPromise = (async () => {
       const db = await getSupportDb();
-      await db.execute(`CREATE TABLE IF NOT EXISTS support_quote_filter_config (
-        environment TEXT NOT NULL PRIMARY KEY,
-        quote_group_id TEXT NOT NULL,
-        quote_group_title TEXT NOT NULL DEFAULT '',
-        updated_at TEXT NOT NULL
-      )`);
+      await db.batch([
+        `CREATE TABLE IF NOT EXISTS support_quote_filter_config (
+          environment TEXT NOT NULL PRIMARY KEY,
+          quote_group_id TEXT NOT NULL,
+          quote_group_title TEXT NOT NULL DEFAULT '',
+          updated_at TEXT NOT NULL
+        )`,
+        `CREATE TABLE IF NOT EXISTS support_quote_moderation (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          environment TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          body TEXT NOT NULL,
+          display_name TEXT NOT NULL,
+          tier_label TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'PENDING',
+          filter_chat_id TEXT,
+          filter_message_id TEXT,
+          moderated_by TEXT,
+          moderated_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_support_quote_moderation_status
+          ON support_quote_moderation(environment, status, created_at)`,
+      ], 'write');
       return true;
     })().catch((error) => {
       quoteSchemaPromise = null;
@@ -69,15 +88,138 @@ export async function getQuoteFilterGroup() {
   };
 }
 
-async function sendToQuoteFilter(text) {
+function rowToModeration(row) {
+  if (!row) return null;
+  return {
+    id: Number(row.id || 0),
+    kind: String(row.kind || ''),
+    body: String(row.body || ''),
+    displayName: String(row.display_name || ''),
+    tierLabel: String(row.tier_label || ''),
+    status: String(row.status || ''),
+    filterChatId: row.filter_chat_id ? String(row.filter_chat_id) : '',
+    filterMessageId: row.filter_message_id ? String(row.filter_message_id) : '',
+    moderatedBy: row.moderated_by ? String(row.moderated_by) : '',
+    moderatedAt: row.moderated_at ? String(row.moderated_at) : '',
+    createdAt: String(row.created_at || ''),
+    updatedAt: String(row.updated_at || ''),
+  };
+}
+
+async function createModeration({ kind, body, displayName, tierLabel = '' }) {
+  await ensureQuoteFilterSchema();
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const now = new Date().toISOString();
+  const result = await db.execute({
+    sql: `INSERT INTO support_quote_moderation (
+            environment, kind, body, display_name, tier_label,
+            status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?)`,
+    args: [
+      environment,
+      cleanText(kind, 32),
+      cleanText(body, 1800),
+      cleanText(displayName, 80),
+      cleanText(tierLabel, 100),
+      now,
+      now,
+    ],
+  });
+  const id = Number(result?.lastInsertRowid || 0);
+  if (!id) throw new Error('Failed to create quote moderation record.');
+  return id;
+}
+
+async function attachFilterMessage(id, chatId, messageId) {
+  await ensureQuoteFilterSchema();
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const now = new Date().toISOString();
+  await db.execute({
+    sql: `UPDATE support_quote_moderation
+          SET filter_chat_id = ?, filter_message_id = ?, updated_at = ?
+          WHERE environment = ? AND id = ?`,
+    args: [String(chatId || ''), String(messageId || ''), now, environment, Number(id)],
+  });
+}
+
+export async function getQuoteModeration(id) {
+  const moderationId = Number(id || 0);
+  if (!Number.isSafeInteger(moderationId) || moderationId <= 0) return null;
+  await ensureQuoteFilterSchema();
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const result = await db.execute({
+    sql: `SELECT id, kind, body, display_name, tier_label, status,
+                 filter_chat_id, filter_message_id, moderated_by,
+                 moderated_at, created_at, updated_at
+          FROM support_quote_moderation
+          WHERE environment = ? AND id = ?
+          LIMIT 1`,
+    args: [environment, moderationId],
+  });
+  return rowToModeration(result.rows?.[0] || null);
+}
+
+export async function moderateQuote(id, decision, moderatorUserId) {
+  const moderationId = Number(id || 0);
+  const status = String(decision || '').toUpperCase();
+  if (!Number.isSafeInteger(moderationId) || moderationId <= 0) return null;
+  if (!['APPROVED', 'REJECTED'].includes(status)) return null;
+
+  await ensureQuoteFilterSchema();
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const now = new Date().toISOString();
+
+  await db.execute({
+    sql: `UPDATE support_quote_moderation
+          SET status = ?, moderated_by = ?, moderated_at = ?, updated_at = ?
+          WHERE environment = ? AND id = ? AND status = 'PENDING'`,
+    args: [status, String(moderatorUserId || ''), now, now, environment, moderationId],
+  });
+
+  return getQuoteModeration(moderationId);
+}
+
+function moderationKeyboard(id) {
+  return {
+    inline_keyboard: [[
+      { text: '✅ Approve', callback_data: `quote:approve:${id}` },
+      { text: '❌ Reject', callback_data: `quote:reject:${id}` },
+    ]],
+  };
+}
+
+async function sendToQuoteFilter({ kind, text, body, displayName, tierLabel = '' }) {
   const target = await getQuoteFilterGroup();
   if (!target?.groupId) {
     const error = new Error('Quote filter group is not connected.');
     error.code = 'QUOTE_FILTER_NOT_CONNECTED';
     throw error;
   }
-  await sendMessage(target.groupId, text);
-  return target;
+
+  const moderationId = await createModeration({ kind, body, displayName, tierLabel });
+  try {
+    const sent = await sendMessage(target.groupId, text, {
+      reply_markup: moderationKeyboard(moderationId),
+    });
+    await attachFilterMessage(moderationId, target.groupId, sent?.message_id || '');
+    return { ...target, moderationId, messageId: sent?.message_id || null };
+  } catch (error) {
+    const db = await getSupportDb().catch(() => null);
+    if (db) {
+      const now = new Date().toISOString();
+      await db.execute({
+        sql: `UPDATE support_quote_moderation
+              SET status = 'SEND_FAILED', updated_at = ?
+              WHERE environment = ? AND id = ? AND status = 'PENDING'`,
+        args: [now, currentSupportEnvironment(), moderationId],
+      }).catch(() => {});
+    }
+    throw error;
+  }
 }
 
 export async function sendSupportQuoteToFilter({ supportMessage, displayName, tierLabel }) {
@@ -86,11 +228,17 @@ export async function sendSupportQuoteToFilter({ supportMessage, displayName, ti
   const tier = cleanText(tierLabel, 100) || '❤️ Supporter';
   if (!message || !name) throw new Error('Support quote is incomplete.');
 
-  return sendToQuoteFilter([
-    `“${message}”`,
-    '',
-    `${name}, ${tier}`,
-  ].join('\n'));
+  return sendToQuoteFilter({
+    kind: 'SUPPORT',
+    body: message,
+    displayName: name,
+    tierLabel: tier,
+    text: [
+      `“${message}”`,
+      '',
+      `${name}, ${tier}`,
+    ].join('\n'),
+  });
 }
 
 export async function sendLuahRasaToFilter({ message, displayName, tierLabel = '' }) {
@@ -99,11 +247,17 @@ export async function sendLuahRasaToFilter({ message, displayName, tierLabel = '
   const tier = cleanText(tierLabel, 100);
   if (!luahan || !name) throw new Error('Luah rasa submission is incomplete.');
 
-  return sendToQuoteFilter([
-    '💭 Luah Rasa',
-    '',
-    `“${luahan}”`,
-    '',
-    tier ? `${name}, ${tier}` : name,
-  ].join('\n'));
+  return sendToQuoteFilter({
+    kind: 'LUAHRASA',
+    body: luahan,
+    displayName: name,
+    tierLabel: tier,
+    text: [
+      '💭 Luah Rasa',
+      '',
+      `“${luahan}”`,
+      '',
+      tier ? `${name}, ${tier}` : name,
+    ].join('\n'),
+  });
 }

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { sendMessage, sendSupportPromotionToChannel, telegram } from '../telegram.js';
-import { supportCampaignText } from '../features/support.js';
+import { supportCampaignText, supportMenuKeyboard } from '../features/support.js';
 
 const STATS_FILE = String(process.env.STATS_FILE_PATH || '/data/bot-stats.json');
 const MALAYSIA_TIMEZONE = 'Asia/Kuala_Lumpur';
@@ -49,14 +49,7 @@ function malaysiaParts(date = new Date()) {
     day: parts.day,
     hour: Number(parts.hour || 0),
     dateKey: `${parts.year}-${parts.month}-${parts.day}`,
-    monthKey: `${parts.year}-${parts.month}`,
   };
-}
-
-function malaysiaMonthKey(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return malaysiaParts(date).monthKey;
 }
 
 function sleep(ms) {
@@ -141,24 +134,6 @@ async function trackedUserIds() {
   }
 }
 
-async function paidSupporterHistory() {
-  const db = await getSupportDb();
-  const environment = currentSupportEnvironment();
-  const result = await db.execute({
-    sql: `SELECT telegram_user_id, MAX(paid_at) AS last_paid_at
-          FROM support_orders
-          WHERE environment = ? AND status = 'PAID' AND paid_at IS NOT NULL
-          GROUP BY telegram_user_id`,
-    args: [environment],
-  });
-  const map = new Map();
-  for (const row of result.rows || []) {
-    const userId = String(row.telegram_user_id || '');
-    if (userId) map.set(userId, String(row.last_paid_at || ''));
-  }
-  return map;
-}
-
 async function botUsername() {
   if (cachedBotUsername) return cachedBotUsername;
   const me = await telegram('getMe');
@@ -168,9 +143,7 @@ async function botUsername() {
 
 async function sendPrivatePromotion(userId) {
   await sendMessage(userId, supportCampaignText(), {
-    reply_markup: {
-      inline_keyboard: [[{ text: '❤️ Support Bot', callback_data: 'support:amounts' }]],
-    },
+    reply_markup: supportMenuKeyboard(),
   });
 }
 
@@ -202,28 +175,14 @@ async function deliverChannelFriday(dateKey) {
   }
 }
 
-async function deliverPrivateFriday({ dateKey, monthKey }) {
-  const [users, paidMap] = await Promise.all([trackedUserIds(), paidSupporterHistory()]);
+async function deliverPrivateFriday({ dateKey }) {
+  const users = await trackedUserIds();
   let sent = 0;
   let skipped = 0;
   let failed = 0;
+  const periodKey = `all-users:${dateKey}`;
 
   for (const userId of users) {
-    const lastPaidAt = paidMap.get(userId) || '';
-    const supporter = Boolean(lastPaidAt);
-
-    let periodKey;
-    if (supporter) {
-      const paidMonth = malaysiaMonthKey(lastPaidAt);
-      if (!paidMonth || monthKey <= paidMonth) {
-        skipped += 1;
-        continue;
-      }
-      periodKey = `supporter:${monthKey}`;
-    } else {
-      periodKey = `nonsupporter:${dateKey}`;
-    }
-
     if (await alreadySent('PRIVATE', userId, periodKey)) {
       skipped += 1;
       continue;
@@ -241,7 +200,7 @@ async function deliverPrivateFriday({ dateKey, monthKey }) {
     await sleep(PRIVATE_SEND_DELAY_MS);
   }
 
-  console.log('[support-promo] private cycle complete', { users: users.length, sent, skipped, failed });
+  console.log('[support-promo] private 10AM cycle complete', { users: users.length, sent, skipped, failed });
   return { users: users.length, sent, skipped, failed };
 }
 
@@ -277,6 +236,7 @@ export function startSupportPromotionScheduler() {
     timezone: MALAYSIA_TIMEZONE,
     fridayHour: promoHour(),
     channel: channelUsername(),
+    privateAudience: 'all-tracked-users',
   });
   return schedulerTimer;
 }

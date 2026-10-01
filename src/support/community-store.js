@@ -23,9 +23,17 @@ function addOneCalendarMonth(value) {
 
 function normalizedTier(row = {}) {
   const amountCents = Number(row.amount_cents || 0);
-  if (amountCents === 100) {
-    return { key: 'coffee', label: '☕️ Cofee Supporter' };
-  }
+  const byAmount = new Map([
+    [100, { key: 'coffee', label: '☕️ Cofee Supporter' }],
+    [1000, { key: 'supporter', label: '🤍 Supporter' }],
+    [2000, { key: 'super', label: '🌟 Super Supporter' }],
+    [3000, { key: 'power', label: '💎 Power Supporter' }],
+    [5000, { key: 'ultimate', label: '🏆 Ultimate Supporter' }],
+    [10000, { key: 'legend', label: '👑 Legend Supporter' }],
+  ]);
+
+  if (byAmount.has(amountCents)) return byAmount.get(amountCents);
+
   return {
     key: String(row.tier_key || ''),
     label: String(row.tier_label || '') || '❤️ Supporter',
@@ -67,12 +75,16 @@ export async function getActiveSupporterTitle(userId) {
   let rows = [];
   try {
     const result = await db.execute({
-      sql: `SELECT s.order_number, s.tier_key, s.tier_label, s.amount_cents,
-                   s.display_name, o.paid_at
-            FROM support_submissions s
-            INNER JOIN support_orders o
-              ON o.environment = s.environment AND o.order_number = s.order_number
-            WHERE s.environment = ? AND s.telegram_user_id = ?
+      sql: `SELECT o.order_number,
+                   COALESCE(s.tier_key, '') AS tier_key,
+                   COALESCE(s.tier_label, '') AS tier_label,
+                   o.amount_cents,
+                   COALESCE(s.display_name, '') AS display_name,
+                   o.paid_at
+            FROM support_orders o
+            LEFT JOIN support_submissions s
+              ON s.environment = o.environment AND s.order_number = o.order_number
+            WHERE o.environment = ? AND o.telegram_user_id = ?
               AND o.paid_at IS NOT NULL AND o.status = 'PAID'
             ORDER BY o.paid_at DESC
             LIMIT 20`,

@@ -7,9 +7,17 @@ import { processStatusFromLink } from './features/status-hq.js';
 import { sendTikTokSlideshowChoice } from './features/tiktok-slideshow.js';
 import { maybePromptChannelAfterSuccess } from './features/channel-gate.js';
 import {
+  claimFridayUsageAttempt,
   enforceFridaySupportForMessage,
   markFridayUsageSuccess,
+  releaseFridayUsageAttempt,
 } from './support/friday-access.js';
+import {
+  claimDailyForceUsageAttempt,
+  enforceDailyForceSupportForMessage,
+  markDailyForceUsageSuccess,
+  releaseDailyForceUsageAttempt,
+} from './support/daily-force.js';
 
 function hasDownloadableMedia(result) {
   if (!result || result.cancelled) return false;
@@ -28,30 +36,51 @@ async function recordPremiumHqSuccess(userId, chatId) {
   await recordUsage(userId, 'status_hq');
   await markPremiumHqCompleted(userId);
   await markFridaySuccess(userId, 'status link');
+  await markDailyForceUsageSuccess(userId).catch((error) => {
+    console.warn('[daily-force] status link mark failed:', error?.message);
+  });
   await maybePromptChannelAfterSuccess(chatId, userId);
 }
 
-async function runLinkJob({ message, context, url, platform, statusMode }) {
+async function runLinkJob({ message, context, url, platform, statusMode, fridayClaimed = false, dailyClaimed = false }) {
   const chatId = message?.chat?.id;
   const userId = message?.from?.id;
   if (!chatId || !userId) return;
 
-  // Re-check when the queued job actually begins. After one successful use, the
-  // next queued job must obey FORCE / DONATE mode instead of slipping through.
-  if (await enforceFridaySupportForMessage(message)) return;
+  try {
+    if (!fridayClaimed && await enforceFridaySupportForMessage(message)) return;
+    if (!dailyClaimed && await enforceDailyForceSupportForMessage(message)) return;
 
-  if (statusMode) {
-    const completed = await processStatusFromLink(chatId, url, platform, context.fence);
-    if (completed) await recordPremiumHqSuccess(userId, chatId);
-    return;
-  }
+    if (statusMode) {
+      const completed = await processStatusFromLink(chatId, url, platform, context.fence);
+      if (completed) {
+        await recordPremiumHqSuccess(userId, chatId);
+      } else {
+        if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+        if (dailyClaimed) await releaseDailyForceUsageAttempt(userId).catch(() => {});
+      }
+      return;
+    }
 
-  const result = await processStandardDownload({ chatId, url, platform, context, message });
-  if (result?.slideshow) {
-    await sendTikTokSlideshowChoice(chatId, url);
-  } else if (hasDownloadableMedia(result)) {
-    await recordUsage(userId, 'download');
-    await markFridaySuccess(userId, 'download');
+    const result = await processStandardDownload({ chatId, url, platform, context, message });
+    if (result?.slideshow) {
+      await sendTikTokSlideshowChoice(chatId, url);
+      if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+      if (dailyClaimed) await releaseDailyForceUsageAttempt(userId).catch(() => {});
+    } else if (hasDownloadableMedia(result)) {
+      await recordUsage(userId, 'download');
+      await markFridaySuccess(userId, 'download');
+      await markDailyForceUsageSuccess(userId).catch((error) => {
+        console.warn('[daily-force] download mark failed:', error?.message);
+      });
+    } else {
+      if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+      if (dailyClaimed) await releaseDailyForceUsageAttempt(userId).catch(() => {});
+    }
+  } catch (error) {
+    if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+    if (dailyClaimed) await releaseDailyForceUsageAttempt(userId).catch(() => {});
+    throw error;
   }
 }
 
@@ -61,14 +90,26 @@ export async function scheduleLinkJob({ message, context = {}, url, platform, st
   if (!chatId || !userId) return false;
 
   if (await enforceFridaySupportForMessage(message)) return true;
+  if (await enforceDailyForceSupportForMessage(message)) return true;
+
+  const fridayClaimed = await claimFridayUsageAttempt(userId);
+  if (!fridayClaimed && await enforceFridaySupportForMessage(message)) return true;
+
+  const dailyClaimed = await claimDailyForceUsageAttempt(userId);
+  if (!dailyClaimed && await enforceDailyForceSupportForMessage(message)) {
+    if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+    return true;
+  }
 
   const queued = enqueueUserHeavyJob(
     userId,
-    () => runLinkJob({ message, context, url, platform, statusMode }),
+    () => runLinkJob({ message, context, url, platform, statusMode, fridayClaimed, dailyClaimed }),
     { shouldRun: () => isJobFenceActive(context.fence) },
   );
 
   if (!queued.accepted) {
+    if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+    if (dailyClaimed) await releaseDailyForceUsageAttempt(userId).catch(() => {});
     await sendMessage(
       chatId,
       `⏳ Queue kau dah penuh. Maksimum ${queued.limit || 5} proses berat untuk seorang user. Tunggu yang sekarang siap dulu ya.`,

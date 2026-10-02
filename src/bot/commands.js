@@ -78,6 +78,7 @@ export function adminCommandMenuText() {
     '/connect — Sambung group pemantauan video',
     '/disconnect — Putus group pemantauan video',
     '/connectquote — Sambung group filter quote & luah rasa',
+    '/connectpaymentdetail — Sambung group notification payment support',
     '/totaluser — Statistik penggunaan bot',
     '/checkmember — Diagnostic membership channel',
     '/hqlab — HQ Lab owner-only',

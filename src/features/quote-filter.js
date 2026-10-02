@@ -6,6 +6,7 @@ import {
   setQuoteFilterGroup,
 } from '../support/quote-filter.js';
 import { deliverApprovedModeration } from '../support/content-bridge.js';
+import { markSupportSubmissionRejected } from '../support/submissions.js';
 
 async function isGroupAdmin(chatId, userId) {
   if (!chatId || !userId) return false;
@@ -149,6 +150,16 @@ export async function processQuoteFilterCallback(callbackQuery = {}) {
     if (approved) {
       void deliverApprovedModeration(finalRecord).catch((error) => {
         console.error('[quote-filter] approved delivery failed:', error?.message);
+      });
+    } else if (rejected && String(finalRecord?.kind || '') === 'SUPPORT') {
+      await markSupportSubmissionRejected({
+        orderNumber: finalRecord?.sourceOrderNumber || '',
+        userId: finalRecord?.telegramUserId || '',
+        supportMessage: finalRecord?.body || '',
+        displayName: finalRecord?.displayName || '',
+        tierLabel: finalRecord?.tierLabel || '',
+      }).catch((error) => {
+        console.error('[quote-filter] supporter relock failed:', error?.message);
       });
     }
   } catch (error) {

@@ -441,7 +441,7 @@ async function telegramDisplayName(userId, username = '') {
 
 function notificationPayload({ userId, amount, name, tierLabel, paidAt, expiresAt, tag }) {
   return {
-    title: 'AR Payment',
+    title: '',
     body: [
       `ID ${userId} - RM${amount} - Successful ✅`,
       '',
@@ -522,7 +522,7 @@ export async function sendWebPushTest(deviceToken) {
   }
 
   const payload = {
-    title: 'AR Payment',
+    title: '',
     body: [
       'ID 123456789 - RM10.00 - Successful ✅',
       '',

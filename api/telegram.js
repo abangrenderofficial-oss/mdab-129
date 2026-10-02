@@ -96,6 +96,7 @@ async function processMessage(message, context) {
   const statusMode = command === '/status' || command === 'status';
   const url = extractFirstUrl(text);
   if (!url) {
+    if (['group', 'supergroup'].includes(message?.chat?.type)) return;
     await sendMessage(chatId, statusMode
       ? 'Guna format: /status <link video>'
       : 'Hantar satu link TikTok, Instagram, Threads, X/Twitter atau YouTube, atau upload video/gambar dari gallery.');

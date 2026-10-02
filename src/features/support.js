@@ -172,7 +172,7 @@ export async function processSupportMessage(message = {}) {
   if (!chatId || !userId || chatType !== 'private') return false;
 
   const rawText = String(message?.text || message?.caption || '').trim();
-  if (!rawText || rawText.startsWith('/')) return false;
+  if (!rawText || rawText.startsWith('/') || /https?:\/\/\S+/i.test(rawText)) return false;
 
   let submission = null;
   try {
@@ -215,6 +215,8 @@ export async function processSupportMessage(message = {}) {
         supportMessage: ready.supportMessage,
         displayName: ready.displayName,
         tierLabel: ready.tierLabel,
+        orderNumber: ready.orderNumber,
+        userId: ready.telegramUserId,
       });
       await markSupportSubmissionAnnounced(ready.orderNumber);
 

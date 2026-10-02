@@ -440,9 +440,13 @@ async function telegramDisplayName(userId, username = '') {
 }
 
 function notificationPayload({ userId, amount, name, tierLabel, paidAt, expiresAt, tag }) {
+  const tierName = cleanText(tierLabel, 100)
+    .replace(/^[^\\p{L}\\p{N}]+/u, '')
+    .trim() || 'Supporter';
+
   return {
-    title: `ID ${userId} - RM${amount} - Successful ✅`,
-    body: '',
+    title: 'PayPing!',
+    body: `payment from your ${tierName}\nID ${userId} - RM ${amount} - Successfull 🎉`,
     tag: cleanText(tag, 120),
     url: '/ar-payment',
   };
@@ -512,8 +516,8 @@ export async function sendWebPushTest(deviceToken) {
   }
 
   const payload = {
-    title: 'ID 123456789 - RM10.00 - Successful ✅',
-    body: '',
+    title: 'PayPing!',
+    body: 'payment from your Supporter\nID 123456789 - RM 10.00 - Successfull 🎉',
     tag: `test-${Date.now()}`,
     url: '/ar-payment',
   };

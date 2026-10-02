@@ -1,5 +1,5 @@
 import { reconcileSupportPayment } from '../src/support/reconcile.js';
-import { activateSupportSubmissionAfterPayment, getSupportSubmission, markSupportSubmissionAnnounced } from '../src/support/submissions.js';
+import { activateSupportSubmissionAfterPayment, getSupportSubmission, markSupportSubmissionAnnounced, restoreSupportSubmissionAwaitingName } from '../src/support/submissions.js';
 import { saveSupportTestimonial } from '../src/support/community-store.js';
 import { sendSupportQuoteToFilter } from '../src/support/quote-filter.js';
 import { sendMessage } from '../src/telegram.js';
@@ -251,6 +251,7 @@ export default async function handler(req, res) {
         notice = 'Terima kasih! Kata-kata support korang kita akan filter dulu. If everything okay, kita akan share dalam channel ❤️';
       } catch (error) {
         console.error('[support-return] quote filter delivery failed:', error?.code, error?.message);
+        await restoreSupportSubmissionAwaitingName(orderNumber, submission?.telegramUserId).catch(() => {});
         notice = error?.code === 'QUOTE_FILTER_NOT_CONNECTED'
           ? 'Group filter belum disambungkan lagi. Admin perlu guna /connectquote dahulu.'
           : 'Payment dah confirmed, tapi kata-kata support belum berjaya dihantar untuk filter. Cuba tekan hantar sekali lagi.';

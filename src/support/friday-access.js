@@ -70,6 +70,14 @@ async function ensureSchema() {
           PRIMARY KEY (environment, telegram_user_id, date_key)
         )`,
       ], 'write');
+
+      const usageColumns = await db.execute('PRAGMA table_info(support_friday_usage_state)');
+      const hasUseClaimed = (usageColumns.rows || []).some((row) => String(row.name || '') === 'use_claimed');
+      if (!hasUseClaimed) {
+        await db.execute(
+          'ALTER TABLE support_friday_usage_state ADD COLUMN use_claimed INTEGER NOT NULL DEFAULT 0',
+        );
+      }
       return true;
     })().catch((error) => {
       schemaPromise = null;
@@ -113,7 +121,7 @@ async function usageState(userId, dateKey) {
   const db = await getSupportDb();
   const environment = currentSupportEnvironment();
   const result = await db.execute({
-    sql: `SELECT used_once, post_use_prompt_sent
+    sql: `SELECT used_once, post_use_prompt_sent, use_claimed
           FROM support_friday_usage_state
           WHERE environment = ? AND telegram_user_id = ? AND date_key = ?
           LIMIT 1`,
@@ -122,6 +130,7 @@ async function usageState(userId, dateKey) {
   return {
     usedOnce: Number(result.rows?.[0]?.used_once || 0) === 1,
     promptSent: Number(result.rows?.[0]?.post_use_prompt_sent || 0) === 1,
+    useClaimed: Number(result.rows?.[0]?.use_claimed || 0) === 1,
   };
 }
 
@@ -137,6 +146,7 @@ async function markFirstUseAndClaimPrompt(userId, dateKey) {
           ) VALUES (?, ?, ?, 1, 0, ?)
           ON CONFLICT(environment, telegram_user_id, date_key) DO UPDATE SET
             used_once = 1,
+            use_claimed = 0,
             updated_at = excluded.updated_at`,
     args: [environment, String(userId), String(dateKey), now],
   });
@@ -149,6 +159,57 @@ async function markFirstUseAndClaimPrompt(userId, dateKey) {
     args: [now, environment, String(userId), String(dateKey)],
   });
   return Number(claimed.rowsAffected || 0) > 0;
+}
+
+export async function claimFridayUsageAttempt(userId) {
+  const id = Number(userId || 0);
+  if (!Number.isSafeInteger(id) || id <= 0 || isResetAdmin(id)) return false;
+
+  const parts = malaysiaParts();
+  if (parts.weekday !== 'Fri') return false;
+
+  const mode = await getFridaySupportMode();
+  if (![FRIDAY_SUPPORT_MODE_FORCE, FRIDAY_SUPPORT_MODE_DONATE].includes(mode)) return false;
+  if (await getActiveSupporterTitle(id)) return false;
+
+  await ensureSchema();
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const now = new Date().toISOString();
+
+  await db.execute({
+    sql: `INSERT OR IGNORE INTO support_friday_usage_state (
+            environment, telegram_user_id, date_key, used_once, post_use_prompt_sent, use_claimed, updated_at
+          ) VALUES (?, ?, ?, 0, 0, 0, ?)`,
+    args: [environment, String(id), parts.dateKey, now],
+  });
+
+  const claimed = await db.execute({
+    sql: `UPDATE support_friday_usage_state
+          SET use_claimed = 1, updated_at = ?
+          WHERE environment = ? AND telegram_user_id = ? AND date_key = ?
+            AND used_once = 0 AND use_claimed = 0`,
+    args: [now, environment, String(id), parts.dateKey],
+  });
+  return Number(claimed.rowsAffected || 0) > 0;
+}
+
+export async function releaseFridayUsageAttempt(userId) {
+  const id = Number(userId || 0);
+  if (!Number.isSafeInteger(id) || id <= 0) return false;
+
+  const parts = malaysiaParts();
+  await ensureSchema();
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const result = await db.execute({
+    sql: `UPDATE support_friday_usage_state
+          SET use_claimed = 0, updated_at = ?
+          WHERE environment = ? AND telegram_user_id = ? AND date_key = ?
+            AND used_once = 0 AND use_claimed = 1`,
+    args: [new Date().toISOString(), environment, String(id), parts.dateKey],
+  });
+  return Number(result.rowsAffected || 0) > 0;
 }
 
 async function shareSlots(userId, dateKey) {
@@ -264,7 +325,11 @@ async function accessContext(userId) {
   }
 
   const state = await usageState(userId, parts.dateKey);
-  if (!state.usedOnce || mode === FRIDAY_SUPPORT_MODE_NORMAL) {
+  if (mode === FRIDAY_SUPPORT_MODE_NORMAL) {
+    return { gated: false, mode, parts, supporter: null, state };
+  }
+
+  if (!state.usedOnce && !state.useClaimed) {
     return { gated: false, mode, parts, supporter: null, state };
   }
 

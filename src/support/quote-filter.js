@@ -1,5 +1,6 @@
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { getTelegramChat, sendMessage } from '../telegram.js';
+import { hasMinimumWords } from './text-validation.js';
 
 let quoteSchemaPromise = null;
 
@@ -293,6 +294,11 @@ export async function sendSupportQuoteToFilter({
   const name = cleanText(displayName, 80);
   const tier = cleanText(tierLabel, 100) || '❤️ Supporter';
   if (!message || !name) throw new Error('Support quote is incomplete.');
+  if (!hasMinimumWords(message, 5)) {
+    const error = new Error('Support quote must contain at least 5 words.');
+    error.code = 'SUPPORT_QUOTE_TOO_SHORT';
+    throw error;
+  }
 
   return sendToQuoteFilter({
     kind: 'SUPPORT',
@@ -314,6 +320,11 @@ export async function sendLuahRasaToFilter({ message, displayName, tierLabel = '
   const name = cleanText(displayName, 80);
   const tier = cleanText(tierLabel, 100);
   if (!luahan || !name) throw new Error('Luah rasa submission is incomplete.');
+  if (!hasMinimumWords(luahan, 5)) {
+    const error = new Error('Luah rasa must contain at least 5 words.');
+    error.code = 'LUAHRASA_TOO_SHORT';
+    throw error;
+  }
 
   return sendToQuoteFilter({
     kind: 'LUAHRASA',

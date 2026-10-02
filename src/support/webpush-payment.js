@@ -442,17 +442,7 @@ async function telegramDisplayName(userId, username = '') {
 function notificationPayload({ userId, amount, name, tierLabel, paidAt, expiresAt, tag }) {
   return {
     title: '',
-    body: [
-      `ID ${userId} - RM${amount} - Successful ✅`,
-      '',
-      `ID user - ${userId}`,
-      `Nama - ${name}`,
-      `Amount - RM${amount}`,
-      `Type of support - ${tierLabel}`,
-      `Date - ${formatMalaysiaDate(paidAt)}`,
-      `Time - ${formatMalaysiaTime(paidAt)}`,
-      `Period - ${formatMalaysiaDate(paidAt)} sampai ${formatMalaysiaDate(expiresAt)} (12 bulan)`,
-    ].join('\n'),
+    body: `ID ${userId} - RM${amount} - Successful ✅`,
     tag: cleanText(tag, 120),
     url: '/ar-payment',
   };
@@ -523,17 +513,7 @@ export async function sendWebPushTest(deviceToken) {
 
   const payload = {
     title: '',
-    body: [
-      'ID 123456789 - RM10.00 - Successful ✅',
-      '',
-      'ID user - 123456789',
-      'Nama - Test User',
-      'Amount - RM10.00',
-      'Type of support - 🤍 Supporter',
-      'Date - 3 Oct 2026',
-      'Time - 1:30:00 AM',
-      'Period - 3 Oct 2026 sampai 3 Oct 2027 (12 bulan)',
-    ].join('\n'),
+    body: 'ID 123456789 - RM10.00 - Successful ✅',
     tag: `test-${Date.now()}`,
     url: '/ar-payment',
   };

@@ -7,6 +7,7 @@ import {
   startLuahRasaSession,
 } from '../support/luahrasa-store.js';
 import { sendLuahRasaToFilter } from '../support/quote-filter.js';
+import { hasMinimumWords } from '../support/text-validation.js';
 
 function cleanText(value, maxLength) {
   return String(value || '').replace(/\u0000/g, '').trim().slice(0, maxLength);
@@ -79,8 +80,11 @@ export async function processLuahRasaMessage(message = {}) {
 
   if (session.state === 'AWAITING_MESSAGE') {
     const luahan = cleanText(rawText, 1500);
-    if (!luahan) {
-      await sendMessage(chatId, 'Send luahan dalam bentuk text ya.').catch(() => {});
+    if (!hasMinimumWords(luahan, 5)) {
+      await sendMessage(
+        chatId,
+        'Pastikan luah rasa korang lebih dari 5 patah perkataan.',
+      ).catch(() => {});
       return true;
     }
 

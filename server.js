@@ -48,9 +48,11 @@ const routes = new Map([
   ['/ar-payment/', paymentPwaPageHandler],
   ['/ar-payment/manifest.webmanifest', paymentPwaManifestHandler],
   ['/ar-payment/payping.webmanifest', paymentPwaManifestHandler],
+  ['/ar-payment/payping-v4.webmanifest', paymentPwaManifestHandler],
   ['/ar-payment/sw.js', paymentPwaServiceWorkerHandler],
   ['/ar-payment/icon.svg', paymentPwaIconHandler],
   ['/ar-payment/payping-icon.svg', paymentPwaIconHandler],
+  ['/ar-payment/payping-icon-v4.svg', paymentPwaIconHandler],
 ]);
 
 function addResponseHelpers(res) {

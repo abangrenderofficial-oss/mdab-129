@@ -108,8 +108,9 @@ export async function processLuahRasaMessage(message = {}) {
         [
           session.tierLabel ? `Terima kasih, ${session.tierLabel}!` : 'Terima kasih!',
           '',
-          'Luahan awak kita akan filter dulu.',
-          'If everything okay, kita akan share luahan awak di channel ✨.',
+          'Luahan awak kita akan review dulu.',
+          'If everything okay,',
+          'kita akan share di channel ✨.',
         ].join('\n'),
       );
     } catch (error) {

@@ -33,14 +33,14 @@ export function supportCampaignText() {
     'Macam mana pengalaman korang guna bot ni, best tak? Bestkan Whatsapp Dah Premium boleh post HD ✨',
     '',
     '❌No more watermark,',
-    '❌No more terpaksa download apps baru, ❌No mote tambah komitmen bulanan subsription 💸!',
+    '❌No more terpaksa download apps baru, ❌No more tambah komitmen bulanan subsription 💸!',
     '',
-    'Bot ni adalah milik dan hak kita semua 🤍🇲🇾',
+    'Bot ni adalah hak milik kita semua 🤍🇲🇾',
     'Sayangnya bot ni boleh mati bila2 masa, if kita tak mampu bayarkan kos sewa server.',
     '',
     'Jd kalau korang suka bot ni, jom kita sama2 support bg bot ni always hidup. ❤️',
     '',
-    'Setahun Sekali Sahaja Support Pun Boleh,',
+    'Setahun Sekali Sahaja Support Pun Boleh ,',
     'Terima kasih orang baik 🙇🏻✨',
   ].join('\n');
 }

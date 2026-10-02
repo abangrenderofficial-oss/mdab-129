@@ -10,13 +10,23 @@ function cleanText(value, maxLength) {
   return String(value || '').replace(/\u0000/g, '').trim().slice(0, maxLength);
 }
 
-function addOneCalendarMonth(value) {
+function addOneCalendarYear(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
+
+  const originalMonth = date.getUTCMonth();
   const originalDay = date.getUTCDate();
+
   date.setUTCDate(1);
-  date.setUTCMonth(date.getUTCMonth() + 1);
-  const lastDay = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
+  date.setUTCFullYear(date.getUTCFullYear() + 1);
+  date.setUTCMonth(originalMonth);
+
+  const lastDay = new Date(Date.UTC(
+    date.getUTCFullYear(),
+    originalMonth + 1,
+    0,
+  )).getUTCDate();
+
   date.setUTCDate(Math.min(originalDay, lastDay));
   return date;
 }
@@ -99,7 +109,7 @@ export async function getActiveSupporterTitle(userId) {
   const now = Date.now();
   const active = rows
     .map((row) => {
-      const expiresAt = addOneCalendarMonth(row.paid_at);
+      const expiresAt = addOneCalendarYear(row.paid_at);
       if (!expiresAt || expiresAt.getTime() <= now) return null;
       const tier = normalizedTier(row);
       return {

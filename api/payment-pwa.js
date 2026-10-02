@@ -110,11 +110,15 @@ self.skipWaiting();
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
 self.addEventListener('push', event => {
   let data = {}; try { data = event.data ? event.data.json() : {}; } catch {}
-  event.waitUntil(self.registration.showNotification('', {
-    body: data.body || 'Payment notification',
-    icon: '/ar-payment/icon.svg',badge: '/ar-payment/icon.svg',
-    tag: data.tag || 'ar-payment',data: { url: data.url || '/ar-payment/' }
-  }));
+  const title = data.title || 'AR Payment';
+  const options = {
+    icon: '/ar-payment/icon.svg',
+    badge: '/ar-payment/icon.svg',
+    tag: data.tag || 'ar-payment',
+    data: { url: data.url || '/ar-payment/' }
+  };
+  if (typeof data.body === 'string' && data.body.length) options.body = data.body;
+  event.waitUntil(self.registration.showNotification(title, options));
 });
 self.addEventListener('notificationclick', event => {
   event.notification.close();

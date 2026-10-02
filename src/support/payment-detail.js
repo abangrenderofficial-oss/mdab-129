@@ -262,7 +262,7 @@ export async function notifySuccessfulSupportPayment(orderNumber) {
   const expiresAt = addOneCalendarYear(paidAt);
 
   const text = [
-    `${userId} - RM${amount} - Successful ✅`,
+    `ID ${userId} - RM${amount} - Successful ✅`,
     '',
     `ID user - ${userId}`,
     `Nama - ${name}`,

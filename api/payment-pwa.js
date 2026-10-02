@@ -60,12 +60,25 @@ $('enable').addEventListener('click',async()=>{
     if(isIOS&&!isStandalone()) throw new Error('iPhone: Add to Home Screen dulu, kemudian buka AR Payment dari Home Screen.');
     if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)) throw new Error('Browser/device ini belum support Web Push.');
     const code=$('code').value.trim();if(!/^\d{8}$/.test(code)) throw new Error('Masukkan setup code 8 digit daripada /pushsetup.');
-    setMsg('Connecting…');$('enable').disabled=true;
-    const config=await fetch('/api/payment-push').then(r=>r.json());if(!config.ok||!config.configured||!config.publicKey) throw new Error('Web Push server belum ready.');
-    const reg=await navigator.serviceWorker.register('/ar-payment/sw.js',{scope:'/ar-payment/'});await navigator.serviceWorker.ready;
-    const permission=await Notification.requestPermission();if(permission!=='granted') throw new Error('Notification permission tidak dibenarkan.');
-    let sub=await reg.pushManager.getSubscription();if(!sub){sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToBytes(config.publicKey)})}
-    const response=await fetch('/api/payment-push',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'subscribe',code,subscription:sub.toJSON()})});
+    const timeout=(promise,ms,label)=>Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(new Error(label)),ms))]);
+    setMsg('Step 1/4 — checking server…');$('enable').disabled=true;
+    const config=await timeout(fetch('/api/payment-push').then(r=>r.json()),10000,'Server timeout. Cuba lagi.');
+    if(!config.ok||!config.configured||!config.publicKey) throw new Error('Web Push server belum ready.');
+
+    setMsg('Step 2/4 — preparing notification…');
+    const reg=await timeout(navigator.serviceWorker.register('/ar-payment/sw.js',{scope:'/ar-payment/'}),10000,'Service worker timeout. Tutup app, buka semula dan cuba lagi.');
+    await timeout(reg.update().catch(()=>null),8000,'Service worker update timeout.');
+
+    setMsg('Step 3/4 — waiting notification permission…');
+    const permission=await timeout(Notification.requestPermission(),15000,'Permission popup tak muncul. Semak Settings → Notifications → AR Payment.');
+    if(permission!=='granted') throw new Error('Notification permission tidak dibenarkan.');
+
+    setMsg('Step 4/4 — registering iPhone…');
+    let sub=await timeout(reg.pushManager.getSubscription(),10000,'Push subscription timeout.');
+    if(!sub){
+      sub=await timeout(reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToBytes(config.publicKey)}),20000,'iPhone push registration timeout. Cuba tutup app dan buka semula.');
+    }
+    const response=await timeout(fetch('/api/payment-push',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'subscribe',code,subscription:sub.toJSON()})}),15000,'Server register timeout. Cuba lagi.');
     const data=await response.json();if(!response.ok||!data.ok) throw new Error(data.message||'Tak berjaya register device.');
     localStorage.setItem(deviceKey,data.deviceToken);$('code').value='';refresh();setMsg('Connected ✅. Tekan Send Test Notification untuk test Lock Screen.');
   }catch(e){setMsg(e.message||String(e),true)}finally{$('enable').disabled=false}
@@ -84,7 +97,7 @@ $('test').addEventListener('click',async()=>{
 </html>`;
 
 const MANIFEST = JSON.stringify({
-  name:'AR Payment',short_name:'AR Payment',start_url:'/ar-payment',scope:'/ar-payment/',display:'standalone',
+  name:'AR Payment',short_name:'AR Payment',start_url:'/ar-payment/',scope:'/ar-payment/',display:'standalone',
   background_color:'#07090f',theme_color:'#0b0f19',
   icons:[{src:'/ar-payment/icon.svg',sizes:'any',type:'image/svg+xml',purpose:'any maskable'}],
 });
@@ -95,12 +108,12 @@ self.addEventListener('push', event => {
   event.waitUntil(self.registration.showNotification(data.title || 'AR Payment', {
     body: data.body || 'Payment notification',
     icon: '/ar-payment/icon.svg',badge: '/ar-payment/icon.svg',
-    tag: data.tag || 'ar-payment',data: { url: data.url || '/ar-payment' }
+    tag: data.tag || 'ar-payment',data: { url: data.url || '/ar-payment/' }
   }));
 });
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const target = event.notification?.data?.url || '/ar-payment';
+  const target = event.notification?.data?.url || '/ar-payment/';
   event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(list => {
     for (const client of list) { if ('focus' in client) { client.navigate(target); return client.focus(); } }
     return clients.openWindow(target);
@@ -111,7 +124,17 @@ self.addEventListener('notificationclick', event => {
 const ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ff922e"/><stop offset="1" stop-color="#ff4a00"/></linearGradient></defs><rect width="512" height="512" rx="116" fill="#0b0f19"/><rect x="42" y="42" width="428" height="428" rx="98" fill="url(#g)"/><text x="256" y="310" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="172" font-weight="900" fill="white">AR</text></svg>`;
 
 function send(res,type,body,extra={}){res.statusCode=200;res.setHeader('Content-Type',type);res.setHeader('Cache-Control','no-store');for(const [k,v] of Object.entries(extra))res.setHeader(k,v);res.end(body)}
-export function paymentPwaPageHandler(req,res){if(req.method!=='GET'&&req.method!=='HEAD')return res.status(405).send('Method Not Allowed');return send(res,'text/html; charset=utf-8',req.method==='HEAD'?'':PAGE)}
+export function paymentPwaPageHandler(req,res){
+  if(req.method!=='GET'&&req.method!=='HEAD')return res.status(405).send('Method Not Allowed');
+  const path=String(req.url||'').split('?')[0];
+  if(path==='/ar-payment'){
+    res.statusCode=302;
+    res.setHeader('Location','/ar-payment/');
+    res.setHeader('Cache-Control','no-store');
+    return res.end();
+  }
+  return send(res,'text/html; charset=utf-8',req.method==='HEAD'?'':PAGE);
+}
 export function paymentPwaManifestHandler(req,res){if(req.method!=='GET'&&req.method!=='HEAD')return res.status(405).send('Method Not Allowed');return send(res,'application/manifest+json; charset=utf-8',req.method==='HEAD'?'':MANIFEST)}
 export function paymentPwaServiceWorkerHandler(req,res){if(req.method!=='GET'&&req.method!=='HEAD')return res.status(405).send('Method Not Allowed');return send(res,'application/javascript; charset=utf-8',req.method==='HEAD'?'':SERVICE_WORKER,{'Service-Worker-Allowed':'/ar-payment/'})}
 export function paymentPwaIconHandler(req,res){if(req.method!=='GET'&&req.method!=='HEAD')return res.status(405).send('Method Not Allowed');return send(res,'image/svg+xml; charset=utf-8',req.method==='HEAD'?'':ICON)}

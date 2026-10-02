@@ -7,6 +7,7 @@ import {
 } from './submissions.js';
 
 const PENDING_SUPPORT_COPY = 'untuk sambung guna bot tinggalkan kata2 support korang dulu ❤️';
+const REVIEW_SUPPORT_COPY = 'Kata2 support korang masih dalam review. Tunggu admin approve dulu ya ❤️';
 const REJECTED_SUPPORT_COPY = 'Kata2 support tadi di reject atas sbb tertentu. Please tinggalkan semula kata2 support nicely ❤️.';
 
 function isUsageAttempt(message = {}) {
@@ -62,7 +63,8 @@ export async function enforceSupportTestimonialGateForMessage(message = {}) {
   const submission = await pendingPaidTestimonial(userId);
   if (!submission) return false;
 
-  await sendMessage(chatId, PENDING_SUPPORT_COPY).catch(() => {});
+  const copy = submission.state === 'REVIEW' ? REVIEW_SUPPORT_COPY : PENDING_SUPPORT_COPY;
+  await sendMessage(chatId, copy).catch(() => {});
   return true;
 }
 
@@ -86,11 +88,12 @@ export async function enforceSupportTestimonialGateForCallback(callbackQuery = {
   const submission = await pendingPaidTestimonial(userId);
   if (!submission) return false;
 
+  const copy = submission.state === 'REVIEW' ? REVIEW_SUPPORT_COPY : PENDING_SUPPORT_COPY;
   await telegram('answerCallbackQuery', {
     callback_query_id: callbackQuery?.id,
-    text: PENDING_SUPPORT_COPY,
+    text: copy,
     show_alert: true,
   }).catch(() => {});
-  await sendMessage(chatId, PENDING_SUPPORT_COPY).catch(() => {});
+  await sendMessage(chatId, copy).catch(() => {});
   return true;
 }

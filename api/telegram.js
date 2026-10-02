@@ -15,6 +15,7 @@ import { handleSupportCommand, processSupportCallback, processSupportMessage } f
 import { handleSupportPerClickCommand } from '../src/features/support-click-report.js';
 import { handleLuahRasaCommand, processLuahRasaMessage } from '../src/features/luahrasa.js';
 import { handleConnectQuoteCommand, processQuoteFilterCallback } from '../src/features/quote-filter.js';
+import { handleConnectPaymentDetailCommand } from '../src/features/payment-detail.js';
 import { handleCheckMemberCommand } from '../src/features/channel-diagnostic.js';
 import { handleResetChannelCommand } from '../src/features/channel-reset.js';
 import {
@@ -78,6 +79,7 @@ async function processMessage(message, context) {
   if (command === '/connect') return handleConnectCommand(message, context.baseUrl, false);
   if (command === '/disconnect') return handleConnectCommand(message, context.baseUrl, true);
   if (command === '/connectquote') return handleConnectQuoteCommand(message);
+  if (command === '/connectpaymentdetail') return handleConnectPaymentDetailCommand(message);
   if (command === '/start' && startPayload(message) === 'support') return handleSupportCommand(message, context);
   if (command === '/start' || command === '/help') return sendMessage(chatId, startText(message?.from?.id));
   if (command === '/support') return handleSupportCommand(message, context);

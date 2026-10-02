@@ -445,8 +445,8 @@ function notificationPayload({ userId, amount, name, tierLabel, paidAt, expiresA
     .trim() || 'Supporter';
 
   return {
-    title: 'PayPing!',
-    body: `payment from your ${tierName}\nID ${userId} - RM ${amount} - Successfull 🎉`,
+    title: `Payment Received, ${tierName}`,
+    body: `ID ${userId} - RM ${amount} - Successfull 🎉`,
     tag: cleanText(tag, 120),
     url: '/ar-payment',
   };
@@ -516,8 +516,8 @@ export async function sendWebPushTest(deviceToken) {
   }
 
   const payload = {
-    title: 'PayPing!',
-    body: 'payment from your Supporter\nID 123456789 - RM 10.00 - Successfull 🎉',
+    title: 'Payment Received, Supporter',
+    body: 'ID 123456789 - RM 10.00 - Successfull 🎉',
     tag: `test-${Date.now()}`,
     url: '/ar-payment',
   };

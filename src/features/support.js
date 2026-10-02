@@ -5,9 +5,19 @@ import {
   isBayarcashSandbox,
 } from '../payments/bayarcash.js';
 import { createPendingSupport, markSupportIntentCreated, markSupportIntentFailed } from '../support/store.js';
-import { createSupportSubmission, markSupportSubmissionCheckout } from '../support/submissions.js';
+import {
+  activateSupportSubmissionAfterPayment,
+  createSupportSubmission,
+  getActiveSupportSubmission,
+  markSupportSubmissionAnnounced,
+  markSupportSubmissionCheckout,
+  restoreSupportSubmissionAwaitingName,
+  setSupportSubmissionMessage,
+  setSupportSubmissionName,
+} from '../support/submissions.js';
 import { reconcileSupportPayment } from '../support/reconcile.js';
 import { sendMessage, telegram } from '../telegram.js';
+import { sendSupportQuoteToFilter } from '../support/quote-filter.js';
 import { recordSupportAmountClick } from '../support/click-analytics.js';
 
 const SUPPORT_SELECT_PREFIX = 'support:select:';
@@ -155,7 +165,76 @@ export async function handleSupportCommand(message = {}) {
   return true;
 }
 
-export async function processSupportMessage() {
+export async function processSupportMessage(message = {}) {
+  const chatId = message?.chat?.id;
+  const userId = message?.from?.id;
+  const chatType = message?.chat?.type;
+  if (!chatId || !userId || chatType !== 'private') return false;
+
+  const rawText = String(message?.text || message?.caption || '').trim();
+  if (!rawText || rawText.startsWith('/')) return false;
+
+  let submission = null;
+  try {
+    submission = await getActiveSupportSubmission(userId);
+  } catch (error) {
+    console.warn('[support] active testimonial lookup failed:', error?.message);
+    return false;
+  }
+  if (!submission) return false;
+
+  if (submission.state === 'AWAITING_MESSAGE') {
+    const supportMessage = rawText.slice(0, 500).trim();
+    if (!supportMessage) {
+      await sendMessage(chatId, 'Tulis kata-kata support dulu ya ❤️').catch(() => {});
+      return true;
+    }
+
+    const updated = await setSupportSubmissionMessage(submission.orderNumber, userId, supportMessage);
+    if (!updated || updated.state !== 'AWAITING_NAME') {
+      await sendMessage(chatId, 'Kata-kata support belum berjaya disimpan. Cuba sekali lagi ya.').catch(() => {});
+      return true;
+    }
+
+    await sendMessage(chatId, 'Boleh saya tahu nama awak?').catch(() => {});
+    return true;
+  }
+
+  if (submission.state === 'AWAITING_NAME') {
+    const displayName = rawText.slice(0, 60).trim();
+    if (!displayName) {
+      await sendMessage(chatId, 'Isi nama yang awak nak kita paparkan ya.').catch(() => {});
+      return true;
+    }
+
+    try {
+      const ready = await setSupportSubmissionName(submission.orderNumber, userId, displayName);
+      if (!ready || ready.state !== 'READY') throw new Error('support_submission_not_ready');
+
+      await sendSupportQuoteToFilter({
+        supportMessage: ready.supportMessage,
+        displayName: ready.displayName,
+        tierLabel: ready.tierLabel,
+      });
+      await markSupportSubmissionAnnounced(ready.orderNumber);
+
+      await sendMessage(
+        chatId,
+        'Terima Kasih Sekali lagi, bantu support bot kita sama2 kekal hidup. 🙇🏻✨',
+      ).catch(() => {});
+    } catch (error) {
+      console.warn('[support] testimonial filter delivery failed:', error?.code, error?.message);
+      await restoreSupportSubmissionAwaitingName(submission.orderNumber, userId).catch(() => {});
+      await sendMessage(
+        chatId,
+        error?.code === 'QUOTE_FILTER_NOT_CONNECTED'
+          ? 'Kata-kata support dah disimpan, tapi group filter belum disambungkan. Cuba hantar nama semula kejap lagi ya.'
+          : 'Kata-kata support belum berjaya dihantar untuk review. Cuba hantar nama sekali lagi kejap lagi ya.',
+      ).catch(() => {});
+    }
+    return true;
+  }
+
   return false;
 }
 
@@ -173,6 +252,19 @@ async function handlePaymentCheck(callbackQuery, paymentIntentId) {
         true,
       );
       return true;
+    }
+
+    if (status.orderNumber) {
+      const activation = await activateSupportSubmissionAfterPayment(status.orderNumber).catch((error) => {
+        console.warn('[support] testimonial activation failed:', error?.message);
+        return null;
+      });
+      if (activation?.activated) {
+        await sendMessage(
+          callbackQuery?.from?.id,
+          'Tinggalkan kata-kata support korang ❤️',
+        ).catch((error) => console.warn('[support] testimonial prompt failed:', error?.message));
+      }
     }
 
     const lines = [

@@ -12,7 +12,7 @@ import { processStatusButton } from '../src/features/status-hq.js';
 import { processLiveWallpaperButton } from '../src/features/live-wallpaper.js';
 import { isGalleryVideoTooLarge, processUploadedPhoto, processUploadedVideo } from '../src/features/uploaded-media.js';
 import { handleHqLabCommand, processHqLabMessage } from '../src/features/hq-lab.js';
-import { processTikTokSlideshowChoice } from '../src/features/tiktok-slideshow.js';
+import { TT_SLIDE_SPLIT, TT_SLIDE_VIDEO, processTikTokSlideshowChoice } from '../src/features/tiktok-slideshow.js';
 import { handleSupportTestCommand } from '../src/features/support-test.js';
 import { handleSupportCommand, processSupportCallback, processSupportMessage } from '../src/features/support.js';
 import { handleSupportPerClickCommand } from '../src/features/support-click-report.js';
@@ -23,7 +23,7 @@ import { handleResetChannelCommand } from '../src/features/channel-reset.js';
 import { enforceChannelGateForCallback, enforceChannelGateForMessage, maybePromptChannelAfterSuccess, processChannelGateCallback } from '../src/features/channel-gate.js';
 import { scheduleLinkJob } from '../src/link-queue.js';
 import { FRIDAY_SUPPORT_MODE_DONATE, FRIDAY_SUPPORT_MODE_FORCE, FRIDAY_SUPPORT_MODE_NORMAL, claimFridayUsageAttempt, enforceFridaySupportForCallback, enforceFridaySupportForMessage, handleFridaySupportModeCommand, handleFridaySupportStopCommand, markFridayUsageSuccess, processFridaySupportCallback, releaseFridayUsageAttempt } from '../src/support/friday-access.js';
-import { enforceDailyForceSupportForCallback, enforceDailyForceSupportForMessage, handleDailyForceSupportCommand, handleStopDailyForceSupportCommand } from '../src/support/daily-force.js';
+import { claimDailyForceUsageAttempt, enforceDailyForceSupportForCallback, enforceDailyForceSupportForMessage, handleDailyForceSupportCommand, handleStopDailyForceSupportCommand, markDailyForceUsageSuccess, releaseDailyForceUsageAttempt } from '../src/support/daily-force.js';
 import { enforceSupportTestimonialGateForCallback, enforceSupportTestimonialGateForMessage } from '../src/support/testimonial-gate.js';
 
 function json(res, status, body) { res.status(status).json(body); }
@@ -62,6 +62,9 @@ async function recordPremiumHqSuccess(userId, chatId) {
   await recordUsage(userId, 'status_hq');
   await markPremiumHqCompleted(userId);
   await markFridaySuccess(userId, 'premium hq');
+  await markDailyForceUsageSuccess(userId).catch((error) => {
+    console.warn('[daily-force] premium hq mark failed:', error?.message);
+  });
   await maybePromptChannelAfterSuccess(chatId, userId);
 }
 
@@ -86,37 +89,63 @@ async function processMessage(message, context) {
   if (await processHqLabMessage(message, context)) return;
   if (Array.isArray(message?.photo) && message.photo.length) {
     if (await enforceFridaySupportForMessage(message)) return;
+    if (await enforceDailyForceSupportForMessage(message)) return;
 
-    const claimed = await claimFridayUsageAttempt(userId);
-    if (!claimed && await enforceFridaySupportForMessage(message)) return;
+    const fridayClaimed = await claimFridayUsageAttempt(userId);
+    if (!fridayClaimed && await enforceFridaySupportForMessage(message)) return;
+
+    const dailyClaimed = await claimDailyForceUsageAttempt(userId);
+    if (!dailyClaimed && await enforceDailyForceSupportForMessage(message)) {
+      if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+      return;
+    }
 
     try {
       const completed = await processUploadedPhoto(message, context);
-      if (completed && claimed) await markFridaySuccess(userId, 'gallery photo');
-      else if (claimed) await releaseFridayUsageAttempt(userId);
+      if (completed) {
+        if (fridayClaimed) await markFridaySuccess(userId, 'gallery photo');
+        if (dailyClaimed) await markDailyForceUsageSuccess(userId);
+      } else {
+        if (fridayClaimed) await releaseFridayUsageAttempt(userId);
+        if (dailyClaimed) await releaseDailyForceUsageAttempt(userId);
+      }
       return completed;
     } catch (error) {
-      if (claimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+      if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+      if (dailyClaimed) await releaseDailyForceUsageAttempt(userId).catch(() => {});
       throw error;
     }
   }
   if (message?.video?.file_id) {
     if (await enforceFridaySupportForMessage(message)) return;
+    if (await enforceDailyForceSupportForMessage(message)) return;
 
     if (isGalleryVideoTooLarge(message?.video?.file_size)) {
       return processUploadedVideo(message, context);
     }
 
-    const claimed = await claimFridayUsageAttempt(userId);
-    if (!claimed && await enforceFridaySupportForMessage(message)) return;
+    const fridayClaimed = await claimFridayUsageAttempt(userId);
+    if (!fridayClaimed && await enforceFridaySupportForMessage(message)) return;
+
+    const dailyClaimed = await claimDailyForceUsageAttempt(userId);
+    if (!dailyClaimed && await enforceDailyForceSupportForMessage(message)) {
+      if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+      return;
+    }
 
     try {
       const completed = await processUploadedVideo(message, context);
-      if (completed && claimed) await markFridaySuccess(userId, 'gallery video');
-      else if (claimed) await releaseFridayUsageAttempt(userId);
+      if (completed) {
+        if (fridayClaimed) await markFridaySuccess(userId, 'gallery video');
+        if (dailyClaimed) await markDailyForceUsageSuccess(userId);
+      } else {
+        if (fridayClaimed) await releaseFridayUsageAttempt(userId);
+        if (dailyClaimed) await releaseDailyForceUsageAttempt(userId);
+      }
       return completed;
     } catch (error) {
-      if (claimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+      if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+      if (dailyClaimed) await releaseDailyForceUsageAttempt(userId).catch(() => {});
       throw error;
     }
   }
@@ -150,29 +179,64 @@ async function runWebhookUpdate(update, context) {
     if (await enforceFridaySupportForCallback(callbackQuery)) return;
     if (await processAuditDelete(callbackQuery)) return;
     if (await processStatusProfileMenu(callbackQuery, context)) return;
+
+    const isUsageCallback = action.startsWith(MEDIA_STATUS_HQ_ANDROID)
+      || action.startsWith(MEDIA_STATUS_HQ)
+      || action.startsWith(MEDIA_LIVE_WALLPAPER)
+      || action === TT_SLIDE_SPLIT
+      || action === TT_SLIDE_VIDEO;
+
+    let fridayClaimed = false;
+    let dailyClaimed = false;
+    if (isUsageCallback) {
+      fridayClaimed = await claimFridayUsageAttempt(userId);
+      if (!fridayClaimed && await enforceFridaySupportForCallback(callbackQuery)) return;
+
+      dailyClaimed = await claimDailyForceUsageAttempt(userId);
+      if (!dailyClaimed && await enforceDailyForceSupportForCallback(callbackQuery)) {
+        if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+        return;
+      }
+    }
+
     if (await processStatusAndroidButton(callbackQuery, context)) {
       if (action.startsWith(MEDIA_STATUS_HQ_ANDROID)) {
         await recordUsage(userId, 'status_hq');
         await markFridaySuccess(userId, 'android status');
+        await markDailyForceUsageSuccess(userId).catch(() => {});
       }
       return;
     }
+
     const premiumResult = await processStatusButton(callbackQuery, context);
     if (premiumResult) {
-      if (action.startsWith(MEDIA_STATUS_HQ) && premiumResult?.premiumVideoCompleted) await recordPremiumHqSuccess(userId, chatId);
+      if (action.startsWith(MEDIA_STATUS_HQ) && premiumResult?.premiumVideoCompleted) {
+        await recordPremiumHqSuccess(userId, chatId);
+      } else {
+        if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+        if (dailyClaimed) await releaseDailyForceUsageAttempt(userId).catch(() => {});
+      }
       return;
     }
+
     if (await processLiveWallpaperButton(callbackQuery, context)) {
       if (action.startsWith(MEDIA_LIVE_WALLPAPER)) {
         await recordUsage(userId, 'live_wallpaper');
         await markFridaySuccess(userId, 'live wallpaper');
+        await markDailyForceUsageSuccess(userId).catch(() => {});
       }
       return;
     }
+
     if (await processTikTokSlideshowChoice(callbackQuery, context)) {
       await recordUsage(userId, 'download');
       await markFridaySuccess(userId, 'slideshow');
+      await markDailyForceUsageSuccess(userId).catch(() => {});
+      return;
     }
+
+    if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+    if (dailyClaimed) await releaseDailyForceUsageAttempt(userId).catch(() => {});
     return;
   }
   const message = update?.message ?? update?.edited_message;

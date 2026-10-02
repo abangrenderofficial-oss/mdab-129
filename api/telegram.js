@@ -24,6 +24,7 @@ import { enforceChannelGateForCallback, enforceChannelGateForMessage, maybePromp
 import { scheduleLinkJob } from '../src/link-queue.js';
 import { FRIDAY_SUPPORT_MODE_DONATE, FRIDAY_SUPPORT_MODE_FORCE, FRIDAY_SUPPORT_MODE_NORMAL, enforceFridaySupportForCallback, enforceFridaySupportForMessage, handleFridaySupportModeCommand, handleFridaySupportStopCommand, markFridayUsageSuccess, processFridaySupportCallback } from '../src/support/friday-access.js';
 import { enforceDailyForceSupportForCallback, enforceDailyForceSupportForMessage, handleDailyForceSupportCommand, handleStopDailyForceSupportCommand } from '../src/support/daily-force.js';
+import { enforceSupportTestimonialGateForCallback, enforceSupportTestimonialGateForMessage } from '../src/support/testimonial-gate.js';
 
 function json(res, status, body) { res.status(status).json(body); }
 function isAuthorizedWebhook(req) {
@@ -75,9 +76,10 @@ async function processMessage(message, context) {
   if (command === '/start' && startPayload(message) === 'support') return handleSupportCommand(message, context);
   if (command === '/start' || command === '/help') return sendMessage(chatId, startText(message?.from?.id));
   if (command === '/support') return handleSupportCommand(message, context);
+  if (await processSupportMessage(message, context)) return;
+  if (await enforceSupportTestimonialGateForMessage(message)) return;
   if (command === '/luahrasa') return handleLuahRasaCommand(message, context);
   if (await processLuahRasaMessage(message, context)) return;
-  if (await processSupportMessage(message, context)) return;
   if (await enforceDailyForceSupportForMessage(message)) return;
   if (await enforceChannelGateForMessage(message)) return;
   if (await handleHqLabCommand(message, context)) return;
@@ -114,6 +116,7 @@ async function runWebhookUpdate(update, context) {
     if (await processFridaySupportCallback(callbackQuery)) return;
     if (await processChannelGateCallback(callbackQuery)) return;
     if (await processSupportCallback(callbackQuery, context)) return;
+    if (await enforceSupportTestimonialGateForCallback(callbackQuery)) return;
     if (await enforceDailyForceSupportForCallback(callbackQuery)) return;
     if (await enforceChannelGateForCallback(callbackQuery)) return;
     if (await enforceFridaySupportForCallback(callbackQuery)) return;

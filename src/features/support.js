@@ -20,6 +20,7 @@ import { sendMessage, telegram } from '../telegram.js';
 import { sendSupportQuoteToFilter } from '../support/quote-filter.js';
 import { recordSupportAmountClick } from '../support/click-analytics.js';
 import { hasMinimumWords } from '../support/text-validation.js';
+import { notifySuccessfulSupportPayment } from '../support/payment-detail.js';
 
 const SUPPORT_SELECT_PREFIX = 'support:select:';
 const SUPPORT_CHECK_PREFIX = 'support:check:';
@@ -260,6 +261,12 @@ async function handlePaymentCheck(callbackQuery, paymentIntentId) {
         true,
       );
       return true;
+    }
+
+    if (status.orderNumber) {
+      await notifySuccessfulSupportPayment(status.orderNumber).catch((error) => {
+        console.warn('[payment-detail] check-status notification failed:', error?.message);
+      });
     }
 
     if (status.orderNumber) {

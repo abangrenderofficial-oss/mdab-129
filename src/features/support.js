@@ -8,6 +8,7 @@ import { createPendingSupport, markSupportIntentCreated, markSupportIntentFailed
 import { createSupportSubmission, markSupportSubmissionCheckout } from '../support/submissions.js';
 import { reconcileSupportPayment } from '../support/reconcile.js';
 import { sendMessage, telegram } from '../telegram.js';
+import { recordSupportAmountClick } from './support-click-report.js';
 
 const SUPPORT_SELECT_PREFIX = 'support:select:';
 const SUPPORT_CHECK_PREFIX = 'support:check:';
@@ -224,6 +225,12 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
   if (chatType && chatType !== 'private') {
     await answerSupportCallback(callbackQuery, 'Buka private chat bot untuk support ya ❤️', true);
     return true;
+  }
+
+  if (amount) {
+    await recordSupportAmountClick(callbackQuery, amount).catch((error) => {
+      console.warn('[support-per-click] record failed:', error?.message);
+    });
   }
 
   if (retiredAmount) {

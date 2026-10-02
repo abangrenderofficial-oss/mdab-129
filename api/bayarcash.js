@@ -21,7 +21,7 @@ function confirmationText(result, submission = null) {
     `Jumlah support: RM${result.totalSupport}`,
   );
   const tierLabel = submission?.tierLabel || result?.tier?.label;
-  if (tierLabel) lines.push(`Status: ${tierLabel}`);
+  if (tierLabel) lines.push(`Status: ${tierLabel}`, 'Tempoh title: 12 bulan');
   return lines.join('\n');
 }
 

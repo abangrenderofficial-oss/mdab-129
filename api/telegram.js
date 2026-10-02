@@ -10,7 +10,7 @@ import { processStatusProfileMenu } from '../src/features/status-hq-menu.js';
 import { processStatusAndroidButton } from '../src/features/status-hq-android.js';
 import { processStatusButton } from '../src/features/status-hq.js';
 import { processLiveWallpaperButton } from '../src/features/live-wallpaper.js';
-import { processUploadedPhoto, processUploadedVideo } from '../src/features/uploaded-media.js';
+import { isGalleryVideoTooLarge, processUploadedPhoto, processUploadedVideo } from '../src/features/uploaded-media.js';
 import { handleHqLabCommand, processHqLabMessage } from '../src/features/hq-lab.js';
 import { processTikTokSlideshowChoice } from '../src/features/tiktok-slideshow.js';
 import { handleSupportTestCommand } from '../src/features/support-test.js';
@@ -22,7 +22,7 @@ import { handleCheckMemberCommand } from '../src/features/channel-diagnostic.js'
 import { handleResetChannelCommand } from '../src/features/channel-reset.js';
 import { enforceChannelGateForCallback, enforceChannelGateForMessage, maybePromptChannelAfterSuccess, processChannelGateCallback } from '../src/features/channel-gate.js';
 import { scheduleLinkJob } from '../src/link-queue.js';
-import { FRIDAY_SUPPORT_MODE_DONATE, FRIDAY_SUPPORT_MODE_FORCE, FRIDAY_SUPPORT_MODE_NORMAL, enforceFridaySupportForCallback, enforceFridaySupportForMessage, handleFridaySupportModeCommand, handleFridaySupportStopCommand, markFridayUsageSuccess, processFridaySupportCallback } from '../src/support/friday-access.js';
+import { FRIDAY_SUPPORT_MODE_DONATE, FRIDAY_SUPPORT_MODE_FORCE, FRIDAY_SUPPORT_MODE_NORMAL, claimFridayUsageAttempt, enforceFridaySupportForCallback, enforceFridaySupportForMessage, handleFridaySupportModeCommand, handleFridaySupportStopCommand, markFridayUsageSuccess, processFridaySupportCallback, releaseFridayUsageAttempt } from '../src/support/friday-access.js';
 import { enforceDailyForceSupportForCallback, enforceDailyForceSupportForMessage, handleDailyForceSupportCommand, handleStopDailyForceSupportCommand } from '../src/support/daily-force.js';
 import { enforceSupportTestimonialGateForCallback, enforceSupportTestimonialGateForMessage } from '../src/support/testimonial-gate.js';
 
@@ -86,11 +86,39 @@ async function processMessage(message, context) {
   if (await processHqLabMessage(message, context)) return;
   if (Array.isArray(message?.photo) && message.photo.length) {
     if (await enforceFridaySupportForMessage(message)) return;
-    return processUploadedPhoto(message, context);
+
+    const claimed = await claimFridayUsageAttempt(userId);
+    if (!claimed && await enforceFridaySupportForMessage(message)) return;
+
+    try {
+      const completed = await processUploadedPhoto(message, context);
+      if (completed && claimed) await markFridaySuccess(userId, 'gallery photo');
+      else if (claimed) await releaseFridayUsageAttempt(userId);
+      return completed;
+    } catch (error) {
+      if (claimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+      throw error;
+    }
   }
   if (message?.video?.file_id) {
     if (await enforceFridaySupportForMessage(message)) return;
-    return processUploadedVideo(message, context);
+
+    if (isGalleryVideoTooLarge(message?.video?.file_size)) {
+      return processUploadedVideo(message, context);
+    }
+
+    const claimed = await claimFridayUsageAttempt(userId);
+    if (!claimed && await enforceFridaySupportForMessage(message)) return;
+
+    try {
+      const completed = await processUploadedVideo(message, context);
+      if (completed && claimed) await markFridaySuccess(userId, 'gallery video');
+      else if (claimed) await releaseFridayUsageAttempt(userId);
+      return completed;
+    } catch (error) {
+      if (claimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+      throw error;
+    }
   }
   const statusMode = command === '/status' || command === 'status';
   const url = extractFirstUrl(text);

@@ -9,8 +9,8 @@ import {
   activateSupportSubmissionAfterPayment,
   createSupportSubmission,
   getActiveSupportSubmission,
-  markSupportSubmissionAnnounced,
   markSupportSubmissionCheckout,
+  markSupportSubmissionUnderReview,
   restoreSupportSubmissionAwaitingName,
   setSupportSubmissionMessage,
   setSupportSubmissionName,
@@ -19,6 +19,7 @@ import { reconcileSupportPayment } from '../support/reconcile.js';
 import { sendMessage, telegram } from '../telegram.js';
 import { sendSupportQuoteToFilter } from '../support/quote-filter.js';
 import { recordSupportAmountClick } from '../support/click-analytics.js';
+import { hasMinimumWords } from '../support/text-validation.js';
 
 const SUPPORT_SELECT_PREFIX = 'support:select:';
 const SUPPORT_CHECK_PREFIX = 'support:check:';
@@ -185,8 +186,11 @@ export async function processSupportMessage(message = {}) {
 
   if (submission.state === 'AWAITING_MESSAGE') {
     const supportMessage = rawText.slice(0, 500).trim();
-    if (!supportMessage) {
-      await sendMessage(chatId, 'Tulis kata-kata support dulu ya ❤️').catch(() => {});
+    if (!hasMinimumWords(supportMessage, 5)) {
+      await sendMessage(
+        chatId,
+        'Pastikan kata2 support mestilah 5 patah perkataan ke atas.',
+      ).catch(() => {});
       return true;
     }
 
@@ -211,14 +215,16 @@ export async function processSupportMessage(message = {}) {
       const ready = await setSupportSubmissionName(submission.orderNumber, userId, displayName);
       if (!ready || ready.state !== 'READY') throw new Error('support_submission_not_ready');
 
+      const review = await markSupportSubmissionUnderReview(ready.orderNumber, userId);
+      if (!review || review.state !== 'REVIEW') throw new Error('support_submission_review_state_failed');
+
       await sendSupportQuoteToFilter({
-        supportMessage: ready.supportMessage,
-        displayName: ready.displayName,
-        tierLabel: ready.tierLabel,
-        orderNumber: ready.orderNumber,
-        userId: ready.telegramUserId,
+        supportMessage: review.supportMessage,
+        displayName: review.displayName,
+        tierLabel: review.tierLabel,
+        orderNumber: review.orderNumber,
+        userId: review.telegramUserId,
       });
-      await markSupportSubmissionAnnounced(ready.orderNumber);
 
       await sendMessage(
         chatId,

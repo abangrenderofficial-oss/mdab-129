@@ -196,7 +196,7 @@ export async function processSupportMessage(message = {}) {
       return true;
     }
 
-    await sendMessage(chatId, 'Boleh saya tahu nama awak?').catch(() => {});
+    await sendMessage(chatId, 'Boleh saya tahu nama?').catch(() => {});
     return true;
   }
 

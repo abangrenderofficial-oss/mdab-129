@@ -8,7 +8,7 @@ import { createPendingSupport, markSupportIntentCreated, markSupportIntentFailed
 import { createSupportSubmission, markSupportSubmissionCheckout } from '../support/submissions.js';
 import { reconcileSupportPayment } from '../support/reconcile.js';
 import { sendMessage, telegram } from '../telegram.js';
-import { recordSupportAmountClick } from './support-click-report.js';
+import { recordSupportAmountClick } from '../support/click-analytics.js';
 
 const SUPPORT_SELECT_PREFIX = 'support:select:';
 const SUPPORT_CHECK_PREFIX = 'support:check:';

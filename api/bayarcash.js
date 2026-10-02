@@ -3,6 +3,7 @@ import { applyBayarcashTransaction } from '../src/support/store.js';
 import { activateSupportSubmissionAfterPayment, getSupportSubmission } from '../src/support/submissions.js';
 import { sendMessage } from '../src/telegram.js';
 import { notifySuccessfulSupportPayment } from '../src/support/payment-detail.js';
+import { notifyNtfySupportPayment } from '../src/support/ntfy-payment.js';
 
 function json(res, status, body) {
   res.status(status).json(body);
@@ -77,6 +78,9 @@ export default async function handler(req, res) {
   if (result?.paid && result?.orderNumber) {
     await notifySuccessfulSupportPayment(result.orderNumber).catch((error) => {
       console.warn('[payment-detail] notification failed:', error?.message);
+    });
+    await notifyNtfySupportPayment(result.orderNumber).catch((error) => {
+      console.warn('[ntfy-payment] callback notification failed:', error?.message);
     });
   }
 

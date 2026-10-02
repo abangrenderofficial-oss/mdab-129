@@ -68,6 +68,7 @@ export function adminCommandMenuText() {
     'Admin:',
     '/menuadmin — Senarai semua command admin',
     '/supporttest — Test payment gateway',
+    '/supportperclick — Statistik click button Support',
     '/resetadmin — Reset & recovery semua user',
     '/resetchannel — Bersihkan leak Downloader Bot di channel',
     '/connect — Sambung group pemantauan video',

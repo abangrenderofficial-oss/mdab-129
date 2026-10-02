@@ -285,7 +285,7 @@ export async function notifySuccessfulSupportPayment(orderNumber) {
 
 
 export async function sendPaymentDetailPreviewOnce() {
-  const previewKey = '__TEST_IPHONE_NOTIFICATION_PREVIEW_V1__';
+  const previewKey = '__TEST_IPHONE_NOTIFICATION_PREVIEW_V2__';
   const target = await getPaymentDetailGroup();
   if (!target?.groupId) return { sent: false, reason: 'not_connected' };
 

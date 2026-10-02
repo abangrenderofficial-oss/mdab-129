@@ -282,3 +282,40 @@ export async function notifySuccessfulSupportPayment(orderNumber) {
     throw error;
   }
 }
+
+
+export async function sendPaymentDetailPreviewOnce() {
+  const previewKey = '__TEST_IPHONE_NOTIFICATION_PREVIEW_V1__';
+  const target = await getPaymentDetailGroup();
+  if (!target?.groupId) return { sent: false, reason: 'not_connected' };
+
+  const claimed = await claimDelivery(previewKey, target.groupId);
+  if (!claimed) return { sent: false, reason: 'already_sent_or_sending' };
+
+  const text = [
+    'ID 123456789 - RM10.00 - Successful ✅',
+    '',
+    'ID user - 123456789',
+    'Nama - Test User',
+    'Amount - RM10.00',
+    'Type of support - 🤍 Supporter',
+    'Date - 3 Oct 2026',
+    'Time - 12:15:32 AM',
+    'Period - 3 Oct 2026 sampai 3 Oct 2027 (12 bulan)',
+    '',
+    'TEST ONLY — notification preview check',
+  ].join('\n');
+
+  try {
+    const sent = await sendMessage(target.groupId, text);
+    await markDelivery(previewKey, 'SENT', sent?.message_id || '');
+    return {
+      sent: true,
+      groupTitle: target.title || '',
+      messageId: sent?.message_id || null,
+    };
+  } catch (error) {
+    await markDelivery(previewKey, 'FAILED', '', error?.message || 'send_failed').catch(() => {});
+    throw error;
+  }
+}

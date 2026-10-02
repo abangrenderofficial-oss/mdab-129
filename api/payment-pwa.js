@@ -55,6 +55,9 @@ const b64ToBytes=(s)=>{const p='='.repeat((4-s.length%4)%4);const b=(s+p).replac
 function setMsg(text,bad=false){$('msg').textContent=text;$('msg').style.color=bad?'#ff8f8f':'#b7bdca'}
 function refresh(){const token=localStorage.getItem(deviceKey);$('test').disabled=!token;$('dot').classList.toggle('ok',!!token);$('state').textContent=token?'Push connected ✅':'Belum connected'}
 refresh();
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.getRegistration('/ar-payment/').then(reg=>reg?.update()).catch(()=>{});
+}
 $('enable').addEventListener('click',async()=>{
   try{
     if(isIOS&&!isStandalone()) throw new Error('iPhone: Add to Home Screen dulu, kemudian buka AR Payment dari Home Screen.');
@@ -103,9 +106,11 @@ const MANIFEST = JSON.stringify({
 });
 
 const SERVICE_WORKER = String.raw`
+self.skipWaiting();
+self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
 self.addEventListener('push', event => {
   let data = {}; try { data = event.data ? event.data.json() : {}; } catch {}
-  event.waitUntil(self.registration.showNotification(data.title || 'AR Payment', {
+  event.waitUntil(self.registration.showNotification('', {
     body: data.body || 'Payment notification',
     icon: '/ar-payment/icon.svg',badge: '/ar-payment/icon.svg',
     tag: data.tag || 'ar-payment',data: { url: data.url || '/ar-payment/' }

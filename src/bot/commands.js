@@ -66,7 +66,7 @@ export function adminCommandMenuText() {
     '/stopnormalsupport — Hentikan Normal Support',
     '',
     'Daily Support Mode:',
-    '/forcesupportdaily — Lock non-supporter setiap hari sampai support',
+    '/forcesupportdaily — Bagi 1 use, kemudian lock setiap hari sampai support',
     '/stopforcesupportdaily — Hentikan Daily Force Support',
     '',
     'Admin:',

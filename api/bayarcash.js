@@ -2,6 +2,7 @@ import { isBayarcashConfigured, isBayarcashSandbox, verifyTransactionCallback } 
 import { applyBayarcashTransaction } from '../src/support/store.js';
 import { activateSupportSubmissionAfterPayment, getSupportSubmission } from '../src/support/submissions.js';
 import { sendMessage } from '../src/telegram.js';
+import { notifySuccessfulSupportPayment } from '../src/support/payment-detail.js';
 
 function json(res, status, body) {
   res.status(status).json(body);
@@ -70,6 +71,12 @@ export default async function handler(req, res) {
     submission = await getSupportSubmission(result.orderNumber).catch((error) => {
       console.warn('[bayarcash] support submission lookup failed:', error?.message);
       return null;
+    });
+  }
+
+  if (result?.paid && result?.orderNumber) {
+    await notifySuccessfulSupportPayment(result.orderNumber).catch((error) => {
+      console.warn('[payment-detail] notification failed:', error?.message);
     });
   }
 

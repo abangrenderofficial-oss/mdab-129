@@ -8,9 +8,9 @@ const PAGE = String.raw`<!doctype html>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="PayPing!">
   <title>PayPing!</title>
-  <link rel="manifest" href="/ar-payment/manifest.webmanifest">
-  <link rel="icon" href="/ar-payment/icon.svg">
-  <link rel="apple-touch-icon" href="/ar-payment/icon.svg">
+  <link rel="manifest" href="/ar-payment/payping.webmanifest">
+  <link rel="icon" href="/ar-payment/payping-icon.svg">
+  <link rel="apple-touch-icon" href="/ar-payment/payping-icon.svg">
   <style>
     :root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif}
     *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at top,#24104a 0,#11111b 40%,#07070d 100%);color:#f7f7fb;padding:env(safe-area-inset-top) 18px env(safe-area-inset-bottom)}
@@ -100,9 +100,9 @@ $('test').addEventListener('click',async()=>{
 </html>`;
 
 const MANIFEST = JSON.stringify({
-  name:'PayPing!',short_name:'PayPing!',start_url:'/ar-payment/',scope:'/ar-payment/',display:'standalone',
+  name:'PayPing!',short_name:'PayPing!',start_url:'/ar-payment/?brand=payping',scope:'/ar-payment/',display:'standalone',
   background_color:'#090611',theme_color:'#6d28d9',
-  icons:[{src:'/ar-payment/icon.svg',sizes:'any',type:'image/svg+xml',purpose:'any maskable'}],
+  icons:[{src:'/ar-payment/payping-icon.svg',sizes:'any',type:'image/svg+xml',purpose:'any maskable'}],
 });
 
 const SERVICE_WORKER = String.raw`
@@ -112,8 +112,8 @@ self.addEventListener('push', event => {
   let data = {}; try { data = event.data ? event.data.json() : {}; } catch {}
   const title = data.title || 'PayPing!';
   const options = {
-    icon: '/ar-payment/icon.svg',
-    badge: '/ar-payment/icon.svg',
+    icon: '/ar-payment/payping-icon.svg',
+    badge: '/ar-payment/payping-icon.svg',
     tag: data.tag || 'ar-payment',
     data: { url: data.url || '/ar-payment/' }
   };

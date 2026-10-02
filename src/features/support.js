@@ -21,6 +21,7 @@ import { sendSupportQuoteToFilter } from '../support/quote-filter.js';
 import { recordSupportAmountClick } from '../support/click-analytics.js';
 import { hasMinimumWords } from '../support/text-validation.js';
 import { notifySuccessfulSupportPayment } from '../support/payment-detail.js';
+import { notifyNtfySupportPayment } from '../support/ntfy-payment.js';
 
 const SUPPORT_SELECT_PREFIX = 'support:select:';
 const SUPPORT_CHECK_PREFIX = 'support:check:';
@@ -266,6 +267,9 @@ async function handlePaymentCheck(callbackQuery, paymentIntentId) {
     if (status.orderNumber) {
       await notifySuccessfulSupportPayment(status.orderNumber).catch((error) => {
         console.warn('[payment-detail] check-status notification failed:', error?.message);
+      });
+      await notifyNtfySupportPayment(status.orderNumber).catch((error) => {
+        console.warn('[ntfy-payment] check-status notification failed:', error?.message);
       });
     }
 

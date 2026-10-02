@@ -36,6 +36,15 @@ async function ensureQuoteFilterSchema() {
         `CREATE INDEX IF NOT EXISTS idx_support_quote_moderation_status
           ON support_quote_moderation(environment, status, created_at)`,
       ], 'write');
+
+      const moderationColumns = await db.execute('PRAGMA table_info(support_quote_moderation)');
+      const moderationNames = new Set((moderationColumns.rows || []).map((row) => String(row.name || '')));
+      if (!moderationNames.has('source_order_number')) {
+        await db.execute("ALTER TABLE support_quote_moderation ADD COLUMN source_order_number TEXT NOT NULL DEFAULT ''");
+      }
+      if (!moderationNames.has('telegram_user_id')) {
+        await db.execute("ALTER TABLE support_quote_moderation ADD COLUMN telegram_user_id TEXT NOT NULL DEFAULT ''");
+      }
       return true;
     })().catch((error) => {
       quoteSchemaPromise = null;
@@ -103,6 +112,8 @@ function rowToModeration(row) {
     body: String(row.body || ''),
     displayName: String(row.display_name || ''),
     tierLabel: String(row.tier_label || ''),
+    sourceOrderNumber: String(row.source_order_number || ''),
+    telegramUserId: String(row.telegram_user_id || ''),
     status: String(row.status || ''),
     filterChatId: row.filter_chat_id ? String(row.filter_chat_id) : '',
     filterMessageId: row.filter_message_id ? String(row.filter_message_id) : '',
@@ -113,7 +124,14 @@ function rowToModeration(row) {
   };
 }
 
-async function createModeration({ kind, body, displayName, tierLabel = '' }) {
+async function createModeration({
+  kind,
+  body,
+  displayName,
+  tierLabel = '',
+  sourceOrderNumber = '',
+  telegramUserId = '',
+}) {
   await ensureQuoteFilterSchema();
   const db = await getSupportDb();
   const environment = currentSupportEnvironment();
@@ -121,14 +139,17 @@ async function createModeration({ kind, body, displayName, tierLabel = '' }) {
   const result = await db.execute({
     sql: `INSERT INTO support_quote_moderation (
             environment, kind, body, display_name, tier_label,
+            source_order_number, telegram_user_id,
             status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)`,
     args: [
       environment,
       cleanText(kind, 32),
       cleanText(body, 1800),
       cleanText(displayName, 80),
       cleanText(tierLabel, 100),
+      cleanText(sourceOrderNumber, 160),
+      cleanText(telegramUserId, 40),
       now,
       now,
     ],
@@ -158,7 +179,8 @@ export async function getQuoteModeration(id) {
   const db = await getSupportDb();
   const environment = currentSupportEnvironment();
   const result = await db.execute({
-    sql: `SELECT id, kind, body, display_name, tier_label, status,
+    sql: `SELECT id, kind, body, display_name, tier_label,
+                 source_order_number, telegram_user_id, status,
                  filter_chat_id, filter_message_id, moderated_by,
                  moderated_at, created_at, updated_at
           FROM support_quote_moderation
@@ -214,7 +236,15 @@ async function requireConnectedFilterGroup(groupId) {
   return chat;
 }
 
-async function sendToQuoteFilter({ kind, text, body, displayName, tierLabel = '' }) {
+async function sendToQuoteFilter({
+  kind,
+  text,
+  body,
+  displayName,
+  tierLabel = '',
+  sourceOrderNumber = '',
+  telegramUserId = '',
+}) {
   const target = await getQuoteFilterGroup();
   if (!target?.groupId) {
     const error = new Error('Quote filter group is not connected.');
@@ -223,7 +253,14 @@ async function sendToQuoteFilter({ kind, text, body, displayName, tierLabel = ''
   }
 
   await requireConnectedFilterGroup(target.groupId);
-  const moderationId = await createModeration({ kind, body, displayName, tierLabel });
+  const moderationId = await createModeration({
+    kind,
+    body,
+    displayName,
+    tierLabel,
+    sourceOrderNumber,
+    telegramUserId,
+  });
   try {
     const sent = await sendMessage(target.groupId, text, {
       reply_markup: moderationKeyboard(moderationId),
@@ -245,7 +282,13 @@ async function sendToQuoteFilter({ kind, text, body, displayName, tierLabel = ''
   }
 }
 
-export async function sendSupportQuoteToFilter({ supportMessage, displayName, tierLabel }) {
+export async function sendSupportQuoteToFilter({
+  supportMessage,
+  displayName,
+  tierLabel,
+  orderNumber = '',
+  userId = '',
+}) {
   const message = cleanText(supportMessage, 500);
   const name = cleanText(displayName, 80);
   const tier = cleanText(tierLabel, 100) || '❤️ Supporter';
@@ -256,6 +299,8 @@ export async function sendSupportQuoteToFilter({ supportMessage, displayName, ti
     body: message,
     displayName: name,
     tierLabel: tier,
+    sourceOrderNumber: cleanText(orderNumber, 160),
+    telegramUserId: cleanText(userId, 40),
     text: [
       `“${message}”`,
       '',

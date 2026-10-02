@@ -515,10 +515,20 @@ export async function sendWebPushTest(deviceToken) {
     throw error;
   }
 
+  const testTiers = [
+    { tier: 'Supporter', amount: '10.00' },
+    { tier: 'Super Supporter', amount: '20.00' },
+    { tier: 'Power Supporter', amount: '30.00' },
+    { tier: 'Ultimate Supporter', amount: '50.00' },
+    { tier: 'Legend Supporter', amount: '100.00' },
+  ];
+  const testTier = testTiers[randomInt(0, testTiers.length)];
+  const testUserId = String(randomInt(100000000, 1000000000));
+
   const payload = {
-    title: 'Payment Received, Supporter',
-    body: 'ID 123456789 - RM 10.00 - Successfull 🎉',
-    tag: `test-${Date.now()}`,
+    title: `Payment Received, ${testTier.tier}`,
+    body: `ID ${testUserId} - RM ${testTier.amount} - Successfull 🎉`,
+    tag: `test-${Date.now()}-${testUserId}`,
     url: '/ar-payment',
   };
 

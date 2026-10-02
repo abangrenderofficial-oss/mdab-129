@@ -116,7 +116,7 @@ export async function createSupportSubmission({
       sql: `UPDATE support_submissions
             SET state = 'CANCELLED', updated_at = ?
             WHERE environment = ? AND telegram_user_id = ?
-              AND state IN ('AWAITING_MESSAGE', 'AWAITING_NAME', 'READY')`,
+              AND state IN ('AWAITING_MESSAGE', 'AWAITING_NAME', 'READY', 'REVIEW')`,
       args: [now, environment, telegramUserId],
     },
     {
@@ -153,7 +153,7 @@ export async function getActiveSupportSubmission(userId) {
                  state, payment_url, payment_intent_id, created_at, updated_at, announced_at
           FROM support_submissions
           WHERE environment = ? AND telegram_user_id = ?
-            AND state IN ('AWAITING_MESSAGE', 'AWAITING_NAME')
+            AND state IN ('AWAITING_MESSAGE', 'AWAITING_NAME', 'REVIEW')
           ORDER BY updated_at DESC
           LIMIT 1`,
     args: [environment, telegramUserId],
@@ -222,7 +222,7 @@ export async function markSupportSubmissionRejected({
   if (!targetOrder) {
     const clauses = [
       'environment = ?',
-      "state = 'PAID'",
+      "state IN ('REVIEW', 'PAID')",
       'support_message = ?',
       'display_name = ?',
       'tier_label = ?',
@@ -315,6 +315,24 @@ export async function setSupportSubmissionName(orderNumber, userId, displayName)
   return selectSubmission(db, environment, orderNumber);
 }
 
+export async function markSupportSubmissionUnderReview(orderNumber, userId) {
+  await ensureSubmissionSchema();
+  const telegramUserId = validUserId(userId);
+  if (!telegramUserId) return null;
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const now = new Date().toISOString();
+
+  await db.execute({
+    sql: `UPDATE support_submissions
+          SET state = 'REVIEW', announced_at = NULL, updated_at = ?
+          WHERE environment = ? AND order_number = ? AND telegram_user_id = ?
+            AND state = 'READY'`,
+    args: [now, environment, String(orderNumber || ''), telegramUserId],
+  });
+  return selectSubmission(db, environment, orderNumber);
+}
+
 export async function restoreSupportSubmissionAwaitingName(orderNumber, userId) {
   await ensureSubmissionSchema();
   const telegramUserId = validUserId(userId);
@@ -326,7 +344,7 @@ export async function restoreSupportSubmissionAwaitingName(orderNumber, userId) 
     sql: `UPDATE support_submissions
           SET state = 'AWAITING_NAME', updated_at = ?
           WHERE environment = ? AND order_number = ? AND telegram_user_id = ?
-            AND state = 'READY' AND announced_at IS NULL`,
+            AND state IN ('READY', 'REVIEW') AND announced_at IS NULL`,
     args: [now, environment, String(orderNumber || ''), telegramUserId],
   });
   return selectSubmission(db, environment, orderNumber);

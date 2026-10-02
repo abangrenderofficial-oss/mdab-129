@@ -1,6 +1,6 @@
 import { isBayarcashConfigured, isBayarcashSandbox, verifyTransactionCallback } from '../src/payments/bayarcash.js';
 import { applyBayarcashTransaction } from '../src/support/store.js';
-import { getSupportSubmission } from '../src/support/submissions.js';
+import { activateSupportSubmissionAfterPayment, getSupportSubmission } from '../src/support/submissions.js';
 import { sendMessage } from '../src/telegram.js';
 
 function json(res, status, body) {
@@ -77,6 +77,19 @@ export default async function handler(req, res) {
     await sendMessage(result.telegramUserId, confirmationText(result, submission)).catch((error) => {
       console.warn('[bayarcash] Telegram confirmation failed:', error?.message);
     });
+
+    const activation = await activateSupportSubmissionAfterPayment(result.orderNumber).catch((error) => {
+      console.warn('[bayarcash] testimonial activation failed:', error?.message);
+      return null;
+    });
+    if (activation?.activated) {
+      await sendMessage(
+        result.telegramUserId,
+        'Tinggalkan kata-kata support korang ❤️',
+      ).catch((error) => {
+        console.warn('[bayarcash] testimonial follow-up failed:', error?.message);
+      });
+    }
   }
 
   // Support testimonial/feedback publishing is intentionally disabled for now.

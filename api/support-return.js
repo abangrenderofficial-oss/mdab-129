@@ -1,5 +1,5 @@
 import { reconcileSupportPayment } from '../src/support/reconcile.js';
-import { getSupportSubmission, markSupportSubmissionAnnounced } from '../src/support/submissions.js';
+import { activateSupportSubmissionAfterPayment, getSupportSubmission, markSupportSubmissionAnnounced } from '../src/support/submissions.js';
 import { saveSupportTestimonial } from '../src/support/community-store.js';
 import { sendSupportQuoteToFilter } from '../src/support/quote-filter.js';
 import { sendMessage } from '../src/telegram.js';
@@ -206,10 +206,19 @@ export default async function handler(req, res) {
             '❤️ Payment dah confirm ✅',
             amount ? `Support diterima: RM${amount}` : '',
             `Title sebulan: ${tier}`,
-            '',
-            'Buka semula page payment tadi untuk tinggalkan kata-kata support ❤️',
           ].filter(Boolean).join('\n'),
         ).catch((error) => console.warn('[support-return] Telegram confirmation failed:', error?.message));
+
+        const activation = await activateSupportSubmissionAfterPayment(orderNumber).catch((error) => {
+          console.warn('[support-return] testimonial activation failed:', error?.message);
+          return null;
+        });
+        if (activation?.activated) {
+          await sendMessage(
+            reconciliation.result.telegramUserId,
+            'Tinggalkan kata-kata support korang ❤️',
+          ).catch((error) => console.warn('[support-return] testimonial follow-up failed:', error?.message));
+        }
       }
     } catch (error) {
       lookupError = error;

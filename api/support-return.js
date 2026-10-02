@@ -70,7 +70,7 @@ function htmlPage({
   const paidContent = `
     <div class="heart">❤️</div>
     <h1>Thank you, Payment Dah Confirm ✅</h1>
-    <p class="lead">Tahniah! Selama sebulan ni awak dapat pegang title</p>
+    <p class="lead">Tahniah! Title supporter awak aktif selama 12 bulan</p>
     <div class="tier">${safeTier}</div>
 
     ${notice ? `<div class="notice ${noticeType === 'error' ? 'error' : ''}">${escapeHtml(notice)}</div>` : ''}
@@ -205,7 +205,7 @@ export default async function handler(req, res) {
           [
             '❤️ Payment dah confirm ✅',
             amount ? `Support diterima: RM${amount}` : '',
-            `Title sebulan: ${tier}`,
+            `Title 12 bulan: ${tier}`,
           ].filter(Boolean).join('\n'),
         ).catch((error) => console.warn('[support-return] Telegram confirmation failed:', error?.message));
 

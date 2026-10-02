@@ -441,7 +441,7 @@ async function telegramDisplayName(userId, username = '') {
 
 function notificationPayload({ userId, amount, name, tierLabel, paidAt, expiresAt, tag }) {
   const tierName = cleanText(tierLabel, 100)
-    .replace(/^[^\\p{L}\\p{N}]+/u, '')
+    .replace(/^[^A-Za-z0-9]+/, '')
     .trim() || 'Supporter';
 
   return {

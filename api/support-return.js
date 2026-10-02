@@ -246,6 +246,8 @@ export default async function handler(req, res) {
           displayName: saved?.displayName || submittedName,
           supportMessage: saved?.supportMessage || submittedMessage,
           tierLabel: saved?.tierLabel || tierLabel,
+          orderNumber: saved?.orderNumber || orderNumber,
+          userId: saved?.telegramUserId || submission?.telegramUserId || '',
         });
         submission = await markSupportSubmissionAnnounced(orderNumber);
         notice = 'Terima kasih! Kata-kata support korang kita akan filter dulu. If everything okay, kita akan share dalam channel ❤️';

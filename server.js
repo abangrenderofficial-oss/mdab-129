@@ -20,6 +20,7 @@ import {
 } from './src/payments/bayarcash.js';
 import { startSupportPromotionScheduler } from './src/support/promotion.js';
 import { deliverApprovedBacklog, isContentBridgeConfigured } from './src/support/content-bridge.js';
+import { sendNtfyPaymentPreviewOnce } from './src/support/ntfy-payment.js';
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
@@ -157,6 +158,18 @@ server.listen(port, '0.0.0.0', () => {
   });
 
   startSupportPromotionScheduler();
+
+  void sendNtfyPaymentPreviewOnce()
+    .then((result) => {
+      console.log('[ntfy-payment] preview test result', {
+        sent: Boolean(result?.sent),
+        reason: result?.reason || null,
+        message_id: result?.messageId || null,
+      });
+    })
+    .catch((error) => {
+      console.warn('[ntfy-payment] preview test failed:', error?.message);
+    });
 
   if (isContentBridgeConfigured()) {
     console.log('[content-bridge] retry scheduler started');

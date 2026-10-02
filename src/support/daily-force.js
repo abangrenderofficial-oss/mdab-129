@@ -4,18 +4,40 @@ import { supportMenuKeyboard } from '../features/support.js';
 import { getActiveSupporterTitle } from './community-store.js';
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 
+const DAILY_FORCE_COPY = 'Minta support dulu utk guna bot ❤️';
 let schemaPromise = null;
 
 async function ensureSchema() {
   if (!schemaPromise) {
     schemaPromise = (async () => {
       const db = await getSupportDb();
-      await db.execute(`CREATE TABLE IF NOT EXISTS support_daily_force_mode (
-        environment TEXT NOT NULL PRIMARY KEY,
-        enabled INTEGER NOT NULL DEFAULT 0,
-        updated_by TEXT NOT NULL DEFAULT '',
-        updated_at TEXT NOT NULL
-      )`);
+      await db.batch([
+        `CREATE TABLE IF NOT EXISTS support_daily_force_mode (
+          environment TEXT NOT NULL PRIMARY KEY,
+          enabled INTEGER NOT NULL DEFAULT 0,
+          cycle_id INTEGER NOT NULL DEFAULT 1,
+          updated_by TEXT NOT NULL DEFAULT '',
+          updated_at TEXT NOT NULL
+        )`,
+        `CREATE TABLE IF NOT EXISTS support_daily_force_usage (
+          environment TEXT NOT NULL,
+          telegram_user_id TEXT NOT NULL,
+          cycle_id INTEGER NOT NULL,
+          used_once INTEGER NOT NULL DEFAULT 0,
+          use_claimed INTEGER NOT NULL DEFAULT 0,
+          prompt_sent INTEGER NOT NULL DEFAULT 0,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (environment, telegram_user_id, cycle_id)
+        )`,
+      ], 'write');
+
+      const modeColumns = await db.execute('PRAGMA table_info(support_daily_force_mode)');
+      const hasCycleId = (modeColumns.rows || []).some((row) => String(row.name || '') === 'cycle_id');
+      if (!hasCycleId) {
+        await db.execute(
+          'ALTER TABLE support_daily_force_mode ADD COLUMN cycle_id INTEGER NOT NULL DEFAULT 1',
+        );
+      }
       return true;
     })().catch((error) => {
       schemaPromise = null;
@@ -25,37 +47,52 @@ async function ensureSchema() {
   return schemaPromise;
 }
 
-export async function isDailyForceSupportEnabled() {
+async function modeState() {
   await ensureSchema();
   const db = await getSupportDb();
   const result = await db.execute({
-    sql: `SELECT enabled FROM support_daily_force_mode
+    sql: `SELECT enabled, cycle_id
+          FROM support_daily_force_mode
           WHERE environment = ?
           LIMIT 1`,
     args: [currentSupportEnvironment()],
   });
-  return Number(result.rows?.[0]?.enabled || 0) === 1;
+  return {
+    enabled: Number(result.rows?.[0]?.enabled || 0) === 1,
+    cycleId: Math.max(1, Number(result.rows?.[0]?.cycle_id || 1)),
+  };
+}
+
+export async function isDailyForceSupportEnabled() {
+  return (await modeState()).enabled;
 }
 
 async function setDailyForceSupportEnabled(enabled, adminUserId = '') {
   await ensureSchema();
   const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const current = await modeState();
+  const nextCycleId = enabled && !current.enabled ? current.cycleId + 1 : current.cycleId;
   const now = new Date().toISOString();
+
   await db.execute({
-    sql: `INSERT INTO support_daily_force_mode (environment, enabled, updated_by, updated_at)
-          VALUES (?, ?, ?, ?)
+    sql: `INSERT INTO support_daily_force_mode (
+            environment, enabled, cycle_id, updated_by, updated_at
+          ) VALUES (?, ?, ?, ?, ?)
           ON CONFLICT(environment) DO UPDATE SET
             enabled = excluded.enabled,
+            cycle_id = excluded.cycle_id,
             updated_by = excluded.updated_by,
             updated_at = excluded.updated_at`,
     args: [
-      currentSupportEnvironment(),
+      environment,
       enabled ? 1 : 0,
+      nextCycleId,
       String(adminUserId || ''),
       now,
     ],
   });
-  return Boolean(enabled);
+  return { enabled: Boolean(enabled), cycleId: nextCycleId };
 }
 
 function isUsageAttempt(message = {}) {
@@ -66,22 +103,143 @@ function isUsageAttempt(message = {}) {
   return /https?:\/\/\S+/i.test(text);
 }
 
+async function usageState(userId, cycleId) {
+  await ensureSchema();
+  const db = await getSupportDb();
+  const result = await db.execute({
+    sql: `SELECT used_once, use_claimed, prompt_sent
+          FROM support_daily_force_usage
+          WHERE environment = ? AND telegram_user_id = ? AND cycle_id = ?
+          LIMIT 1`,
+    args: [currentSupportEnvironment(), String(userId), Number(cycleId)],
+  });
+  return {
+    usedOnce: Number(result.rows?.[0]?.used_once || 0) === 1,
+    useClaimed: Number(result.rows?.[0]?.use_claimed || 0) === 1,
+    promptSent: Number(result.rows?.[0]?.prompt_sent || 0) === 1,
+  };
+}
+
 async function sendDailyForceLock(chatId) {
   await sendMessage(
     chatId,
-    [
-      'Please Support Kita dulu utk guna Bot ❤️',
-      '',
-      'Support sekali dan selagi title Supporter masih aktif, bot boleh guna macam biasa ✨',
-    ].join('\n'),
+    DAILY_FORCE_COPY,
     { reply_markup: supportMenuKeyboard() },
   );
 }
 
-async function shouldGate(userId) {
-  if (isResetAdmin(userId)) return false;
-  if (!(await isDailyForceSupportEnabled())) return false;
-  return !(await getActiveSupporterTitle(userId));
+async function accessContext(userId) {
+  if (isResetAdmin(userId)) return { gated: false, enabled: false, cycleId: 0 };
+  const mode = await modeState();
+  if (!mode.enabled) return { gated: false, ...mode };
+
+  const supporter = await getActiveSupporterTitle(userId);
+  if (supporter) return { gated: false, ...mode, supporter };
+
+  const state = await usageState(userId, mode.cycleId);
+  return {
+    gated: state.usedOnce || state.useClaimed,
+    ...mode,
+    supporter: null,
+    state,
+  };
+}
+
+export async function claimDailyForceUsageAttempt(userId) {
+  const id = Number(userId || 0);
+  if (!Number.isSafeInteger(id) || id <= 0 || isResetAdmin(id)) return false;
+
+  const mode = await modeState();
+  if (!mode.enabled) return false;
+  if (await getActiveSupporterTitle(id)) return false;
+
+  await ensureSchema();
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const now = new Date().toISOString();
+
+  await db.execute({
+    sql: `INSERT OR IGNORE INTO support_daily_force_usage (
+            environment, telegram_user_id, cycle_id,
+            used_once, use_claimed, prompt_sent, updated_at
+          ) VALUES (?, ?, ?, 0, 0, 0, ?)`,
+    args: [environment, String(id), mode.cycleId, now],
+  });
+
+  const claimed = await db.execute({
+    sql: `UPDATE support_daily_force_usage
+          SET use_claimed = 1, updated_at = ?
+          WHERE environment = ? AND telegram_user_id = ? AND cycle_id = ?
+            AND used_once = 0 AND use_claimed = 0`,
+    args: [now, environment, String(id), mode.cycleId],
+  });
+  return Number(claimed.rowsAffected || 0) > 0;
+}
+
+export async function releaseDailyForceUsageAttempt(userId) {
+  const id = Number(userId || 0);
+  if (!Number.isSafeInteger(id) || id <= 0) return false;
+
+  const mode = await modeState();
+  if (!mode.enabled) return false;
+
+  const db = await getSupportDb();
+  const result = await db.execute({
+    sql: `UPDATE support_daily_force_usage
+          SET use_claimed = 0, updated_at = ?
+          WHERE environment = ? AND telegram_user_id = ? AND cycle_id = ?
+            AND used_once = 0 AND use_claimed = 1`,
+    args: [
+      new Date().toISOString(),
+      currentSupportEnvironment(),
+      String(id),
+      mode.cycleId,
+    ],
+  });
+  return Number(result.rowsAffected || 0) > 0;
+}
+
+export async function markDailyForceUsageSuccess(userId) {
+  const id = Number(userId || 0);
+  if (!Number.isSafeInteger(id) || id <= 0 || isResetAdmin(id)) return false;
+
+  const mode = await modeState();
+  if (!mode.enabled) return false;
+  if (await getActiveSupporterTitle(id)) return false;
+
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const now = new Date().toISOString();
+
+  await db.execute({
+    sql: `INSERT OR IGNORE INTO support_daily_force_usage (
+            environment, telegram_user_id, cycle_id,
+            used_once, use_claimed, prompt_sent, updated_at
+          ) VALUES (?, ?, ?, 0, 0, 0, ?)`,
+    args: [environment, String(id), mode.cycleId, now],
+  });
+
+  await db.execute({
+    sql: `UPDATE support_daily_force_usage
+          SET used_once = 1, use_claimed = 0, updated_at = ?
+          WHERE environment = ? AND telegram_user_id = ? AND cycle_id = ?`,
+    args: [now, environment, String(id), mode.cycleId],
+  });
+
+  const prompt = await db.execute({
+    sql: `UPDATE support_daily_force_usage
+          SET prompt_sent = 1, updated_at = ?
+          WHERE environment = ? AND telegram_user_id = ? AND cycle_id = ?
+            AND prompt_sent = 0`,
+    args: [now, environment, String(id), mode.cycleId],
+  });
+
+  if (Number(prompt.rowsAffected || 0) > 0) {
+    await sendDailyForceLock(id).catch((error) => {
+      console.warn('[daily-force] first-use support prompt failed:', error?.message);
+    });
+  }
+  return true;
 }
 
 export async function enforceDailyForceSupportForMessage(message = {}) {
@@ -89,7 +247,9 @@ export async function enforceDailyForceSupportForMessage(message = {}) {
   const userId = message?.from?.id;
   if (!chatId || !userId || message?.chat?.type !== 'private') return false;
   if (!isUsageAttempt(message)) return false;
-  if (!(await shouldGate(userId))) return false;
+
+  const context = await accessContext(userId);
+  if (!context.gated) return false;
 
   await sendDailyForceLock(chatId).catch(() => {});
   return true;
@@ -100,11 +260,13 @@ export async function enforceDailyForceSupportForCallback(callbackQuery = {}) {
   const chatType = callbackQuery?.message?.chat?.type;
   const userId = callbackQuery?.from?.id;
   if (!chatId || !userId || chatType !== 'private') return false;
-  if (!(await shouldGate(userId))) return false;
+
+  const context = await accessContext(userId);
+  if (!context.gated) return false;
 
   await telegram('answerCallbackQuery', {
     callback_query_id: callbackQuery?.id,
-    text: 'Please Support Kita dulu utk guna Bot ❤️',
+    text: DAILY_FORCE_COPY,
     show_alert: true,
   }).catch(() => {});
   await sendDailyForceLock(chatId).catch(() => {});
@@ -134,12 +296,18 @@ export async function handleDailyForceSupportCommand(message = {}) {
   if (!access.ok) return true;
 
   const alreadyEnabled = await isDailyForceSupportEnabled();
-  await setDailyForceSupportEnabled(true, access.userId);
+  const saved = await setDailyForceSupportEnabled(true, access.userId);
   await sendMessage(
     access.chatId,
     alreadyEnabled
-      ? '🔒 /forcesupportdaily memang dah aktif. Non-supporter akan terus kena lock setiap hari sehingga support.'
-      : '🔒 /forcesupportdaily aktif. Non-supporter tak boleh guna fungsi downloader setiap hari sehingga support. Supporter aktif boleh guna macam biasa. Mode ini kekal aktif sampai /stopforcesupportdaily.',
+      ? '🔒 /forcesupportdaily memang dah aktif. User yang dah guna free 1x kekal locked setiap hari sampai support.'
+      : [
+          '🔒 /forcesupportdaily aktif.',
+          'Non-supporter dapat 1 successful use dahulu.',
+          'Selepas penggunaan pertama berjaya, bot terus minta support dengan pilihan amount.',
+          'Cubaan seterusnya — termasuk hari ke-2, ke-3 dan seterusnya — kekal locked sampai support.',
+          `Cycle: ${saved.cycleId}`,
+        ].join('\n'),
   );
   return true;
 }
@@ -157,7 +325,7 @@ export async function handleStopDailyForceSupportCommand(message = {}) {
   await setDailyForceSupportEnabled(false, access.userId);
   await sendMessage(
     access.chatId,
-    '⏹ /forcesupportdaily dihentikan. Daily hard lock tak akan berjalan sehingga kau aktifkan semula /forcesupportdaily.',
+    '⏹ /forcesupportdaily dihentikan. Aktifkan semula /forcesupportdaily bila nak mula cycle baru.',
   );
   return true;
 }

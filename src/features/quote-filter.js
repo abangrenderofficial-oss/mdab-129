@@ -6,7 +6,7 @@ import {
   setQuoteFilterGroup,
 } from '../support/quote-filter.js';
 import { deliverApprovedModeration } from '../support/content-bridge.js';
-import { markSupportSubmissionRejected } from '../support/submissions.js';
+import { markSupportSubmissionApproved, markSupportSubmissionRejected } from '../support/submissions.js';
 
 async function isGroupAdmin(chatId, userId) {
   if (!chatId || !userId) return false;
@@ -56,7 +56,7 @@ export async function handleConnectQuoteCommand(message = {}) {
         '✅ Quote Filter Connected',
         '',
         'Mulai sekarang:',
-        '• Kata-kata support dari form payment',
+        '• Kata-kata support dari private bot selepas payment',
         '• Luahan dari /luahrasa',
         '',
         'akan dihantar ke group ini untuk filter dahulu.',
@@ -148,6 +148,23 @@ export async function processQuoteFilterCallback(callbackQuery = {}) {
     );
 
     if (approved) {
+      if (String(finalRecord?.kind || '') === 'SUPPORT') {
+        const unlocked = await markSupportSubmissionApproved({
+          orderNumber: finalRecord?.sourceOrderNumber || '',
+          userId: finalRecord?.telegramUserId || '',
+          supportMessage: finalRecord?.body || '',
+          displayName: finalRecord?.displayName || '',
+          tierLabel: finalRecord?.tierLabel || '',
+        }).catch((error) => {
+          console.error('[quote-filter] supporter unlock failed:', error?.message);
+          return null;
+        });
+
+        if (!unlocked) {
+          console.error('[quote-filter] supporter unlock failed: submission_not_found');
+        }
+      }
+
       void deliverApprovedModeration(finalRecord).catch((error) => {
         console.error('[quote-filter] approved delivery failed:', error?.message);
       });

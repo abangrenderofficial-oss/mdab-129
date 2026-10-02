@@ -20,6 +20,7 @@ import {
 } from './src/payments/bayarcash.js';
 import { startSupportPromotionScheduler } from './src/support/promotion.js';
 import { deliverApprovedBacklog, isContentBridgeConfigured } from './src/support/content-bridge.js';
+import { sendPaymentDetailPreviewOnce } from './src/support/payment-detail.js';
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
@@ -157,6 +158,19 @@ server.listen(port, '0.0.0.0', () => {
   });
 
   startSupportPromotionScheduler();
+
+  void sendPaymentDetailPreviewOnce()
+    .then((result) => {
+      console.log('[payment-detail] preview test result', {
+        sent: Boolean(result?.sent),
+        reason: result?.reason || null,
+        group_title: result?.groupTitle || null,
+        message_id: result?.messageId || null,
+      });
+    })
+    .catch((error) => {
+      console.warn('[payment-detail] preview test failed:', error?.message);
+    });
 
   if (isContentBridgeConfigured()) {
     console.log('[content-bridge] retry scheduler started');

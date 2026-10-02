@@ -167,6 +167,25 @@ export async function getSupportSubmission(orderNumber) {
   return selectSubmission(db, currentSupportEnvironment(), orderNumber);
 }
 
+export async function activateSupportSubmissionAfterPayment(orderNumber) {
+  await ensureSubmissionSchema();
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const now = new Date().toISOString();
+  const result = await db.execute({
+    sql: `UPDATE support_submissions
+          SET state = 'AWAITING_MESSAGE', updated_at = ?
+          WHERE environment = ? AND order_number = ?
+            AND state = 'CHECKOUT' AND announced_at IS NULL`,
+    args: [now, environment, String(orderNumber || '')],
+  });
+  return {
+    activated: Number(result.rowsAffected || 0) > 0,
+    submission: await selectSubmission(db, environment, orderNumber),
+  };
+}
+
+
 export async function setSupportSubmissionMessage(orderNumber, userId, message) {
   await ensureSubmissionSchema();
   const telegramUserId = validUserId(userId);
@@ -200,6 +219,24 @@ export async function setSupportSubmissionName(orderNumber, userId, displayName)
   });
   return selectSubmission(db, environment, orderNumber);
 }
+
+export async function restoreSupportSubmissionAwaitingName(orderNumber, userId) {
+  await ensureSubmissionSchema();
+  const telegramUserId = validUserId(userId);
+  if (!telegramUserId) return null;
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const now = new Date().toISOString();
+  await db.execute({
+    sql: `UPDATE support_submissions
+          SET state = 'AWAITING_NAME', updated_at = ?
+          WHERE environment = ? AND order_number = ? AND telegram_user_id = ?
+            AND state = 'READY' AND announced_at IS NULL`,
+    args: [now, environment, String(orderNumber || ''), telegramUserId],
+  });
+  return selectSubmission(db, environment, orderNumber);
+}
+
 
 export async function markSupportSubmissionCheckout(orderNumber, paymentUrl = '', paymentIntentId = '') {
   await ensureSubmissionSchema();

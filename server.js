@@ -13,6 +13,13 @@ import supportReturnHandler from './api/support-return.js';
 import premiumHqSuccessHandler from './api/premium-hq-success.js';
 import contentBridgeConnectHandler from './api/content-bridge-connect.js';
 import contentBridgeVerifyHandler from './api/content-bridge-verify.js';
+import paymentPushHandler from './api/payment-push.js';
+import {
+  paymentPwaPageHandler,
+  paymentPwaManifestHandler,
+  paymentPwaServiceWorkerHandler,
+  paymentPwaIconHandler,
+} from './api/payment-pwa.js';
 import {
   getBayarcashPortalDiagnostic,
   isBayarcashConfigured,
@@ -36,6 +43,12 @@ const routes = new Map([
   ['/api/premium-hq-success', premiumHqSuccessHandler],
   ['/api/content-bridge/connect', contentBridgeConnectHandler],
   ['/api/content-bridge/verify', contentBridgeVerifyHandler],
+  ['/api/payment-push', paymentPushHandler],
+  ['/ar-payment', paymentPwaPageHandler],
+  ['/ar-payment/', paymentPwaPageHandler],
+  ['/ar-payment/manifest.webmanifest', paymentPwaManifestHandler],
+  ['/ar-payment/sw.js', paymentPwaServiceWorkerHandler],
+  ['/ar-payment/icon.svg', paymentPwaIconHandler],
 ]);
 
 function addResponseHelpers(res) {

@@ -1,5 +1,6 @@
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { getTelegramChat, sendMessage, telegram } from '../telegram.js';
+import { notifyWebPushSupportPayment } from './webpush-payment.js';
 
 const MALAYSIA_TIMEZONE = 'Asia/Kuala_Lumpur';
 let schemaPromise = null;
@@ -243,8 +244,13 @@ export async function notifySuccessfulSupportPayment(orderNumber) {
   const order = String(orderNumber || '').trim();
   if (!order) return { sent: false, reason: 'missing_order' };
 
+  const webPush = await notifyWebPushSupportPayment(order).catch((error) => {
+    console.warn('[webpush-payment] notification failed:', error?.message);
+    return { sent: 0, failed: 1, reason: 'send_failed' };
+  });
+
   const target = await getPaymentDetailGroup();
-  if (!target?.groupId) return { sent: false, reason: 'not_connected' };
+  if (!target?.groupId) return { sent: false, reason: 'not_connected', webPush };
 
   const record = await paymentRecord(order);
   if (!record || String(record.status || '') !== 'PAID' || !record.paid_at) {
@@ -276,7 +282,7 @@ export async function notifySuccessfulSupportPayment(orderNumber) {
   try {
     const sent = await sendMessage(target.groupId, text);
     await markDelivery(order, 'SENT', sent?.message_id || '');
-    return { sent: true, groupId: target.groupId, messageId: sent?.message_id || null };
+    return { sent: true, groupId: target.groupId, messageId: sent?.message_id || null, webPush };
   } catch (error) {
     await markDelivery(order, 'FAILED', '', error?.message || 'send_failed').catch(() => {});
     throw error;

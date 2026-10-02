@@ -167,6 +167,101 @@ export async function getSupportSubmission(orderNumber) {
   return selectSubmission(db, currentSupportEnvironment(), orderNumber);
 }
 
+export async function getRejectedSupportSubmission(userId) {
+  await ensureSubmissionSchema();
+  const telegramUserId = validUserId(userId);
+  if (!telegramUserId) return null;
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const result = await db.execute({
+    sql: `SELECT environment, order_number, telegram_user_id, telegram_username,
+                 amount_cents, tier_key, tier_label, support_message, display_name,
+                 state, payment_url, payment_intent_id, created_at, updated_at, announced_at
+          FROM support_submissions
+          WHERE environment = ? AND telegram_user_id = ?
+            AND state = 'REJECTED'
+          ORDER BY updated_at DESC
+          LIMIT 1`,
+    args: [environment, telegramUserId],
+  });
+  return rowToSubmission(result.rows?.[0] || null);
+}
+
+export async function beginRejectedSupportResubmission(orderNumber, userId) {
+  await ensureSubmissionSchema();
+  const telegramUserId = validUserId(userId);
+  if (!telegramUserId) return null;
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const now = new Date().toISOString();
+
+  await db.execute({
+    sql: `UPDATE support_submissions
+          SET support_message = '', display_name = '',
+              state = 'AWAITING_MESSAGE', announced_at = NULL, updated_at = ?
+          WHERE environment = ? AND order_number = ? AND telegram_user_id = ?
+            AND state = 'REJECTED'`,
+    args: [now, environment, String(orderNumber || ''), telegramUserId],
+  });
+  return selectSubmission(db, environment, orderNumber);
+}
+
+export async function markSupportSubmissionRejected({
+  orderNumber = '',
+  userId = '',
+  supportMessage = '',
+  displayName = '',
+  tierLabel = '',
+} = {}) {
+  await ensureSubmissionSchema();
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const now = new Date().toISOString();
+
+  let targetOrder = String(orderNumber || '').trim();
+  if (!targetOrder) {
+    const clauses = [
+      'environment = ?',
+      "state = 'PAID'",
+      'support_message = ?',
+      'display_name = ?',
+      'tier_label = ?',
+    ];
+    const args = [
+      environment,
+      cleanText(supportMessage, 300),
+      cleanText(displayName, 60),
+      cleanText(tierLabel, 80),
+    ];
+    const telegramUserId = validUserId(userId);
+    if (telegramUserId) {
+      clauses.push('telegram_user_id = ?');
+      args.push(telegramUserId);
+    }
+
+    const result = await db.execute({
+      sql: `SELECT order_number
+            FROM support_submissions
+            WHERE ${clauses.join(' AND ')}
+            ORDER BY updated_at DESC
+            LIMIT 1`,
+      args,
+    });
+    targetOrder = String(result.rows?.[0]?.order_number || '');
+  }
+
+  if (!targetOrder) return null;
+
+  await db.execute({
+    sql: `UPDATE support_submissions
+          SET state = 'REJECTED', announced_at = NULL, updated_at = ?
+          WHERE environment = ? AND order_number = ?`,
+    args: [now, environment, targetOrder],
+  });
+  return selectSubmission(db, environment, targetOrder);
+}
+
+
 export async function activateSupportSubmissionAfterPayment(orderNumber) {
   await ensureSubmissionSchema();
   const db = await getSupportDb();

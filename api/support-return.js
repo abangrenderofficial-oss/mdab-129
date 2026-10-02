@@ -1,6 +1,7 @@
 import { reconcileSupportPayment } from '../src/support/reconcile.js';
 import { activateSupportSubmissionAfterPayment, getSupportSubmission } from '../src/support/submissions.js';
 import { sendMessage } from '../src/telegram.js';
+import { notifySuccessfulSupportPayment } from '../src/support/payment-detail.js';
 
 function firstQueryValue(value) {
   return Array.isArray(value) ? String(value[0] || '') : String(value || '');
@@ -142,6 +143,12 @@ export default async function handler(req, res) {
         submission = await getSupportSubmission(orderNumber).catch((error) => {
           console.warn('[support-return] support submission lookup failed:', error?.message);
           return null;
+        });
+      }
+
+      if (reconciliation?.paid && orderNumber) {
+        await notifySuccessfulSupportPayment(orderNumber).catch((error) => {
+          console.warn('[payment-detail] return notification failed:', error?.message);
         });
       }
 

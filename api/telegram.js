@@ -23,6 +23,7 @@ import { handleResetChannelCommand } from '../src/features/channel-reset.js';
 import { enforceChannelGateForCallback, enforceChannelGateForMessage, maybePromptChannelAfterSuccess, processChannelGateCallback } from '../src/features/channel-gate.js';
 import { scheduleLinkJob } from '../src/link-queue.js';
 import { FRIDAY_SUPPORT_MODE_DONATE, FRIDAY_SUPPORT_MODE_FORCE, FRIDAY_SUPPORT_MODE_NORMAL, enforceFridaySupportForCallback, enforceFridaySupportForMessage, handleFridaySupportModeCommand, handleFridaySupportStopCommand, markFridayUsageSuccess, processFridaySupportCallback } from '../src/support/friday-access.js';
+import { enforceDailyForceSupportForCallback, enforceDailyForceSupportForMessage, handleDailyForceSupportCommand, handleStopDailyForceSupportCommand } from '../src/support/daily-force.js';
 
 function json(res, status, body) { res.status(status).json(body); }
 function isAuthorizedWebhook(req) {
@@ -77,6 +78,7 @@ async function processMessage(message, context) {
   if (command === '/luahrasa') return handleLuahRasaCommand(message, context);
   if (await processLuahRasaMessage(message, context)) return;
   if (await processSupportMessage(message, context)) return;
+  if (await enforceDailyForceSupportForMessage(message)) return;
   if (await enforceChannelGateForMessage(message)) return;
   if (await handleHqLabCommand(message, context)) return;
   if (await processHqLabMessage(message, context)) return;
@@ -112,6 +114,7 @@ async function runWebhookUpdate(update, context) {
     if (await processFridaySupportCallback(callbackQuery)) return;
     if (await processChannelGateCallback(callbackQuery)) return;
     if (await processSupportCallback(callbackQuery, context)) return;
+    if (await enforceDailyForceSupportForCallback(callbackQuery)) return;
     if (await enforceChannelGateForCallback(callbackQuery)) return;
     if (await enforceFridaySupportForCallback(callbackQuery)) return;
     if (await processAuditDelete(callbackQuery)) return;
@@ -182,6 +185,8 @@ export default async function handler(req, res) {
     if (command === '/stopforcesupport') { await handleFridaySupportStopCommand(message, FRIDAY_SUPPORT_MODE_FORCE); return json(res, 200, { ok: true, friday_support_stop: 'FORCE' }); }
     if (command === '/stopdonatesupport') { await handleFridaySupportStopCommand(message, FRIDAY_SUPPORT_MODE_DONATE); return json(res, 200, { ok: true, friday_support_stop: 'DONATE' }); }
     if (command === '/stopnormalsupport' || command === '/stopsupportnormal') { await handleFridaySupportStopCommand(message, FRIDAY_SUPPORT_MODE_NORMAL); return json(res, 200, { ok: true, friday_support_stop: 'NORMAL' }); }
+    if (command === '/forcesupportdaily') { await handleDailyForceSupportCommand(message); return json(res, 200, { ok: true, daily_force_support: true }); }
+    if (command === '/stopforcesupportdaily') { await handleStopDailyForceSupportCommand(message); return json(res, 200, { ok: true, daily_force_support: false }); }
     if (command === '/resetchannel') { await handleResetChannelCommand(message); return json(res, 200, { ok: true, channel_reset: true }); }
     if (command === '/totaluser') { await handleTotalUserCommand(message, context); return json(res, 200, { ok: true, stats: true }); }
     if (command === '/supporttest') { await handleSupportTestCommand(message, context); return json(res, 200, { ok: true, support_test: true }); }

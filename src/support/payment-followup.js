@@ -307,32 +307,26 @@ export async function reconcilePaymentFollowup(orderNumber) {
   };
 }
 
+function followupAmountLabel(row) {
+  const value = Number(row?.amount_cents || 0) / 100;
+  if (!Number.isFinite(value)) return 'RM0';
+  return `RM${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(2)}`;
+}
+
 function followupText(row) {
-  const stage = classifyPaymentStage({
-    orderStatus: row.status,
-    gatewayTransactionId: row.gateway_transaction_id,
-    gatewayStatus: row.last_gateway_status,
-    followupState: row.followup_state,
-  });
-  const checkout = stage === 'CHECKOUT_PENDING';
+  const username = String(row?.telegram_username || '').replace(/^@+/, '').trim();
+  const amount = followupAmountLabel(row);
   return [
-    'Hi, awak 👋',
+    username ? `Hi, @${username} 😊` : 'Hi, 😊',
     '',
-    checkout
-      ? `Awak ada checkout RM${money(row.amount_cents)} yang belum selesai.`
-      : `Payment RM${money(row.amount_cents)} masih belum confirmed selesai.`,
-    '',
-    'Kalau masih nak teruskan support, awak boleh sambung pembayaran.',
-    'Kalau awak dah buat bayaran tapi status belum berubah, tekan “Dah Bayar / Semak”.',
-    '',
-    `Support ID: ${row.order_number}`,
+    `Awak ada checkout ${amount} tapi belum confirm. Kalau awak suka guna bot ni dan masih nak bantu bot kita semua kekal hidup, awak boleh sambung pembayaran. ${username ? 'Terima kasih buat pembayaran ❤️' : 'Terima kasih orang baik ❤️'}`,
   ].join('\n');
 }
 
 function followupKeyboard(row) {
   const buttons = [];
   if (String(row.payment_url || '').startsWith('http')) {
-    buttons.push([{ text: '💳 Continue Payment', url: String(row.payment_url) }]);
+    buttons.push([{ text: `💳 Bayar ${followupAmountLabel(row)}`, url: String(row.payment_url) }]);
   }
   buttons.push([
     { text: '✅ Dah Bayar / Semak', callback_data: `payfollow:review:${row.order_number}` },

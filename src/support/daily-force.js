@@ -26,6 +26,7 @@ async function ensureSchema() {
           used_once INTEGER NOT NULL DEFAULT 0,
           use_claimed INTEGER NOT NULL DEFAULT 0,
           prompt_sent INTEGER NOT NULL DEFAULT 0,
+          success_count INTEGER NOT NULL DEFAULT 0,
           updated_at TEXT NOT NULL,
           PRIMARY KEY (environment, telegram_user_id, cycle_id)
         )`,
@@ -36,6 +37,17 @@ async function ensureSchema() {
       if (!hasCycleId) {
         await db.execute(
           'ALTER TABLE support_daily_force_mode ADD COLUMN cycle_id INTEGER NOT NULL DEFAULT 1',
+        );
+      }
+
+      const usageColumns = await db.execute('PRAGMA table_info(support_daily_force_usage)');
+      const hasSuccessCount = (usageColumns.rows || []).some((row) => String(row.name || '') === 'success_count');
+      if (!hasSuccessCount) {
+        await db.execute(
+          'ALTER TABLE support_daily_force_usage ADD COLUMN success_count INTEGER NOT NULL DEFAULT 0',
+        );
+        await db.execute(
+          'UPDATE support_daily_force_usage SET success_count = 1 WHERE used_once = 1 AND success_count = 0',
         );
       }
       return true;
@@ -107,7 +119,7 @@ async function usageState(userId, cycleId) {
   await ensureSchema();
   const db = await getSupportDb();
   const result = await db.execute({
-    sql: `SELECT used_once, use_claimed, prompt_sent
+    sql: `SELECT used_once, use_claimed, prompt_sent, COALESCE(success_count, 0) AS success_count
           FROM support_daily_force_usage
           WHERE environment = ? AND telegram_user_id = ? AND cycle_id = ?
           LIMIT 1`,
@@ -117,6 +129,7 @@ async function usageState(userId, cycleId) {
     usedOnce: Number(result.rows?.[0]?.used_once || 0) === 1,
     useClaimed: Number(result.rows?.[0]?.use_claimed || 0) === 1,
     promptSent: Number(result.rows?.[0]?.prompt_sent || 0) === 1,
+    successCount: Math.max(0, Number(result.rows?.[0]?.success_count || 0)),
   };
 }
 
@@ -161,8 +174,8 @@ export async function claimDailyForceUsageAttempt(userId) {
   await db.execute({
     sql: `INSERT OR IGNORE INTO support_daily_force_usage (
             environment, telegram_user_id, cycle_id,
-            used_once, use_claimed, prompt_sent, updated_at
-          ) VALUES (?, ?, ?, 0, 0, 0, ?)`,
+            used_once, use_claimed, prompt_sent, success_count, updated_at
+          ) VALUES (?, ?, ?, 0, 0, 0, 0, ?)`,
     args: [environment, String(id), mode.cycleId, now],
   });
 
@@ -214,14 +227,17 @@ export async function markDailyForceUsageSuccess(userId) {
   await db.execute({
     sql: `INSERT OR IGNORE INTO support_daily_force_usage (
             environment, telegram_user_id, cycle_id,
-            used_once, use_claimed, prompt_sent, updated_at
-          ) VALUES (?, ?, ?, 0, 0, 0, ?)`,
+            used_once, use_claimed, prompt_sent, success_count, updated_at
+          ) VALUES (?, ?, ?, 0, 0, 0, 0, ?)`,
     args: [environment, String(id), mode.cycleId, now],
   });
 
   await db.execute({
     sql: `UPDATE support_daily_force_usage
-          SET used_once = 1, use_claimed = 0, updated_at = ?
+          SET used_once = 1,
+              use_claimed = 0,
+              success_count = COALESCE(success_count, 0) + 1,
+              updated_at = ?
           WHERE environment = ? AND telegram_user_id = ? AND cycle_id = ?`,
     args: [now, environment, String(id), mode.cycleId],
   });

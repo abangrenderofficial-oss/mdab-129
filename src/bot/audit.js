@@ -1,6 +1,7 @@
 import { platformLabel } from '../platform.js';
 import { isResetAdmin } from '../recovery.js';
 import { getTelegramChat, sendMessage, telegram } from '../telegram.js';
+import { getSupportMonitorUserStatus } from '../support/monitor.js';
 
 const AUDIT_DELETE = 'audit:delete:v1';
 
@@ -23,9 +24,44 @@ function auditDeleteButton(profileMessageId = '') {
   };
 }
 
-function buildAuditCaption(from = {}, audit = {}) {
+function formatSupportExpiry(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kuala_Lumpur',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(date);
+}
+
+function dailyForceAuditLine(status) {
+  const daily = status?.dailyForce;
+  if (!daily) return '🔒 Daily Force: -';
+  if (daily.state === 'EXEMPT_SUPPORTER') return '🔒 Daily Force: EXEMPT (supporter)';
+  if (daily.state === 'LOCKED') {
+    const anomaly = daily.anomaly ? ' ⚠️ ANOMALY' : '';
+    return `🔒 Daily Force: LOCKED · Cycle ${daily.cycleId} · Success ${daily.successCount}${anomaly}`;
+  }
+  if (daily.state === 'FREE_USE_AVAILABLE') {
+    return `🎟 Daily Force: FREE 1x available · Cycle ${daily.cycleId}`;
+  }
+  return '🔓 Daily Force: OFF';
+}
+
+async function buildAuditCaption(from = {}, audit = {}) {
   const username = from.username ? `@${from.username}` : '-';
   const platform = audit.platform ? platformLabel(audit.platform) : '-';
+  const status = await getSupportMonitorUserStatus(from?.id).catch((error) => {
+    console.warn('[support-monitor] audit status failed:', error?.message);
+    return null;
+  });
+
+  const supportLine = status?.support?.active
+    ? `❤️ Support: ✅ ACTIVE · ${status.support.tierLabel} · until ${formatSupportExpiry(status.support.expiresAt)}`
+    : '❤️ Support: ❌ BELUM SUPPORT';
+
   return [
     '📋 USER RECORD',
     `👤 Username: ${username}`,
@@ -33,6 +69,8 @@ function buildAuditCaption(from = {}, audit = {}) {
     `📝 Nama: ${userFullName(from)}`,
     `🕒 Masa: ${formatAuditTime(audit.sourceTimestamp)}`,
     `📱 Platform: ${platform}`,
+    supportLine,
+    dailyForceAuditLine(status),
   ].join('\n').slice(0, 1024);
 }
 
@@ -93,7 +131,7 @@ export async function mirrorMediaToGroup(sourceChatId, sentMessage, mirrorGroupI
     return false;
   }
 
-  const caption = buildAuditCaption(from, audit);
+  const caption = await buildAuditCaption(from, audit);
   const profilePhotoId = await latestProfilePhotoFileId(from?.id);
   let profileMessageId = 0;
 

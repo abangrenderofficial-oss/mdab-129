@@ -45,12 +45,12 @@ nav{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(sa
 </main>
 <nav><a class="active" href="/ar-payment/"><b>⌂</b>Home</a><a href="/ar-payment/transactions"><b>≡</b>Transactions</a><a href="/ar-payment/affiliate"><b>₿</b>Earn</a><a href="/ar-payment/settings"><b>⚙</b>Settings</a></nav>
 <script>
-const $=id=>document.getElementById(id);const deviceKey='ar_payment_device_token_v1';const token=()=>localStorage.getItem(deviceKey)||'';
+const $=id=>document.getElementById(id);const authKey='payping_auth_session_v1';const deviceKey='ar_payment_device_token_v1';const token=()=>localStorage.getItem(authKey)||localStorage.getItem(deviceKey)||'';const pushToken=()=>localStorage.getItem(deviceKey)||'';
 const money=v=>'RM'+(Number(v||0)||0).toFixed(2);const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const date=v=>{if(!v)return '-';const d=new Date(v);return Number.isNaN(d.getTime())?'-':new Intl.DateTimeFormat('en-MY',{day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}).format(d)};
-function refreshConnection(){const t=token();$('test').disabled=!t;$('dot').classList.toggle('ok',!!t);$('state').textContent=t?'Push connected ✅':'Belum connected'}
+function refreshConnection(){const t=pushToken();$('test').disabled=!t;$('dot').classList.toggle('ok',!!t);$('state').textContent=t?'Push connected ✅':'Belum connected'}
 async function loadDashboard(){
- const t=token();if(!t){$('dashLoading').innerHTML='<div class="empty">Connect PayPing notifications untuk buka dashboard.</div>';$('scope').textContent='Not connected';return}
+ const t=token();if(!t){location.href='/ar-payment/login';return}
  try{const r=await fetch('/api/payping-data?view=dashboard',{headers:{Authorization:'Bearer '+t}});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Dashboard unavailable.');
  const s=d.summary;$('scope').textContent=d.owner?'Merchant view':'My view';$('analyticsQuick').hidden=!d.owner;$('todayReceived').textContent=money(s.todayReceived);$('todayCount').textContent=s.todayTransactions+' successful payments today';$('totalReceived').textContent=money(s.totalReceived);$('paidCount').textContent=s.paidTransactions;$('pendingCount').textContent=s.pendingTransactions;$('totalCount').textContent=s.totalTransactions;
  $('recent').innerHTML=d.recent.length?d.recent.map(t=>'<a class="tx" href="/ar-payment/transaction?order='+encodeURIComponent(t.orderNumber)+'"><div class="line"><div><div class="name">'+esc(t.displayName||t.username||('ID '+t.userId))+'</div><div class="meta">'+esc(t.tierLabel)+' · '+date(t.paidAt||t.createdAt)+' · Details →</div></div><div style="text-align:right"><div class="amount">'+money(t.amount)+'</div><span class="badge '+esc(t.status.toLowerCase())+'">'+esc(t.status)+'</span></div></div></a>').join(''):'<div class="empty">No payments yet.</div>';
@@ -72,7 +72,7 @@ $('enable').addEventListener('click',async()=>{try{
  const response=await fetch('/api/payment-push',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'subscribe',code,subscription:sub.toJSON()})});const d=await response.json();if(!response.ok||!d.ok)throw new Error(d.message||'Tak berjaya register device.');
  localStorage.setItem(deviceKey,d.deviceToken);$('code').value='';refreshConnection();setMsg('Connected ✅');$('dashLoading').hidden=false;$('dashboard').hidden=true;loadDashboard();
  }catch(e){setMsg(e.message||String(e),true)}finally{$('enable').disabled=false}});
-$('test').addEventListener('click',async()=>{try{const t=token();if(!t)throw new Error('Device belum connected.');$('test').disabled=true;const r=await fetch('/api/payment-push',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'test',deviceToken:t})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Test push gagal.');setMsg('Test push sent ✅')}catch(e){setMsg(e.message||String(e),true)}finally{refreshConnection()}});
+$('test').addEventListener('click',async()=>{try{const t=pushToken();if(!t)throw new Error('Device belum connected.');$('test').disabled=true;const r=await fetch('/api/payment-push',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'test',deviceToken:t})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Test push gagal.');setMsg('Test push sent ✅')}catch(e){setMsg(e.message||String(e),true)}finally{refreshConnection()}});
 refreshConnection();loadDashboard();
 </script></body></html>`;
 

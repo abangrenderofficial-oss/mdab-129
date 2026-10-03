@@ -30,18 +30,28 @@ export default async function handler(req,res){
   if(auth.needsTelegramLink&&!auth.owner)return json(res,409,{ok:false,error:'PAYPING_TELEGRAM_LINK_REQUIRED',role:auth.role,needsTelegramLink:true});
   try{
     if(req.method==='POST'){
-      if(!auth.owner)return json(res,403,{ok:false,error:'PAYPING_OWNER_ONLY'});
       const body=req.body&&typeof req.body==='object'?req.body:{};
       const action=String(body.action||'').trim().toLowerCase();
       const order=String(body.order||'').trim();
       if(!order)return json(res,400,{ok:false,error:'ORDER_REQUIRED'});
 
+      const affiliateActor=!auth.owner&&String(auth.role||'').toLowerCase()==='affiliate';
+      if(!auth.owner&&!affiliateActor)return json(res,403,{ok:false,error:'PAYPING_FOLLOWUP_FORBIDDEN'});
+
+      const scopedDetail=await getPayPingTransactionDetail({...auth,orderNumber:order});
+      if(!scopedDetail)return json(res,404,{ok:false,error:'TRANSACTION_NOT_FOUND'});
+
       let actionResult=null;
       if(action==='payment_followup_send'){
-        actionResult=await sendPaymentFollowup(order,{manual:true});
+        actionResult=await sendPaymentFollowup(order,{
+          manual:true,
+          actorRole:auth.owner?'owner':'affiliate',
+          actorUserId:auth.userId,
+        });
       }else if(action==='payment_followup_check'){
         actionResult=await reconcilePaymentFollowup(order);
       }else if(action==='payment_followup_stop'){
+        if(!auth.owner)return json(res,403,{ok:false,error:'PAYPING_OWNER_ONLY'});
         actionResult=await stopPaymentFollowup(order,'OWNER_STOPPED');
       }else{
         return json(res,400,{ok:false,error:'UNKNOWN_PAYPING_ACTION'});
@@ -90,7 +100,16 @@ export default async function handler(req,res){
   }catch(error){
     console.error('[payping-data] failed:',error?.message);
     const code=String(error?.code||'PAYPING_DATA_FAILED');
-    const status=code==='PAYPING_OWNER_ONLY'?403:500;
-    return json(res,status,{ok:false,error:code,message:error?.message||'PayPing data failed.'});
+    const status=['PAYPING_OWNER_ONLY','PAYMENT_FOLLOWUP_FORBIDDEN','PAYPING_FOLLOWUP_FORBIDDEN'].includes(code)
+      ?403
+      :['PAYMENT_FOLLOWUP_COOLDOWN','PAYMENT_FOLLOWUP_LIMIT'].includes(code)
+        ?429
+        :500;
+    return json(res,status,{
+      ok:false,
+      error:code,
+      message:error?.message||'PayPing data failed.',
+      retryAt:error?.retryAt||null,
+    });
   }
 }

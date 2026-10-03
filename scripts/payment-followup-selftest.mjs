@@ -15,6 +15,10 @@ const {
   markSupportSubmissionCheckout,
 } = await import('../src/support/submissions.js');
 const {
+  ensureAffiliateProfile,
+  lockAffiliateReferral,
+} = await import('../src/affiliate/store.js');
+const {
   classifyPaymentStage,
   getPaymentFollowupInfo,
   stopPaymentFollowup,
@@ -43,12 +47,20 @@ await createPendingSupport({orderNumber:order,userId,username:'followup_test',am
 await markSupportIntentCreated(order,'pi_followup_selftest');
 await markSupportSubmissionCheckout(order,'https://example.test/pay','pi_followup_selftest');
 
+await ensureAffiliateProfile({userId:'999888777',username:'affiliate_test'});
+const refProfile=await ensureAffiliateProfile({userId:'999888777',username:'affiliate_test'});
+await lockAffiliateReferral({userId,username:'followup_test',referralCode:refProfile.referralCode});
 const info=await getPaymentFollowupInfo(order);
+const affiliateInfo=await getPaymentFollowupInfo(order,{viewerRole:'affiliate',viewerUserId:'999888777'});
 assert(info?.state==='ACTIVE','new followup should be active');
 assert(info?.stage==='CHECKOUT_PENDING','new checkout should classify checkout pending');
 assert(info?.followupCount===0,'new followup count should be zero');
 assert(info?.paymentUrlAvailable===true,'payment URL should be available');
 assert(Boolean(info?.nextFollowupAt),'next followup should exist');
+assert(affiliateInfo?.canFollowUp===true,'referrer affiliate should be able to follow up');
+assert(affiliateInfo?.followupCount===0,'affiliate followup count should start at zero');
+assert(affiliateInfo?.maxFollowups===2,'affiliate followup cap should be two');
+assert(affiliateInfo?.cooldownHours===8,'affiliate followup cooldown should be 8 hours');
 
 const stopped=await stopPaymentFollowup(order,'SELFTEST_STOP');
 assert(stopped?.state==='STOPPED','owner stop state failed');
@@ -106,11 +118,15 @@ must(followupModule,'followupRecipient','Telegram username or name lookup');
 must(followupModule,'Dah Bayar / Semak','review button');
 must(followupModule,'Tak Jadi','cancel button');
 must(followupModule,"keepPassiveAfterManual",'manual follow-up stays passive after cancel');
-must(followupModule,"manualCancelledFollowup",'manual follow-up for cancelled order');
+must(followupModule,"manualUnsuccessfulFollowup",'manual follow-up for unsuccessful order');
+must(followupModule,'AFFILIATE_FOLLOWUP_COOLDOWN_MS = 8 * 60 * 60 * 1000','affiliate 8 hour cooldown');
+must(followupModule,'AFFILIATE_MAX_FOLLOWUPS = 2','affiliate two follow-up limit');
+must(followupModule,'support_affiliate_followups','affiliate follow-up tracking');
 must(followupModule,"TELEGRAM_BOT_BLOCKED",'blocked bot error classification');
 must(followupModule,"last_delivery_status",'Telegram delivery persistence');
 must(followupModule,"Follow-up gagal — user telah block bot.",'friendly blocked bot message');
-must(paypingData,"action==='payment_followup_send'",'owner followup action');
+must(paypingData,"action==='payment_followup_send'",'followup action');
+must(paypingData,"actorRole:auth.owner?'owner':'affiliate'",'owner/affiliate followup actor');
 must(paypingData,"action==='payment_followup_check'",'owner reconcile action');
 must(paypingData,"action==='payment_followup_stop'",'owner stop action');
 must(detailPage,'Pending Payment Follow-up','owner UI card');
@@ -122,7 +138,9 @@ must(detailPage,"Telegram Bot",'Telegram bot status row');
 must(detailPage,"Bot Blocked",'blocked bot UI status');
 must(detailPage,"friendlyFollowupError",'friendly Telegram error mapping');
 must(detailPage,"class=\"toast\"",'top toast UI');
-must(detailPage,"['PAID','FAILED','EXPIRED','INTENT_FAILED','AMOUNT_MISMATCH']", 'cancelled follow-up remains enabled');
+must(detailPage,"const paid=String(d.transaction?.status||'').toUpperCase()==='PAID'",'unsuccessful follow-up remains enabled');
+must(detailPage,"String(d?.role||'').toLowerCase()==='affiliate'",'affiliate follow-up UI');
+must(detailPage,"$('stopFollowup').hidden=affiliate",'affiliate cannot stop global follow-up');
 must(promotion,'startPaymentFollowupScheduler','scheduler startup');
 
 console.log('PAYMENT_FOLLOWUP_SELFTEST_OK',JSON.stringify({
@@ -131,4 +149,5 @@ console.log('PAYMENT_FOLLOWUP_SELFTEST_OK',JSON.stringify({
   cancelled:cancelled.state,
   cancelledManualFollowup:cancelled.canFollowUp,
   reminderCap:2,
+  affiliateCooldownHours:affiliateInfo.cooldownHours,
 }));

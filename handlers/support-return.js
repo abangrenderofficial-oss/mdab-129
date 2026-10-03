@@ -2,6 +2,7 @@ import { reconcileSupportPayment } from '../src/support/reconcile.js';
 import { activateSupportSubmissionAfterPayment, getSupportSubmission } from '../src/support/submissions.js';
 import { sendMessage } from '../src/telegram.js';
 import { notifySuccessfulSupportPayment } from '../src/support/payment-detail.js';
+import { notifyWebPushSupportPayment } from '../src/support/webpush-payment.js';
 import { notifyNtfySupportPayment } from '../src/support/ntfy-payment.js';
 
 function firstQueryValue(value) {
@@ -144,6 +145,12 @@ export default async function handler(req, res) {
         submission = await getSupportSubmission(orderNumber).catch((error) => {
           console.warn('[support-return] support submission lookup failed:', error?.message);
           return null;
+        });
+      }
+
+      if (!reconciliation?.paid && orderNumber) {
+        await notifyWebPushSupportPayment(orderNumber).catch((error) => {
+          console.warn('[webpush-payment] return unsuccessful notification failed:', error?.message);
         });
       }
 

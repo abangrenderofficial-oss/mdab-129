@@ -7,6 +7,7 @@ import {
 } from './submissions.js';
 import { reconcileSupportPayment } from './reconcile.js';
 import { notifySuccessfulSupportPayment } from './payment-detail.js';
+import { notifyWebPushSupportPayment } from './webpush-payment.js';
 import { notifyNtfySupportPayment } from './ntfy-payment.js';
 import { notifyAffiliateCommission } from '../affiliate/notify.js';
 import { sendMessage, telegram } from '../telegram.js';
@@ -15,6 +16,8 @@ const FIRST_FOLLOWUP_MS = 15 * 60 * 1000;
 const SECOND_FOLLOWUP_MS = 3 * 60 * 60 * 1000;
 const CHECK_INTERVAL_MS = 60 * 1000;
 const MAX_FOLLOWUPS = 2;
+const AFFILIATE_FOLLOWUP_COOLDOWN_MS = 8 * 60 * 60 * 1000;
+const AFFILIATE_MAX_FOLLOWUPS = 2;
 const FINAL_ORDER_STATUSES = new Set([
   'PAID',
   'FAILED',
@@ -84,6 +87,18 @@ export async function ensurePaymentFollowupSchema() {
         )`,
         `CREATE INDEX IF NOT EXISTS idx_support_payment_followups_state
           ON support_payment_followups(environment, state, followup_count, last_followup_at)`,
+        `CREATE TABLE IF NOT EXISTS support_affiliate_followups (
+          environment TEXT NOT NULL,
+          order_number TEXT NOT NULL,
+          affiliate_user_id TEXT NOT NULL,
+          followup_count INTEGER NOT NULL DEFAULT 0,
+          last_followup_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (environment, order_number, affiliate_user_id)
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_support_affiliate_followups_user
+          ON support_affiliate_followups(environment, affiliate_user_id, last_followup_at)`,
       ], 'write');
 
       for (const statement of [
@@ -156,7 +171,8 @@ async function orderContext(orderNumber) {
                  COALESCE(f.last_error_code, '') AS last_error_code,
                  COALESCE(f.last_error, '') AS last_error,
                  f.review_at, f.stopped_at,
-                 COALESCE(f.stopped_reason, '') AS stopped_reason
+                 COALESCE(f.stopped_reason, '') AS stopped_reason,
+                 COALESCE(ap.referred_by_user_id, '') AS referrer_user_id
           FROM support_orders o
           LEFT JOIN support_submissions s
             ON s.environment = o.environment
@@ -164,6 +180,9 @@ async function orderContext(orderNumber) {
           LEFT JOIN support_payment_followups f
             ON f.environment = o.environment
            AND f.order_number = o.order_number
+          LEFT JOIN affiliate_profiles ap
+            ON ap.environment = o.environment
+           AND ap.telegram_user_id = o.telegram_user_id
           WHERE o.environment = ? AND o.order_number = ?
           LIMIT 1`,
     args: [env, String(orderNumber || '')],
@@ -308,6 +327,11 @@ export async function reconcilePaymentFollowup(orderNumber) {
 
   const fresh = await orderContext(orderNumber);
   const orderStatus = String(fresh?.status || row.status || '');
+  if (!status?.paid && orderNumber) {
+    await notifyWebPushSupportPayment(orderNumber).catch((error) => {
+      console.warn('[payment-followup] unsuccessful push notification failed:', error?.message);
+    });
+  }
   const resolved = FINAL_ORDER_STATUSES.has(orderStatus.toUpperCase()) || Boolean(status?.paid);
   return {
     paid: Boolean(status?.paid),
@@ -492,7 +516,74 @@ async function recordFollowupSent(orderNumber, messageId = '', { reactivate = tr
   return followupRow(orderNumber);
 }
 
-export async function sendPaymentFollowup(orderNumber, { manual = false } = {}) {
+async function affiliateFollowupState(orderNumber, affiliateUserId) {
+  await ensurePaymentFollowupSchema();
+  const db = await getSupportDb();
+  const env = currentSupportEnvironment();
+  const result = await db.execute({
+    sql: `SELECT followup_count, last_followup_at
+          FROM support_affiliate_followups
+          WHERE environment = ? AND order_number = ? AND affiliate_user_id = ?
+          LIMIT 1`,
+    args: [env, String(orderNumber || ''), String(affiliateUserId || '')],
+  });
+  const row = result.rows?.[0];
+  return {
+    count: Number(row?.followup_count || 0),
+    lastFollowupAt: row?.last_followup_at ? String(row.last_followup_at) : null,
+  };
+}
+
+async function affiliateFollowupGate(row, affiliateUserId) {
+  const actor = String(affiliateUserId || '').trim();
+  if (!actor || String(row?.referrer_user_id || '') !== actor) {
+    const error = new Error('Transaction ini bukan referral bawah affiliate account ini.');
+    error.code = 'PAYMENT_FOLLOWUP_FORBIDDEN';
+    throw error;
+  }
+
+  const state = await affiliateFollowupState(row.order_number, actor);
+  if (state.count >= AFFILIATE_MAX_FOLLOWUPS) {
+    const error = new Error('Follow-up affiliate untuk payment ini dah capai maksimum 2 kali.');
+    error.code = 'PAYMENT_FOLLOWUP_LIMIT';
+    throw error;
+  }
+
+  if (state.count >= 1 && state.lastFollowupAt) {
+    const nextAtMs = new Date(state.lastFollowupAt).getTime() + AFFILIATE_FOLLOWUP_COOLDOWN_MS;
+    if (Number.isFinite(nextAtMs) && nextAtMs > Date.now()) {
+      const error = new Error(`Follow-up kedua boleh dihantar selepas ${new Date(nextAtMs).toISOString()}.`);
+      error.code = 'PAYMENT_FOLLOWUP_COOLDOWN';
+      error.retryAt = new Date(nextAtMs).toISOString();
+      throw error;
+    }
+  }
+  return state;
+}
+
+async function recordAffiliateFollowupSent(orderNumber, affiliateUserId) {
+  await ensurePaymentFollowupSchema();
+  const db = await getSupportDb();
+  const env = currentSupportEnvironment();
+  const now = new Date().toISOString();
+  await db.execute({
+    sql: `INSERT INTO support_affiliate_followups (
+            environment, order_number, affiliate_user_id,
+            followup_count, last_followup_at, created_at, updated_at
+          ) VALUES (?, ?, ?, 1, ?, ?, ?)
+          ON CONFLICT(environment, order_number, affiliate_user_id) DO UPDATE SET
+            followup_count = support_affiliate_followups.followup_count + 1,
+            last_followup_at = excluded.last_followup_at,
+            updated_at = excluded.updated_at`,
+    args: [env, String(orderNumber || ''), String(affiliateUserId || ''), now, now, now],
+  });
+}
+
+export async function sendPaymentFollowup(orderNumber, {
+  manual = false,
+  actorRole = 'owner',
+  actorUserId = '',
+} = {}) {
   await ensureFollowupRow(orderNumber);
   let row = await orderContext(orderNumber);
   if (!row) {
@@ -502,13 +593,29 @@ export async function sendPaymentFollowup(orderNumber, { manual = false } = {}) 
   }
 
   const state = String(row.followup_state || 'ACTIVE').toUpperCase();
+  const affiliateActor = manual && String(actorRole || '').toLowerCase() === 'affiliate';
+  if (affiliateActor) {
+    if (state === 'REVIEW') {
+      const error = new Error('Payment ini sedang dalam review. Follow-up dihentikan sementara.');
+      error.code = 'PAYMENT_FOLLOWUP_REVIEW';
+      throw error;
+    }
+    await affiliateFollowupGate(row, actorUserId);
+  }
   if (!manual && ['STOPPED','REVIEW','RESOLVED'].includes(state)) {
     return { sent: false, reason: state.toLowerCase(), followup: await getPaymentFollowupInfo(orderNumber) };
   }
 
   const currentStatus = String(row.status || '').toUpperCase();
-  const manualCancelledFollowup = manual && ['CANCELLED','CANCELLED_BY_USER'].includes(currentStatus);
-  const checked = manualCancelledFollowup
+  const manualUnsuccessfulFollowup = manual && [
+    'FAILED',
+    'CANCELLED',
+    'CANCELLED_BY_USER',
+    'EXPIRED',
+    'INTENT_FAILED',
+    'AMOUNT_MISMATCH',
+  ].includes(currentStatus);
+  const checked = manualUnsuccessfulFollowup
     ? {
         paid: false,
         resolved: false,
@@ -519,7 +626,7 @@ export async function sendPaymentFollowup(orderNumber, { manual = false } = {}) 
           gatewayStatus: row.last_gateway_status,
           followupState: row.followup_state,
         }),
-        manualCancelledFollowup: true,
+        manualUnsuccessfulFollowup: true,
       }
     : await reconcilePaymentFollowup(orderNumber);
   if (checked.resolved || checked.paid) {
@@ -530,7 +637,7 @@ export async function sendPaymentFollowup(orderNumber, { manual = false } = {}) 
   if (!row?.telegram_user_id) {
     return { sent: false, reason: 'missing_user', followup: await getPaymentFollowupInfo(orderNumber) };
   }
-  if (!row?.payment_url) {
+  if (!manual && !row?.payment_url) {
     return { sent: false, reason: 'missing_payment_url', followup: await getPaymentFollowupInfo(orderNumber) };
   }
 
@@ -557,11 +664,17 @@ export async function sendPaymentFollowup(orderNumber, { manual = false } = {}) 
   await recordFollowupSent(orderNumber, sent?.message_id || '', {
     reactivate: !keepPassiveAfterManual,
   });
+  if (affiliateActor) {
+    await recordAffiliateFollowupSent(orderNumber, actorUserId);
+  }
   return {
     sent: true,
     messageId: sent?.message_id || null,
     reconciliation: checked,
-    followup: await getPaymentFollowupInfo(orderNumber),
+    followup: await getPaymentFollowupInfo(orderNumber, {
+      viewerRole: affiliateActor ? 'affiliate' : 'owner',
+      viewerUserId: affiliateActor ? actorUserId : '',
+    }),
   };
 }
 
@@ -670,20 +783,38 @@ export async function cancelPaymentFollowupByUser(orderNumber, userId) {
   return getPaymentFollowupInfo(orderNumber);
 }
 
-export async function getPaymentFollowupInfo(orderNumber) {
+export async function getPaymentFollowupInfo(orderNumber, {
+  viewerRole = 'owner',
+  viewerUserId = '',
+} = {}) {
   await ensureFollowupRow(orderNumber);
   const row = await orderContext(orderNumber);
   if (!row) return null;
-  const count = Number(row.followup_count || 0);
+  const ownerCount = Number(row.followup_count || 0);
   const state = String(row.followup_state || 'ACTIVE').toUpperCase();
-  const last = row.last_followup_at ? String(row.last_followup_at) : null;
-  let next = null;
-  if (state === 'ACTIVE' && count < MAX_FOLLOWUPS) {
-    const base = count === 0
+  const ownerLast = row.last_followup_at ? String(row.last_followup_at) : null;
+  let ownerNext = null;
+  if (state === 'ACTIVE' && ownerCount < MAX_FOLLOWUPS) {
+    const base = ownerCount === 0
       ? new Date(String(row.created_at || Date.now())).getTime() + FIRST_FOLLOWUP_MS
-      : new Date(String(last || row.created_at || Date.now())).getTime() + SECOND_FOLLOWUP_MS;
-    if (Number.isFinite(base)) next = new Date(base).toISOString();
+      : new Date(String(ownerLast || row.created_at || Date.now())).getTime() + SECOND_FOLLOWUP_MS;
+    if (Number.isFinite(base)) ownerNext = new Date(base).toISOString();
   }
+
+  const affiliateViewer = String(viewerRole || '').toLowerCase() === 'affiliate';
+  const affiliateState = affiliateViewer
+    ? await affiliateFollowupState(orderNumber, viewerUserId)
+    : { count: 0, lastFollowupAt: null };
+  let affiliateNext = null;
+  if (affiliateViewer && affiliateState.count === 1 && affiliateState.lastFollowupAt) {
+    const nextMs = new Date(affiliateState.lastFollowupAt).getTime() + AFFILIATE_FOLLOWUP_COOLDOWN_MS;
+    if (Number.isFinite(nextMs)) affiliateNext = new Date(nextMs).toISOString();
+  }
+  const affiliateOwnsReferral = !affiliateViewer
+    || String(row.referrer_user_id || '') === String(viewerUserId || '');
+  const affiliateReady = !affiliateNext || new Date(affiliateNext).getTime() <= Date.now();
+  const baseCanFollowUp = String(row.status || '').toUpperCase() !== 'PAID' && state !== 'REVIEW';
+
   return {
     state,
     stage: classifyPaymentStage({
@@ -692,10 +823,11 @@ export async function getPaymentFollowupInfo(orderNumber) {
       gatewayStatus: row.last_gateway_status,
       followupState: state,
     }),
-    followupCount: count,
-    maxFollowups: MAX_FOLLOWUPS,
-    lastFollowupAt: last,
-    nextFollowupAt: next,
+    followupCount: affiliateViewer ? affiliateState.count : ownerCount,
+    maxFollowups: affiliateViewer ? AFFILIATE_MAX_FOLLOWUPS : MAX_FOLLOWUPS,
+    lastFollowupAt: affiliateViewer ? affiliateState.lastFollowupAt : ownerLast,
+    nextFollowupAt: affiliateViewer ? affiliateNext : ownerNext,
+    cooldownHours: affiliateViewer ? 8 : null,
     reviewAt: row.review_at ? String(row.review_at) : null,
     stoppedAt: row.stopped_at ? String(row.stopped_at) : null,
     stoppedReason: String(row.stopped_reason || ''),
@@ -703,9 +835,13 @@ export async function getPaymentFollowupInfo(orderNumber) {
     telegramDeliveryStatus: String(row.last_delivery_status || ''),
     telegramErrorCode: String(row.last_error_code || ''),
     telegramError: String(row.last_error || ''),
-    canFollowUp: Boolean(row.payment_url)
-      && !['PAID','FAILED','EXPIRED','INTENT_FAILED','AMOUNT_MISMATCH'].includes(String(row.status || '').toUpperCase())
-      && state !== 'REVIEW',
+    canFollowUp: baseCanFollowUp
+      && (!affiliateViewer || (
+        affiliateOwnsReferral
+        && affiliateState.count < AFFILIATE_MAX_FOLLOWUPS
+        && affiliateReady
+      )),
+    affiliateOwnsReferral,
     paymentUrlAvailable: Boolean(row.payment_url),
   };
 }

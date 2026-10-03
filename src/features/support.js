@@ -21,6 +21,7 @@ import { sendSupportQuoteToFilter } from '../support/quote-filter.js';
 import { recordSupportAmountClick } from '../support/click-analytics.js';
 import { hasMinimumWords } from '../support/text-validation.js';
 import { notifySuccessfulSupportPayment } from '../support/payment-detail.js';
+import { notifyWebPushSupportPayment } from '../support/webpush-payment.js';
 import { notifyNtfySupportPayment } from '../support/ntfy-payment.js';
 import { notifyAffiliateCommission } from '../affiliate/notify.js';
 import {
@@ -555,6 +556,9 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
     );
   } catch (error) {
     await markSupportIntentFailed(orderNumber, error?.code || 'UNKNOWN').catch(() => {});
+    await notifyWebPushSupportPayment(orderNumber).catch((pushError) => {
+      console.warn('[webpush-payment] intent failure notification failed:', pushError?.message);
+    });
     console.error('[support] checkout failed:', error?.code, error?.status, error?.message, error?.details || '');
     await editSupportMessage(
       callbackQuery,

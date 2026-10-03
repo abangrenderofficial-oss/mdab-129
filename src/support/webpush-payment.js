@@ -258,18 +258,26 @@ export async function registerPushSubscription(code, subscription) {
   return persistPushSubscription(String(row.owner_user_id || ''), subscription);
 }
 
-async function activeSubscriptions() {
+async function activeSubscriptionsForUsers(userIds = []) {
   await ensureWebPushSchema();
+  const ids = [...new Set((userIds || [])
+    .map((value) => String(value || '').trim())
+    .filter((value) => /^\d+$/.test(value) && Number(value) > 0))];
+  if (!ids.length) return [];
+
   const db = await getSupportDb();
+  const placeholders = ids.map(() => '?').join(',');
   const result = await db.execute({
-    sql: `SELECT endpoint_hash, endpoint, p256dh, auth
+    sql: `SELECT endpoint_hash, endpoint, p256dh, auth, owner_user_id
           FROM support_push_subscriptions
           WHERE environment = ? AND disabled_at = ''
+            AND owner_user_id IN (${placeholders})
           ORDER BY updated_at DESC`,
-    args: [currentSupportEnvironment()],
+    args: [currentSupportEnvironment(), ...ids],
   });
   return (result.rows || []).map((row) => ({
     endpointHash: String(row.endpoint_hash || ''),
+    ownerUserId: String(row.owner_user_id || ''),
     subscription: {
       endpoint: String(row.endpoint || ''),
       keys: {
@@ -606,11 +614,15 @@ async function paymentRecord(orderNumber) {
                  o.amount_cents,
                  o.status,
                  o.paid_at,
-                 COALESCE(s.tier_label, '') AS tier_label
+                 COALESCE(s.tier_label, '') AS tier_label,
+                 COALESCE(p.referred_by_user_id, '') AS referrer_user_id
           FROM support_orders o
           LEFT JOIN support_submissions s
             ON s.environment = o.environment
            AND s.order_number = o.order_number
+          LEFT JOIN affiliate_profiles p
+            ON p.environment = o.environment
+           AND p.telegram_user_id = o.telegram_user_id
           WHERE o.environment = ?
             AND o.order_number = ?
           LIMIT 1`,
@@ -636,17 +648,34 @@ async function telegramDisplayName(userId, username = '') {
   return fallbackUsername ? `@${fallbackUsername}` : '-';
 }
 
-function notificationPayload({ userId, amount, name, tierLabel, paidAt, expiresAt, tag }) {
+function notificationPayload({ userId, amount, tierLabel, orderNumber, successful }) {
   const tierName = cleanText(tierLabel, 100)
     .replace(/^[^A-Za-z0-9]+/, '')
     .trim() || 'Supporter';
 
   return {
-    title: `Payment Received, ${tierName}`,
-    body: `ID ${userId} - RM ${amount} - Successfull 🎉`,
-    tag: cleanText(tag, 120),
-    url: '/ar-payment',
+    title: `Payment Receive, ${tierName}`,
+    body: [
+      'From PayPing!',
+      `ID ${userId} - RM ${amount} - ${successful ? 'successful 🎉' : 'unsuccessful 🥹'}`,
+    ].join('\n'),
+    tag: `payment-${cleanText(orderNumber, 100)}-${successful ? 'success' : 'unsuccessful'}`,
+    url: `/ar-payment/transaction?order=${encodeURIComponent(String(orderNumber || ''))}`,
   };
+}
+
+async function notificationRecipients(record = {}) {
+  const recipients = new Set();
+  const ownerId = String(process.env.BOT_OWNER_ID || '').trim();
+  if (/^\d+$/.test(ownerId) && Number(ownerId) > 0) recipients.add(ownerId);
+
+  const referrerId = String(record.referrer_user_id || '').trim();
+  if (/^\d+$/.test(referrerId) && Number(referrerId) > 0) recipients.add(referrerId);
+
+  const payerId = String(record.telegram_user_id || '').trim();
+  if (/^\d+$/.test(payerId) && Number(payerId) > 0) recipients.add(payerId);
+
+  return [...recipients];
 }
 
 export async function notifyWebPushSupportPayment(orderNumber) {
@@ -655,46 +684,50 @@ export async function notifyWebPushSupportPayment(orderNumber) {
   if (!isWebPushConfigured()) return { sent: 0, reason: 'not_configured' };
 
   const record = await paymentRecord(order);
-  if (!record || String(record.status || '') !== 'PAID' || !record.paid_at) {
-    return { sent: 0, reason: 'not_paid' };
-  }
+  if (!record) return { sent: 0, reason: 'order_not_found' };
 
-  const targets = await activeSubscriptions();
-  if (!targets.length) return { sent: 0, reason: 'no_subscribers' };
+  const status = String(record.status || '').trim().toUpperCase();
+  if (!status || status === 'CREATING') return { sent: 0, reason: 'not_ready' };
+
+  const recipientIds = await notificationRecipients(record);
+  const targets = await activeSubscriptionsForUsers(recipientIds);
+  if (!targets.length) return { sent: 0, reason: 'no_scoped_subscribers', recipients: recipientIds };
 
   const userId = String(record.telegram_user_id || '');
   const amount = (Number(record.amount_cents || 0) / 100).toFixed(2);
   const tierLabel = cleanText(record.tier_label, 100) || fallbackTier(record.amount_cents);
-  const name = await telegramDisplayName(userId, record.telegram_username);
-  const paidAt = String(record.paid_at || '');
-  const expiresAt = addOneCalendarYear(paidAt);
+  const successful = status === 'PAID' && Boolean(record.paid_at);
   const payload = notificationPayload({
     userId,
     amount,
-    name,
     tierLabel,
-    paidAt,
-    expiresAt,
-    tag: `payment-${order}`,
+    orderNumber: order,
+    successful,
   });
 
+  const deliveryKey = `order:${order}:${successful ? 'PAID' : status}`;
   let sent = 0;
   let failed = 0;
   for (const target of targets) {
-    const key = `order:${order}`;
-    if (!(await claimDelivery(key, target.endpointHash))) continue;
+    if (!(await claimDelivery(deliveryKey, target.endpointHash))) continue;
     try {
       await sendPayload(target, payload);
-      await markDelivery(key, target.endpointHash, 'SENT');
+      await markDelivery(deliveryKey, target.endpointHash, 'SENT');
       sent += 1;
     } catch (error) {
       failed += 1;
-      await markDelivery(key, target.endpointHash, 'FAILED', error?.message || 'send_failed').catch(() => {});
+      await markDelivery(deliveryKey, target.endpointHash, 'FAILED', error?.message || 'send_failed').catch(() => {});
       console.warn('[webpush-payment] delivery failed:', error?.statusCode || '', error?.message);
     }
   }
 
-  return { sent, failed };
+  return {
+    sent,
+    failed,
+    successful,
+    status,
+    recipients: recipientIds,
+  };
 }
 
 export async function sendWebPushTest(deviceToken) {

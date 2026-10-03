@@ -11,6 +11,24 @@ function clean(value, max = 120) {
   return String(value || '').trim().slice(0, max);
 }
 
+function paymentScope({ owner = false, role = 'user', userId = '' } = {}, alias = 'o') {
+  if (owner) return { sql: '', args: [] };
+  const id = String(userId || '').trim();
+  if (String(role || '').toLowerCase() === 'affiliate') {
+    return {
+      sql: ` AND EXISTS (
+        SELECT 1
+        FROM affiliate_profiles ap
+        WHERE ap.environment = ${alias}.environment
+          AND ap.telegram_user_id = ${alias}.telegram_user_id
+          AND ap.referred_by_user_id = ?
+      )`,
+      args: [id],
+    };
+  }
+  return { sql: ` AND ${alias}.telegram_user_id = ?`, args: [id] };
+}
+
 function transactionRow(row) {
   return {
     orderNumber: String(row.order_number || ''),
@@ -34,13 +52,12 @@ function transactionRow(row) {
   };
 }
 
-export async function getPayPingDashboard({ userId, owner = false, limit = 8 } = {}) {
+export async function getPayPingDashboard({ userId, owner = false, role = 'user', limit = 8 } = {}) {
   await Promise.all([ensureSubmissionSchema(), ensurePaymentFollowupSchema()]);
   const db = await getSupportDb();
   const env = currentSupportEnvironment();
-  const args = [env];
-  const scope = owner ? '' : ' AND o.telegram_user_id = ?';
-  if (!owner) args.push(String(userId || ''));
+  const scope = paymentScope({ userId, owner, role });
+  const args = [env, ...scope.args];
 
   const [summaryResult, recentResult] = await Promise.all([
     db.execute({
@@ -58,7 +75,7 @@ export async function getPayPingDashboard({ userId, owner = false, limit = 8 } =
                  AND date(datetime(o.paid_at, '+8 hours')) = date(datetime('now', '+8 hours'))
                 THEN 1 ELSE 0 END),0) AS today_count
             FROM support_orders o
-            WHERE o.environment = ?${scope}`,
+            WHERE o.environment = ?${scope.sql}`,
       args,
     }),
     db.execute({
@@ -72,7 +89,7 @@ export async function getPayPingDashboard({ userId, owner = false, limit = 8 } =
             LEFT JOIN support_submissions s
               ON s.environment = o.environment
              AND s.order_number = o.order_number
-            WHERE o.environment = ?${scope}
+            WHERE o.environment = ?${scope.sql}
             ORDER BY COALESCE(o.paid_at, o.created_at) DESC
             LIMIT ?`,
       args: [...args, Math.max(1, Math.min(25, Number(limit || 8)))],
@@ -97,6 +114,7 @@ export async function getPayPingDashboard({ userId, owner = false, limit = 8 } =
 export async function listPayPingTransactions({
   userId,
   owner = false,
+  role = 'user',
   status = 'ALL',
   search = '',
   limit = 50,
@@ -108,8 +126,9 @@ export async function listPayPingTransactions({
   const args = [env];
 
   if (!owner) {
-    clauses.push('o.telegram_user_id = ?');
-    args.push(String(userId || ''));
+    const scope = paymentScope({ userId, owner, role });
+    if (scope.sql) clauses.push(scope.sql.replace(/^\s*AND\s+/i, ''));
+    args.push(...scope.args);
   }
 
   const normalizedStatus = clean(status, 24).toUpperCase();
@@ -159,6 +178,7 @@ export async function listPayPingTransactions({
 export async function getPayPingTransactionDetail({
   userId,
   owner = false,
+  role = 'user',
   orderNumber = '',
 } = {}) {
   const order = clean(orderNumber, 120);
@@ -171,8 +191,9 @@ export async function getPayPingTransactionDetail({
   const clauses = ['o.environment = ?', 'o.order_number = ?'];
   const args = [env, order];
   if (!owner) {
-    clauses.push('o.telegram_user_id = ?');
-    args.push(String(userId || ''));
+    const scope = paymentScope({ userId, owner, role });
+    if (scope.sql) clauses.push(scope.sql.replace(/^\s*AND\s+/i, ''));
+    args.push(...scope.args);
   }
 
   const orderResult = await db.execute({
@@ -219,11 +240,18 @@ export async function getPayPingTransactionDetail({
       args: [env, order],
     }),
     db.execute({
-      sql: `SELECT status, last_error, updated_at
-            FROM support_webpush_delivery
-            WHERE environment = ? AND delivery_key = ?
-            ORDER BY updated_at DESC`,
-      args: [env, `order:${order}`],
+      sql: `SELECT d.status, d.last_error, d.updated_at
+            FROM support_webpush_delivery d
+            JOIN support_push_subscriptions ps
+              ON ps.environment = d.environment
+             AND ps.endpoint_hash = d.endpoint_hash
+            WHERE d.environment = ?
+              AND d.delivery_key LIKE ?
+              ${owner ? '' : 'AND ps.owner_user_id = ?'}
+            ORDER BY d.updated_at DESC`,
+      args: owner
+        ? [env, `order:${order}:%`]
+        : [env, `order:${order}:%`, String(userId || '')],
     }),
   ]);
 
@@ -241,10 +269,17 @@ export async function getPayPingTransactionDetail({
   const sentCount = pushRows.filter((item) => String(item.status || '') === 'SENT').length;
   const failedCount = pushRows.filter((item) => String(item.status || '') === 'FAILED').length;
 
-  const followup = owner ? await getPaymentFollowupInfo(order).catch(() => null) : null;
+  const affiliateViewer = !owner && String(role || '').toLowerCase() === 'affiliate';
+  const followup = (owner || affiliateViewer)
+    ? await getPaymentFollowupInfo(order, {
+        viewerRole: owner ? 'owner' : 'affiliate',
+        viewerUserId: String(userId || ''),
+      }).catch(() => null)
+    : null;
 
   return {
     owner,
+    role: String(role || 'user'),
     followup,
     transaction: {
       ...transaction,

@@ -116,19 +116,21 @@ function showToast(message,type='ok'){
  toastTimer=setTimeout(()=>{el.className='toast '+type},2600);
 }
 function renderFollowup(d){
- const f=d?.followup;if(!d?.owner||!f){$('followupCard').hidden=true;return}
+ const f=d?.followup;const affiliate=String(d?.role||'').toLowerCase()==='affiliate'&&!d?.owner;if((!d?.owner&&!affiliate)||!f){$('followupCard').hidden=true;return}
  $('followupCard').hidden=false;$('followupState').textContent=stageLabel(f.state);$('followupCount').textContent=String(f.followupCount||0)+' / '+String(f.maxFollowups||2);$('followupLast').textContent=date(f.lastFollowupAt);$('followupNext').textContent=date(f.nextFollowupAt);
- const terminal=['PAID','FAILED','EXPIRED','INTENT_FAILED','AMOUNT_MISMATCH'].includes(String(d.transaction?.status||'').toUpperCase());
- $('followupNow').disabled=terminal||!f.canFollowUp;$('checkStatus').disabled=terminal;$('stopFollowup').disabled=terminal||['STOPPED','RESOLVED'].includes(String(f.state||'').toUpperCase());
+ const paid=String(d.transaction?.status||'').toUpperCase()==='PAID';
+ $('followupNow').disabled=paid||!f.canFollowUp;$('checkStatus').disabled=paid;$('stopFollowup').hidden=affiliate;$('stopFollowup').disabled=paid||['STOPPED','RESOLVED'].includes(String(f.state||'').toUpperCase());
+ if(affiliate&&f.followupCount===1&&f.nextFollowupAt&&!f.canFollowUp){$('followupMsg').textContent='Follow-up kedua boleh dihantar selepas '+date(f.nextFollowupAt);}
+ else if(affiliate&&f.followupCount>=2){$('followupMsg').textContent='Follow-up affiliate untuk payment ini dah maksimum 2 kali.';}
 }
 async function followupAction(action){
  try{
   document.querySelectorAll('#followupCard button').forEach(b=>b.disabled=true);$('followupMsg').textContent='Updating…';
-  const r=await fetch('/api/payping-data',{method:'POST',headers:headers(true),body:JSON.stringify({action,order:currentOrder})});const d=await r.json();if(r.status===401){location.replace('/ar-payment/login');return}if(!r.ok||!d.ok)throw new Error(d.message||d.error||'Action failed.');
+  const r=await fetch('/api/payping-data',{method:'POST',headers:headers(true),body:JSON.stringify({action,order:currentOrder})});const d=await r.json();if(r.status===401){location.replace('/ar-payment/login');return}if(!r.ok||!d.ok){const err=new Error(d.message||d.error||'Action failed.');err.code=d.error;err.retryAt=d.retryAt;throw err;}
   const resultText=action==='payment_followup_send'?(d.actionResult?.sent?'Bot dah follow up user ✅':'Follow-up tak dihantar · '+stageLabel(d.actionResult?.reason||'status checked')):action==='payment_followup_check'?('Status checked · '+stageLabel(d.actionResult?.stage||d.actionResult?.orderStatus||'pending')):'Follow-up stopped ✅';
   $('followupMsg').textContent=resultText;showToast(resultText,d.actionResult?.sent||action!=='payment_followup_send'?'ok':'bad');
   renderDetail(d);
- }catch(e){const message=friendlyFollowupError(e.message||String(e));$('followupMsg').textContent=message;showToast(message,'bad');load()}
+ }catch(e){let message=friendlyFollowupError(e.message||String(e));if(e?.retryAt)message='Follow-up kedua belum boleh dihantar lagi.';$('followupMsg').textContent=message;showToast(message,'bad');load()}
 }
 function renderDetail(d){
  const t=d.transaction;currentOrder=t.orderNumber;$('orderTitle').textContent=t.orderNumber;$('amount').textContent=money(t.amount);$('tier').textContent=t.tierLabel||'Supporter';$('status').textContent=t.status||'-';$('status').className='badge '+String(t.status||'').toLowerCase();

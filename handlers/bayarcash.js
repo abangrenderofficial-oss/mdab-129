@@ -3,6 +3,7 @@ import { applyBayarcashTransaction } from '../src/support/store.js';
 import { activateSupportSubmissionAfterPayment, getSupportSubmission } from '../src/support/submissions.js';
 import { sendMessage } from '../src/telegram.js';
 import { notifySuccessfulSupportPayment } from '../src/support/payment-detail.js';
+import { notifyWebPushSupportPayment } from '../src/support/webpush-payment.js';
 import { notifyNtfySupportPayment } from '../src/support/ntfy-payment.js';
 import { notifyAffiliateCommission } from '../src/affiliate/notify.js';
 import { refreshSupportMonitorMessage } from '../src/support/monitor-publisher.js';
@@ -80,6 +81,12 @@ export default async function handler(req, res) {
     submission = await getSupportSubmission(result.orderNumber).catch((error) => {
       console.warn('[bayarcash] support submission lookup failed:', error?.message);
       return null;
+    });
+  }
+
+  if (result?.knownOrder && result?.orderNumber && !result?.paid) {
+    await notifyWebPushSupportPayment(result.orderNumber).catch((error) => {
+      console.warn('[webpush-payment] unsuccessful callback notification failed:', error?.message);
     });
   }
 

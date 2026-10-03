@@ -40,7 +40,7 @@ nav{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(sa
 </main>
 <nav><a href="/ar-payment/"><b>⌂</b>Home</a><a href="/ar-payment/transactions"><b>≡</b>Transactions</a><a href="/ar-payment/affiliate"><b>₿</b>Earn</a><a href="/ar-payment/settings"><b>⚙</b>Settings</a></nav>
 <script>
-const key='ar_payment_device_token_v1';const token=localStorage.getItem(key)||'';const $=id=>document.getElementById(id);
+const key='payping_auth_session_v1';const token=localStorage.getItem(key)||localStorage.getItem('ar_payment_device_token_v1')||'';const $=id=>document.getElementById(id);
 const headers=()=>({Authorization:'Bearer '+token});const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const money=v=>'RM'+(Number(v||0)||0).toFixed(2);
 function chart(el,rows,key,labelKey){

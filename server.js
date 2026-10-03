@@ -39,6 +39,7 @@ import {
 } from './src/payments/bayarcash.js';
 import { startSupportPromotionScheduler } from './src/support/promotion.js';
 import { deliverApprovedBacklog, isContentBridgeConfigured } from './src/support/content-bridge.js';
+import { refreshSupportMonitorMessage } from './src/support/monitor-publisher.js';
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 

@@ -31,11 +31,14 @@ export default async function handler(req, res) {
   const chatId = positiveId(body.chat_id);
   const userId = positiveId(body.user_id);
   const event = String(body.event || '').trim();
+  const completionKey = String(body.completion_key || '').trim().slice(0, 240);
   if (!chatId || !userId || event !== 'status_hq') {
     return json(res, 400, { ok: false, error: 'invalid_payload' });
   }
 
-  const payload = `${chatId}:${userId}:status_hq:v1`;
+  const payload = completionKey
+    ? `${chatId}:${userId}:status_hq:${completionKey}:v2`
+    : `${chatId}:${userId}:status_hq:v1`;
   const expected = createHmac('sha256', token).update(payload).digest('hex');
   const provided = req.headers['x-heavy-worker-signature'];
   if (!validSignature(provided, expected)) {
@@ -46,6 +49,7 @@ export default async function handler(req, res) {
     userId,
     chatId,
     label: 'premium hq heavy worker',
+    completionKey,
   });
 
   return json(res, 200, {
@@ -54,5 +58,6 @@ export default async function handler(req, res) {
     daily_force_marked: Boolean(completion?.dailyMarked),
     friday_marked: Boolean(completion?.fridayMarked),
     channel_prompted: Boolean(completion?.channelPrompted),
+    channel_counted: Boolean(completion?.channelCounted),
   });
 }

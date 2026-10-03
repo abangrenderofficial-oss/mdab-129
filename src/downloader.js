@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { chmod } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { positiveIntEnv } from './env-number.js';
 
 const execFileAsync = promisify(execFile);
 const TIKWM_API = 'https://www.tikwm.com/api/';
@@ -97,7 +98,7 @@ async function parseTikTok(url) {
         Accept: 'application/json',
         'User-Agent': 'Mozilla/5.0 (compatible; ARDownloader/1.0)',
       },
-      signal: AbortSignal.timeout(Number(process.env.DOWNLOADER_TIMEOUT_MS || 25000)),
+      signal: AbortSignal.timeout(positiveIntEnv('DOWNLOADER_TIMEOUT_MS', 25000)),
     });
   } catch (error) {
     const err = new Error(error?.message || 'TikWM request failed.');
@@ -372,7 +373,7 @@ async function parseWithYtDlp(url) {
     ];
 
     const { stdout } = await execFileAsync(binary, args, {
-      timeout: Number(process.env.DOWNLOADER_TIMEOUT_MS || 45000),
+      timeout: positiveIntEnv('DOWNLOADER_TIMEOUT_MS', 45000),
       maxBuffer: 12 * 1024 * 1024,
       env: { ...process.env, PATH: `${path.dirname(process.execPath)}:${process.env.PATH || ''}` },
     });

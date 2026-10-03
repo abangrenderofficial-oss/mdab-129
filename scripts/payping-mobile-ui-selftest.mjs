@@ -20,13 +20,15 @@ for (const page of pages) {
   must(source, 'PAYPING_MOBILE_REFERENCE_V1', page);
   must(source, 'body::before', page);
   must(source, 'border-bottom:1px solid rgba(255,255,255,.20)', page);
-  must(source, 'padding-top:calc(env(safe-area-inset-top,0px) + 18px)', page);
+  must(source, 'padding-right:calc(18px + env(safe-area-inset-right))', page);
+  must(source, 'padding-left:calc(18px + env(safe-area-inset-left))', page);
   must(source, '.title{font-size:24px;line-height:1.08}', page);
 }
 
 for (const page of pages.filter((p) => !p.endsWith('affiliate-admin-pwa.js'))) {
   const source = await readFile(page, 'utf8');
-  must(source, 'nav{height:68px}', page);
+  must(source, 'nav{z-index:1002;left:0;transform:none;bottom:0;width:100%', page);
+  must(source, 'background:#07070d;border:0;border-radius:0;backdrop-filter:none;box-shadow:none', page);
   must(source, 'nav a{font-size:12px;gap:4px}', page);
   must(source, 'nav b{font-size:24px;line-height:1}', page);
 }

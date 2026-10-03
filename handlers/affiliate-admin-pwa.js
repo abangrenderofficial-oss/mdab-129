@@ -19,7 +19,7 @@ const PAGE = String.raw`<!doctype html>
 /* PAYPING_MOBILE_REFERENCE_V1 */
 @media(max-width:619px){
   :root{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI",sans-serif}
-  body{padding-top:calc(env(safe-area-inset-top,0px) + 18px)}
+  body{padding-top:calc(env(safe-area-inset-top,0px) + 18px);padding-right:calc(18px + env(safe-area-inset-right));padding-left:calc(18px + env(safe-area-inset-left))}
   body::before{content:"";position:fixed;z-index:1000;left:0;right:0;top:0;height:calc(env(safe-area-inset-top,0px) + 18px);background:linear-gradient(180deg,rgba(39,16,79,.995),rgba(29,14,56,.985));border-bottom:1px solid rgba(255,255,255,.20);pointer-events:none}
   main{padding-top:14px}
   .title{font-size:24px;line-height:1.08}

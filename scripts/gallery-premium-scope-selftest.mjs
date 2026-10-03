@@ -20,7 +20,7 @@ requireText(socialStatus, "const pixelFormat = galleryCompatible ? 'yuv420p' : '
 requireText(socialStatus, "pixelFormat = 'yuv420p10le'", 'encoder default remains Main10');
 
 const socialHelperStart = feature.indexOf('async function prepareStatusFromSourceUrl');
-const socialHelperEnd = feature.indexOf('export async function processStatusFromLink');
+const socialHelperEnd = feature.indexOf('async function prepareStatusFromTelegramFile');
 if (socialHelperStart < 0 || socialHelperEnd <= socialHelperStart) {
   throw new Error('Could not isolate social Premium+ helper for verification');
 }

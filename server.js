@@ -1,25 +1,25 @@
 import http from 'node:http';
 import { URL } from 'node:url';
 
-import healthHandler from './api/health.js';
-import telegramHandler from './api/telegram.js';
-import setupHandler from './api/setup.js';
-import setupWebhookHandler from './api/setup-webhook.js';
-import mediaHandler from './api/media.js';
-import diagnosticHandler from './api/diagnostic.js';
-import statusDiagnosticHandler from './api/status-diagnostic.js';
-import bayarcashHandler from './api/bayarcash.js';
-import supportReturnHandler from './api/support-return.js';
-import premiumHqSuccessHandler from './api/premium-hq-success.js';
-import contentBridgeConnectHandler from './api/content-bridge-connect.js';
-import contentBridgeVerifyHandler from './api/content-bridge-verify.js';
-import paymentPushHandler from './api/payment-push.js';
+import healthHandler from './handlers/health.js';
+import telegramHandler from './handlers/telegram.js';
+import setupHandler from './handlers/setup.js';
+import setupWebhookHandler from './handlers/setup-webhook.js';
+import mediaHandler from './handlers/media.js';
+import diagnosticHandler from './handlers/diagnostic.js';
+import statusDiagnosticHandler from './handlers/status-diagnostic.js';
+import bayarcashHandler from './handlers/bayarcash.js';
+import supportReturnHandler from './handlers/support-return.js';
+import premiumHqSuccessHandler from './handlers/premium-hq-success.js';
+import contentBridgeConnectHandler from './handlers/content-bridge-connect.js';
+import contentBridgeVerifyHandler from './handlers/content-bridge-verify.js';
+import paymentPushHandler from './handlers/payment-push.js';
 import {
   paymentPwaPageHandler,
   paymentPwaManifestHandler,
   paymentPwaServiceWorkerHandler,
   paymentPwaIconHandler,
-} from './api/payment-pwa.js';
+} from './handlers/payment-pwa.js';
 import {
   getBayarcashPortalDiagnostic,
   isBayarcashConfigured,

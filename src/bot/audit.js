@@ -40,6 +40,9 @@ function dailyForceAuditLine(status) {
   const daily = status?.dailyForce;
   if (!daily) return '🔒 Daily Force: -';
   if (daily.state === 'EXEMPT_SUPPORTER') return '🔒 Daily Force: EXEMPT (supporter)';
+  if (daily.state === 'PAUSED_FRIDAY') {
+    return `⏸ Daily Force: PAUSED FRIDAY · Cycle ${daily.cycleId} · Friday Support System handle`;
+  }
   if (daily.state === 'LOCKED') {
     const anomaly = daily.anomaly ? ' ⚠️ ANOMALY' : '';
     return `🔒 Daily Force: LOCKED · Cycle ${daily.cycleId} · Success ${daily.successCount}${anomaly}`;

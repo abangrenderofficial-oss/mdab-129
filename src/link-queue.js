@@ -43,7 +43,12 @@ async function runLinkJob({ message, context, url, platform, statusMode, fridayC
     if (statusMode) {
       const completed = await processStatusFromLink(chatId, url, platform, context.fence);
       if (completed) {
-        await recordPremiumHqSuccess({ userId, chatId, label: 'premium hq status link' });
+        await recordPremiumHqSuccess({
+          userId,
+          chatId,
+          label: 'premium hq status link',
+          completionKey: `link:${chatId}:${String(message?.message_id || '')}:status_hq`,
+        });
       } else {
         if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
         if (dailyClaimed) await releaseDailyForceUsageAttempt(userId).catch(() => {});

@@ -1,6 +1,7 @@
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { getActiveSupporterTitle } from './community-store.js';
 import { ensureSubmissionSchema } from './submissions.js';
+import { malaysiaSupportSchedule } from './daily-force-schedule.js';
 
 let schemaPromise = null;
 
@@ -105,8 +106,18 @@ async function dailyForceState(userId) {
     });
     const enabled = Number(mode.rows?.[0]?.enabled || 0) === 1;
     const cycleId = Math.max(1, Number(mode.rows?.[0]?.cycle_id || 1));
+    const schedule = malaysiaSupportSchedule();
     if (!enabled) {
-      return { enabled: false, cycleId, usedOnce: false, useClaimed: false, successCount: 0 };
+      return {
+        enabled: false,
+        cycleId,
+        usedOnce: false,
+        useClaimed: false,
+        successCount: 0,
+        windowActive: false,
+        pausedForFriday: false,
+        weekday: schedule.weekday,
+      };
     }
 
     const usage = await db.execute({
@@ -124,10 +135,23 @@ async function dailyForceState(userId) {
       useClaimed: Number(row.use_claimed || 0) === 1,
       promptSent: Number(row.prompt_sent || 0) === 1,
       successCount: Math.max(0, Number(row.success_count || 0)),
+      windowActive: schedule.dailyForceWindowActive,
+      pausedForFriday: schedule.isFriday,
+      weekday: schedule.weekday,
     };
   } catch (error) {
     if (/no such table|no such column/i.test(String(error?.message || ''))) {
-      return { enabled: false, cycleId: 0, usedOnce: false, useClaimed: false, successCount: 0 };
+      const schedule = malaysiaSupportSchedule();
+      return {
+        enabled: false,
+        cycleId: 0,
+        usedOnce: false,
+        useClaimed: false,
+        successCount: 0,
+        windowActive: false,
+        pausedForFriday: false,
+        weekday: schedule.weekday,
+      };
     }
     throw error;
   }
@@ -186,8 +210,9 @@ export async function getSupportMonitorUserStatus(userId) {
 
   let dailyState = 'OFF';
   if (supporter) dailyState = 'EXEMPT_SUPPORTER';
-  else if (daily.enabled && (daily.usedOnce || daily.useClaimed)) dailyState = 'LOCKED';
-  else if (daily.enabled) dailyState = 'FREE_USE_AVAILABLE';
+  else if (daily.enabled && daily.pausedForFriday) dailyState = 'PAUSED_FRIDAY';
+  else if (daily.enabled && daily.windowActive && (daily.usedOnce || daily.useClaimed)) dailyState = 'LOCKED';
+  else if (daily.enabled && daily.windowActive) dailyState = 'FREE_USE_AVAILABLE';
 
   return {
     userId: id,
@@ -247,6 +272,8 @@ export async function getSupportMonitorReport(limit = 50) {
   const ids = await knownUserIds(limit);
   const users = (await Promise.all(ids.map((id) => getSupportMonitorUserStatus(id))))
     .filter(Boolean);
+  const schedule = malaysiaSupportSchedule();
+  const firstDaily = users.find((user) => user?.dailyForce)?.dailyForce || null;
 
   return {
     users,
@@ -255,6 +282,9 @@ export async function getSupportMonitorReport(limit = 50) {
     locked: users.filter((user) => !user.support.active && user.dailyForce.state === 'LOCKED'),
     anomalies: users.filter((user) => user.dailyForce.anomaly),
     dailyForceEnabled: users.some((user) => user.dailyForce.enabled),
+    dailyForceWindowActive: firstDaily?.enabled ? Boolean(firstDaily.windowActive) : schedule.dailyForceWindowActive,
+    dailyForcePausedForFriday: firstDaily?.enabled ? Boolean(firstDaily.pausedForFriday) : false,
+    weekday: schedule.weekday,
     cycleId: users.find((user) => user.dailyForce.enabled)?.dailyForce?.cycleId || 0,
     limit: Math.max(1, Math.min(80, Number(limit || 50))),
   };

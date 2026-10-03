@@ -5,10 +5,7 @@ import { adminCommandMenuText, commandMenuText, startText } from '../src/bot/com
 import { handleConnectCommand, processAuditDelete, setMirrorWebhook } from '../src/bot/audit.js';
 import { handleTotalUserCommand, recordUsage } from '../src/bot/stats.js';
 import { resetUserHeavyQueue } from '../src/bot/user-job-queue.js';
-import {
-  rejectNonOwnerGroupCallback,
-  rejectNonOwnerGroupMessage,
-} from '../src/bot/group-owner-guard.js';
+import { rejectNonOwnerGroupCallback, rejectNonOwnerGroupMessage } from '../src/bot/group-owner-guard.js';
 import {
   processGalleryUploadWithSupport,
   processHqLabBeforeMedia,
@@ -181,12 +178,8 @@ export default async function handler(req, res) {
       await trackSupportMonitorActor(actor, actorChatType);
     }
 
-    if (message && await rejectNonOwnerGroupMessage(message)) {
-      return json(res, 200, { ok: true, ignored: 'group_owner_only' });
-    }
-    if (callbackQuery && await rejectNonOwnerGroupCallback(callbackQuery)) {
-      return json(res, 200, { ok: true, ignored: 'group_owner_only' });
-    }
+    if (message && await rejectNonOwnerGroupMessage(message)) return json(res, 200, { ok: true, ignored: 'group_owner_only' });
+    if (callbackQuery && await rejectNonOwnerGroupCallback(callbackQuery)) return json(res, 200, { ok: true, ignored: 'group_owner_only' });
 
     const command = commandFromMessage(message);
     if (command === '/menu') {

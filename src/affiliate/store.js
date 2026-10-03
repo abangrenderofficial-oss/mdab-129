@@ -332,6 +332,14 @@ export async function getAffiliateDashboard({ userId, username = '' } = {}) {
 
 export async function createAffiliateWithdrawal({ userId, username = '' } = {}) {
   const profile = await ensureAffiliateProfile({ userId, username });
+  const payoutProfile = await getAffiliatePayoutProfile({ userId: profile.userId });
+  if (!payoutProfile?.configured || payoutProfile?.readable === false) {
+    return {
+      created: false,
+      reason: 'payout_profile_required',
+    };
+  }
+
   const db = await getSupportDb();
   const environment = currentSupportEnvironment();
   const tx = await db.transaction('write');

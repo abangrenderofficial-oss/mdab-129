@@ -76,6 +76,17 @@ function malaysiaParts(date = new Date()) {
   };
 }
 
+export function supportChannelScheduleState(date = new Date()) {
+  const parts = malaysiaParts(date);
+  return {
+    ...parts,
+    due: channelTimeReached(parts),
+    scheduledHour: channelPromoHour(),
+    scheduledMinute: channelPromoMinute(),
+    timezone: MALAYSIA_TIMEZONE,
+  };
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

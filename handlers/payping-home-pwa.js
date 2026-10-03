@@ -30,7 +30,7 @@ nav{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(sa
 <div class="stat"><div class="k">Pending</div><div id="pendingCount" class="v">0</div></div>
 <div class="stat"><div class="k">All Transactions</div><div id="totalCount" class="v">0</div></div>
 </section>
-<section class="card"><div class="cardTitle">Quick Actions</div><div class="quick"><a class="primary" href="/ar-payment/transactions">Transactions</a><a href="/ar-payment/affiliate">Affiliate / Earn</a><a href="/ar-payment/notifications">Notifications</a><a href="/ar-payment/settings">Settings / Account</a></div></section>
+<section class="card"><div class="cardTitle">Quick Actions</div><div class="quick"><a class="primary" href="/ar-payment/transactions">Transactions</a><a href="/ar-payment/affiliate">Affiliate / Earn</a><a href="/ar-payment/notifications">Notifications</a><a href="/ar-payment/settings">Settings / Account</a><a id="analyticsQuick" href="/ar-payment/analytics" hidden>Analytics / Reports</a></div></section>
 <section class="card"><div class="line"><div class="cardTitle">Recent Payments</div><a href="/ar-payment/transactions" style="font-size:11px;color:#bfaeff;text-decoration:none">View all</a></div><div id="recent" class="list"></div></section>
 </div>
 
@@ -52,7 +52,7 @@ function refreshConnection(){const t=token();$('test').disabled=!t;$('dot').clas
 async function loadDashboard(){
  const t=token();if(!t){$('dashLoading').innerHTML='<div class="empty">Connect PayPing notifications untuk buka dashboard.</div>';$('scope').textContent='Not connected';return}
  try{const r=await fetch('/api/payping-data?view=dashboard',{headers:{Authorization:'Bearer '+t}});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Dashboard unavailable.');
- const s=d.summary;$('scope').textContent=d.owner?'Merchant view':'My view';$('todayReceived').textContent=money(s.todayReceived);$('todayCount').textContent=s.todayTransactions+' successful payments today';$('totalReceived').textContent=money(s.totalReceived);$('paidCount').textContent=s.paidTransactions;$('pendingCount').textContent=s.pendingTransactions;$('totalCount').textContent=s.totalTransactions;
+ const s=d.summary;$('scope').textContent=d.owner?'Merchant view':'My view';$('analyticsQuick').hidden=!d.owner;$('todayReceived').textContent=money(s.todayReceived);$('todayCount').textContent=s.todayTransactions+' successful payments today';$('totalReceived').textContent=money(s.totalReceived);$('paidCount').textContent=s.paidTransactions;$('pendingCount').textContent=s.pendingTransactions;$('totalCount').textContent=s.totalTransactions;
  $('recent').innerHTML=d.recent.length?d.recent.map(t=>'<a class="tx" href="/ar-payment/transaction?order='+encodeURIComponent(t.orderNumber)+'"><div class="line"><div><div class="name">'+esc(t.displayName||t.username||('ID '+t.userId))+'</div><div class="meta">'+esc(t.tierLabel)+' · '+date(t.paidAt||t.createdAt)+' · Details →</div></div><div style="text-align:right"><div class="amount">'+money(t.amount)+'</div><span class="badge '+esc(t.status.toLowerCase())+'">'+esc(t.status)+'</span></div></div></a>').join(''):'<div class="empty">No payments yet.</div>';
  $('dashLoading').hidden=true;$('dashboard').hidden=false;
  }catch(e){$('dashLoading').innerHTML='<div class="error">'+esc(e.message||String(e))+'</div>'}

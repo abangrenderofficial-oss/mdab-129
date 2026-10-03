@@ -21,6 +21,7 @@ import payPingNotificationsPage from './handlers/payping-notifications-pwa.js';
 import payPingSettingsPage from './handlers/payping-settings-pwa.js';
 import payPingTransactionsPage from './handlers/payping-transactions-pwa.js';
 import payPingTransactionDetailPage from './handlers/payping-transaction-detail-pwa.js';
+import payPingAnalyticsPage from './handlers/payping-analytics-pwa.js';
 import affiliateWebHandler from './handlers/affiliate-web.js';
 import affiliateAdminHandler from './handlers/affiliate-admin.js';
 import affiliateAdminPageHandler from './handlers/affiliate-admin-pwa.js';
@@ -65,6 +66,8 @@ const routes = new Map([
   ['/ar-payment/transactions/', payPingTransactionsPage],
   ['/ar-payment/transaction', payPingTransactionDetailPage],
   ['/ar-payment/transaction/', payPingTransactionDetailPage],
+  ['/ar-payment/analytics', payPingAnalyticsPage],
+  ['/ar-payment/analytics/', payPingAnalyticsPage],
   ['/api/affiliate-web', affiliateWebHandler],
   ['/api/affiliate-admin', affiliateAdminHandler],
   ['/ar-payment/affiliate/admin', affiliateAdminPageHandler],

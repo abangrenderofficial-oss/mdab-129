@@ -269,3 +269,212 @@ export async function getPayPingTransactionDetail({
     },
   };
 }
+
+
+function analyticsRange(value) {
+  const key = clean(value, 16).toLowerCase();
+  if (key === '7d') return { key, days: 7, modifier: '-6 days', label: 'Last 7 days' };
+  if (key === '90d') return { key, days: 90, modifier: '-89 days', label: 'Last 90 days' };
+  return { key: '30d', days: 30, modifier: '-29 days', label: 'Last 30 days' };
+}
+
+function paidRangeSql(alias, range) {
+  return `${alias}.status = 'PAID'
+    AND date(datetime(${alias}.paid_at, '+8 hours'))
+      >= date(datetime('now', '+8 hours'), '${range.modifier}')`;
+}
+
+export async function getPayPingAnalytics({ owner = false, range = '30d' } = {}) {
+  if (!owner) {
+    const error = new Error('PayPing Analytics hanya untuk merchant owner.');
+    error.code = 'PAYPING_OWNER_ONLY';
+    throw error;
+  }
+
+  await ensureSubmissionSchema();
+  const db = await getSupportDb();
+  const env = currentSupportEnvironment();
+  const selected = analyticsRange(range);
+  const paidScope = paidRangeSql('o', selected);
+
+  const [
+    summaryResult,
+    dailyResult,
+    monthlyResult,
+    tierResult,
+    supportersResult,
+    affiliateResult,
+  ] = await Promise.all([
+    db.execute({
+      sql: `SELECT
+              COUNT(*) AS paid_count,
+              COALESCE(SUM(o.amount_cents), 0) AS received_cents,
+              COALESCE(AVG(o.amount_cents), 0) AS average_cents,
+              COUNT(DISTINCT o.telegram_user_id) AS unique_supporters
+            FROM support_orders o
+            WHERE o.environment = ? AND ${paidScope}`,
+      args: [env],
+    }),
+    db.execute({
+      sql: `SELECT
+              date(datetime(o.paid_at, '+8 hours')) AS bucket,
+              COUNT(*) AS payment_count,
+              COALESCE(SUM(o.amount_cents), 0) AS amount_cents
+            FROM support_orders o
+            WHERE o.environment = ? AND ${paidScope}
+            GROUP BY bucket
+            ORDER BY bucket ASC`,
+      args: [env],
+    }),
+    db.execute({
+      sql: `SELECT
+              strftime('%Y-%m', datetime(o.paid_at, '+8 hours')) AS bucket,
+              COUNT(*) AS payment_count,
+              COALESCE(SUM(o.amount_cents), 0) AS amount_cents
+            FROM support_orders o
+            WHERE o.environment = ?
+              AND o.status = 'PAID'
+              AND date(datetime(o.paid_at, '+8 hours'))
+                >= date(datetime('now', '+8 hours'), 'start of month', '-11 months')
+            GROUP BY bucket
+            ORDER BY bucket ASC`,
+      args: [env],
+    }),
+    db.execute({
+      sql: `SELECT
+              COALESCE(NULLIF(s.tier_label, ''), 'Supporter') AS tier_label,
+              COUNT(*) AS payment_count,
+              COALESCE(SUM(o.amount_cents), 0) AS amount_cents
+            FROM support_orders o
+            LEFT JOIN support_submissions s
+              ON s.environment = o.environment
+             AND s.order_number = o.order_number
+            WHERE o.environment = ? AND ${paidScope}
+            GROUP BY tier_label
+            ORDER BY amount_cents DESC, payment_count DESC`,
+      args: [env],
+    }),
+    db.execute({
+      sql: `SELECT
+              o.telegram_user_id,
+              MAX(COALESCE(NULLIF(s.display_name, ''), '')) AS display_name,
+              MAX(COALESCE(NULLIF(o.telegram_username, ''), '')) AS telegram_username,
+              COUNT(*) AS payment_count,
+              COALESCE(SUM(o.amount_cents), 0) AS amount_cents
+            FROM support_orders o
+            LEFT JOIN support_submissions s
+              ON s.environment = o.environment
+             AND s.order_number = o.order_number
+            WHERE o.environment = ? AND ${paidScope}
+            GROUP BY o.telegram_user_id
+            ORDER BY amount_cents DESC, payment_count DESC
+            LIMIT 10`,
+      args: [env],
+    }),
+    db.execute({
+      sql: `SELECT
+              COALESCE(SUM(a.commission_cents), 0) AS generated_cents,
+              COALESCE(SUM(CASE WHEN a.status = 'PAID' THEN a.commission_cents ELSE 0 END), 0) AS paid_cents,
+              COUNT(*) AS commission_count
+            FROM affiliate_commissions a
+            JOIN support_orders o
+              ON o.environment = a.environment
+             AND o.order_number = a.order_number
+            WHERE a.environment = ? AND ${paidScope}`,
+      args: [env],
+    }),
+  ]);
+
+  const summary = summaryResult.rows?.[0] || {};
+  const affiliate = affiliateResult.rows?.[0] || {};
+  const receivedCents = Number(summary.received_cents || 0);
+  const affiliateCents = Number(affiliate.generated_cents || 0);
+
+  return {
+    range: selected,
+    summary: {
+      received: money(receivedCents),
+      payments: Number(summary.paid_count || 0),
+      averagePayment: money(summary.average_cents),
+      uniqueSupporters: Number(summary.unique_supporters || 0),
+      affiliateCost: money(affiliateCents),
+      affiliatePaid: money(affiliate.paid_cents),
+      affiliateCommissions: Number(affiliate.commission_count || 0),
+      netAfterAffiliate: money(Math.max(0, receivedCents - affiliateCents)),
+    },
+    daily: (dailyResult.rows || []).map((row) => ({
+      date: String(row.bucket || ''),
+      payments: Number(row.payment_count || 0),
+      amount: money(row.amount_cents),
+    })),
+    monthly: (monthlyResult.rows || []).map((row) => ({
+      month: String(row.bucket || ''),
+      payments: Number(row.payment_count || 0),
+      amount: money(row.amount_cents),
+    })),
+    tiers: (tierResult.rows || []).map((row) => ({
+      tier: String(row.tier_label || 'Supporter'),
+      payments: Number(row.payment_count || 0),
+      amount: money(row.amount_cents),
+    })),
+    topSupporters: (supportersResult.rows || []).map((row) => ({
+      userId: String(row.telegram_user_id || ''),
+      displayName: String(row.display_name || ''),
+      username: String(row.telegram_username || ''),
+      payments: Number(row.payment_count || 0),
+      amount: money(row.amount_cents),
+    })),
+  };
+}
+
+export async function getPayPingAnalyticsExport({ owner = false, range = '30d', limit = 5000 } = {}) {
+  if (!owner) {
+    const error = new Error('PayPing Reports hanya untuk merchant owner.');
+    error.code = 'PAYPING_OWNER_ONLY';
+    throw error;
+  }
+
+  await ensureSubmissionSchema();
+  const db = await getSupportDb();
+  const env = currentSupportEnvironment();
+  const selected = analyticsRange(range);
+  const paidScope = paidRangeSql('o', selected);
+  const safeLimit = Math.max(1, Math.min(5000, Number(limit || 5000)));
+
+  const result = await db.execute({
+    sql: `SELECT o.order_number, o.gateway_transaction_id, o.telegram_user_id,
+                 o.telegram_username, o.amount_cents, o.status, o.paid_at,
+                 COALESCE(s.display_name, '') AS display_name,
+                 COALESCE(s.tier_label, '') AS tier_label,
+                 COALESCE(a.commission_cents, 0) AS affiliate_cents,
+                 COALESCE(a.status, '') AS affiliate_status
+          FROM support_orders o
+          LEFT JOIN support_submissions s
+            ON s.environment = o.environment
+           AND s.order_number = o.order_number
+          LEFT JOIN affiliate_commissions a
+            ON a.environment = o.environment
+           AND a.order_number = o.order_number
+          WHERE o.environment = ? AND ${paidScope}
+          ORDER BY o.paid_at DESC
+          LIMIT ?`,
+    args: [env, safeLimit],
+  });
+
+  return {
+    range: selected,
+    rows: (result.rows || []).map((row) => ({
+      orderNumber: String(row.order_number || ''),
+      transactionId: String(row.gateway_transaction_id || ''),
+      userId: String(row.telegram_user_id || ''),
+      username: String(row.telegram_username || ''),
+      displayName: String(row.display_name || ''),
+      tier: String(row.tier_label || '') || 'Supporter',
+      amount: money(row.amount_cents),
+      status: String(row.status || ''),
+      paidAt: String(row.paid_at || ''),
+      affiliateCommission: money(row.affiliate_cents),
+      affiliateStatus: String(row.affiliate_status || ''),
+    })),
+  };
+}

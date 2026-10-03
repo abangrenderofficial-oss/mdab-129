@@ -275,6 +275,60 @@ export async function createAffiliateWithdrawal({ userId, username = '' } = {}) 
   }
 }
 
+export async function getAffiliateActivity({ userId, username = '', limit = 30 } = {}) {
+  const profile = await ensureAffiliateProfile({ userId, username });
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const now = new Date().toISOString();
+  await releaseMaturedCommissions(db, environment, now);
+
+  const safeLimit = Math.max(1, Math.min(100, Number(limit || 30)));
+
+  const [commissionResult, withdrawalResult] = await Promise.all([
+    db.execute({
+      sql: `SELECT commission_id, order_number, gross_cents, rate_bps,
+                   commission_cents, status, available_at, payout_request_id,
+                   created_at, updated_at
+            FROM affiliate_commissions
+            WHERE environment = ? AND referrer_user_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?`,
+      args: [environment, profile.userId, safeLimit],
+    }),
+    db.execute({
+      sql: `SELECT request_id, amount_cents, status, created_at, updated_at, paid_at
+            FROM affiliate_withdrawals
+            WHERE environment = ? AND telegram_user_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?`,
+      args: [environment, profile.userId, safeLimit],
+    }),
+  ]);
+
+  return {
+    commissions: (commissionResult.rows || []).map((row) => ({
+      commissionId: String(row.commission_id || ''),
+      orderNumber: String(row.order_number || ''),
+      grossAmount: money(row.gross_cents),
+      commissionAmount: money(row.commission_cents),
+      ratePercent: (Number(row.rate_bps || 0) / 100).toFixed(2).replace(/\.00$/, ''),
+      status: String(row.status || ''),
+      availableAt: row.available_at ? String(row.available_at) : null,
+      payoutRequestId: row.payout_request_id ? String(row.payout_request_id) : null,
+      createdAt: String(row.created_at || ''),
+      updatedAt: String(row.updated_at || ''),
+    })),
+    withdrawals: (withdrawalResult.rows || []).map((row) => ({
+      requestId: String(row.request_id || ''),
+      amount: money(row.amount_cents),
+      status: String(row.status || ''),
+      createdAt: String(row.created_at || ''),
+      updatedAt: String(row.updated_at || ''),
+      paidAt: row.paid_at ? String(row.paid_at) : null,
+    })),
+  };
+}
+
 export async function markAffiliateWithdrawal(requestId, decision) {
   const id = String(requestId || '').trim().toUpperCase();
   const target = String(decision || '').trim().toUpperCase();

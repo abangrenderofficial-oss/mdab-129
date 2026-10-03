@@ -11,6 +11,8 @@ import premiumHqSuccessHandler from '../handlers/premium-hq-success.js';
 import contentBridgeConnectHandler from '../handlers/content-bridge-connect.js';
 import contentBridgeVerifyHandler from '../handlers/content-bridge-verify.js';
 import paymentPushHandler from '../handlers/payment-push.js';
+import affiliateWebHandler from '../handlers/affiliate-web.js';
+import affiliatePwaPageHandler from '../handlers/affiliate-pwa.js';
 import heavyLimitHandler from '../handlers/heavy-limit.js';
 import {
   paymentPwaPageHandler,
@@ -33,6 +35,8 @@ const routes = new Map([
   ['content-bridge-connect', contentBridgeConnectHandler],
   ['content-bridge-verify', contentBridgeVerifyHandler],
   ['payment-push', paymentPushHandler],
+  ['affiliate-web', affiliateWebHandler],
+  ['affiliate-pwa-page', affiliatePwaPageHandler],
   ['heavy-limit', heavyLimitHandler],
   ['payment-pwa-page', paymentPwaPageHandler],
   ['payment-pwa-manifest', paymentPwaManifestHandler],

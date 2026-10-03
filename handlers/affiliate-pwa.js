@@ -27,6 +27,7 @@ const PAGE = String.raw`<!doctype html>
     .tabs{display:flex;gap:7px;margin-bottom:10px}.tab{flex:1;background:#171b24;color:#aeb4c2;margin:0;padding:10px}.tab.active{background:#30244e;color:#fff;box-shadow:inset 0 0 0 1px rgba(160,123,255,.35)}
     .list{display:flex;flex-direction:column;gap:8px}.item{background:#0c0f16;border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:12px}.item-top{display:flex;justify-content:space-between;gap:12px;align-items:center}.item-title{font-size:14px;font-weight:800}.amount{font-size:15px;font-weight:900}.meta{font-size:11px;color:#828999;margin-top:6px;display:flex;gap:8px;flex-wrap:wrap}.badge{font-size:10px;font-weight:850;padding:4px 7px;border-radius:999px;background:#282d38;color:#c6ccd8}.badge.available,.badge.paid{background:rgba(57,217,138,.14);color:#78e3ad}.badge.pending,.badge.withdrawal_pending{background:rgba(252,190,58,.13);color:#ffd273}.badge.rejected{background:rgba(255,94,94,.13);color:#ff9c9c}
     .empty{padding:18px;text-align:center;color:#7f8797;font-size:13px}.loader{padding:35px;text-align:center;color:#aab0bd}.error{background:rgba(255,80,80,.08);border:1px solid rgba(255,100,100,.18);border-radius:18px;padding:18px;color:#ffc0c0;line-height:1.45}
+    .formgrid{display:grid;grid-template-columns:1fr;gap:9px}.field label{display:block;font-size:11px;color:#8d95a5;margin:0 0 6px}.pinput,.pselect{width:100%;background:#0b0e15;border:1px solid #2a303d;border-radius:12px;padding:12px;color:#fff;font-size:14px;outline:none}.pinput:focus,.pselect:focus{border-color:#8b5cf6}.payout-summary{font-size:12px;color:#9fa7b7;margin:8px 0 0}.save-payout{width:100%;margin-top:10px}
     nav{position:fixed;z-index:20;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom));width:min(92%,560px);height:62px;border:1px solid rgba(255,255,255,.08);background:rgba(18,20,29,.9);backdrop-filter:blur(18px);border-radius:19px;display:grid;grid-template-columns:1fr 1fr;padding:6px;box-shadow:0 18px 55px rgba(0,0,0,.4)}nav a{display:flex;flex-direction:column;align-items:center;justify-content:center;text-decoration:none;color:#7f8797;font-size:11px;font-weight:750;gap:3px;border-radius:14px}nav a.active{color:#fff;background:rgba(126,77,255,.18)}nav b{font-size:19px;line-height:1}
     @media(min-width:560px){.grid{grid-template-columns:repeat(4,1fr)}.stat{min-height:100px}.stat .v{font-size:19px}}
   </style>
@@ -67,6 +68,24 @@ const PAGE = String.raw`<!doctype html>
     </section>
 
     <section class="card">
+      <div class="card-title">Payout Method</div>
+      <div class="formgrid">
+        <div class="field"><label>Method</label><select id="payoutMethod" class="pselect"><option value="DUITNOW">DuitNow</option><option value="BANK">Bank Transfer</option></select></div>
+        <div class="field"><label>Account Holder Name</label><input id="payoutName" class="pinput" maxlength="100" placeholder="Nama pemilik akaun"></div>
+        <div id="duitnowFields" class="formgrid">
+          <div class="field"><label>DuitNow Type</label><select id="duitnowType" class="pselect"><option value="PHONE">Phone</option><option value="NRIC">NRIC</option><option value="BUSINESS">Business Registration</option></select></div>
+          <div class="field"><label>DuitNow ID</label><input id="duitnowId" class="pinput" maxlength="80" placeholder="Contoh: 60123456789"></div>
+        </div>
+        <div id="bankFields" class="formgrid" hidden>
+          <div class="field"><label>Bank</label><input id="bankName" class="pinput" maxlength="80" placeholder="Contoh: Maybank"></div>
+          <div class="field"><label>Account Number</label><input id="bankAccount" class="pinput" maxlength="80" inputmode="numeric" placeholder="Nombor akaun"></div>
+        </div>
+      </div>
+      <button id="savePayout" class="save-payout secondary">Save Payout Details</button>
+      <div id="payoutStatus" class="payout-summary">Belum configured.</div>
+    </section>
+
+    <section class="card">
       <div class="card-title">Withdraw</div>
       <div class="hint">Available commission akan dikunci selepas request dibuat untuk elak duplicate withdrawal.</div>
       <button id="withdraw" class="withdraw green" disabled>Withdraw</button>
@@ -94,6 +113,27 @@ function dateText(v){if(!v)return '-';const d=new Date(v);if(Number.isNaN(d.getT
 function setMsg(text,type=''){$('msg').textContent=text||'';$('msg').className='msg '+type}
 function badge(s){const value=String(s||'').toLowerCase();return '<span class="badge '+value+'">'+String(s||'-').replaceAll('_',' ')+'</span>'}
 function auth(){return {Authorization:'Bearer '+token,'Content-Type':'application/json'}}
+function togglePayoutFields(){
+  const method=$('payoutMethod').value;
+  $('duitnowFields').hidden=method!=='DUITNOW';
+  $('bankFields').hidden=method!=='BANK';
+}
+function renderPayoutProfile(){
+  const p=state?.payoutProfile||{configured:false};
+  if(p.configured&&p.readable!==false){
+    $('payoutMethod').value=p.method||'DUITNOW';
+    const d=p.details||{};
+    $('payoutName').value=d.accountName||'';
+    $('duitnowType').value=d.identifierType||'PHONE';
+    $('duitnowId').value=d.identifier||'';
+    $('bankName').value=d.bankName||'';
+    $('bankAccount').value=d.accountNumber||'';
+    $('payoutStatus').textContent='Saved: '+(p.displayHint||p.method||'Configured')+' ✅';
+  }else{
+    $('payoutStatus').textContent=p.configured?'Saved details tidak dapat dibaca. Save semula payout details.':'Belum configured. Save payout details sebelum withdraw.';
+  }
+  togglePayoutFields();
+}
 
 function renderActivity(){
   const list=$('activity');
@@ -122,7 +162,11 @@ function render(){
   $('withdrawHint').textContent='Minimum withdraw '+money(d.minimumWithdrawal);
   $('refLink').textContent=state.referralLink||'Referral link belum tersedia.';
   $('withdraw').disabled=!state.withdrawAllowed;
-  $('withdraw').textContent=state.withdrawAllowed?'Withdraw '+money(d.available):'Minimum '+money(d.minimumWithdrawal);
+  const enough=Number(d.available||0)>=Number(d.minimumWithdrawal||0);
+  $('withdraw').textContent=state.withdrawAllowed
+    ? 'Withdraw '+money(d.available)
+    : (enough?'Setup payout first':'Minimum '+money(d.minimumWithdrawal));
+  renderPayoutProfile();
   renderActivity();
 }
 
@@ -143,6 +187,21 @@ async function load(){
     state=data;$('loading').hidden=true;$('app').hidden=false;render();probeAdmin();
   }catch(e){$('loading').innerHTML='<div class="error">'+(e.message||String(e))+'</div>'}
 }
+
+$('payoutMethod').addEventListener('change',togglePayoutFields);
+$('savePayout').addEventListener('click',async()=>{
+  try{
+    $('savePayout').disabled=true;$('payoutStatus').textContent='Saving encrypted payout details…';
+    const method=$('payoutMethod').value;
+    const payout=method==='DUITNOW'
+      ? {method,accountName:$('payoutName').value.trim(),identifierType:$('duitnowType').value,identifier:$('duitnowId').value.trim()}
+      : {method,accountName:$('payoutName').value.trim(),bankName:$('bankName').value.trim(),accountNumber:$('bankAccount').value.trim()};
+    const r=await fetch('/api/affiliate-web',{method:'POST',headers:auth(),body:JSON.stringify({action:'save_payout',payout})});
+    const data=await r.json();if(!r.ok||!data.ok)throw new Error(data.message||'Payout details gagal disimpan.');
+    state=data;render();setMsg('Payout details saved securely ✅','ok');
+  }catch(e){$('payoutStatus').textContent=e.message||String(e);setMsg(e.message||String(e),'bad')}
+  finally{$('savePayout').disabled=false}
+});
 
 $('copy').addEventListener('click',async()=>{
   const link=state?.referralLink||'';if(!link)return setMsg('Referral link belum tersedia.','bad');

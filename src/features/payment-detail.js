@@ -2,6 +2,7 @@ import { isResetAdmin } from '../recovery.js';
 import { sendMessage, telegram } from '../telegram.js';
 import { getPaymentDetailGroup, setPaymentDetailGroup } from '../support/payment-detail.js';
 import { getSupportMonitorReport, getSupportMonitorUserStatus } from '../support/monitor.js';
+import { refreshSupportMonitorMessage } from '../support/monitor-publisher.js';
 
 async function isGroupAdmin(chatId, userId) {
   if (!chatId || !userId) return false;
@@ -46,6 +47,9 @@ export async function handleConnectPaymentDetailCommand(message = {}) {
       '/supportmonitor — senarai supported / belum support',
       '/supportcheck <TelegramID> — semak seorang user',
     ].join('\n'));
+    await refreshSupportMonitorMessage({ force: true }).catch((error) => {
+      console.warn('[support-monitor] initial auto monitor failed:', error?.message);
+    });
   } catch (error) {
     console.error('[connectpaymentdetail] failed:', error?.message);
     await sendMessage(chatId, '❌ Tak berjaya connect group payment detail sekarang. Cuba sekali lagi.').catch(() => {});

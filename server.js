@@ -39,6 +39,7 @@ import {
 } from './src/payments/bayarcash.js';
 import { startSupportPromotionScheduler } from './src/support/promotion.js';
 import { deliverApprovedBacklog, isContentBridgeConfigured } from './src/support/content-bridge.js';
+import { refreshSupportMonitorMessage } from './src/support/monitor-publisher.js';
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
@@ -204,6 +205,14 @@ server.listen(port, '0.0.0.0', () => {
   });
 
   startSupportPromotionScheduler();
+
+  void refreshSupportMonitorMessage({ force: true })
+    .then((result) => {
+      console.log('[support-monitor] startup refresh', result);
+    })
+    .catch((error) => {
+      console.warn('[support-monitor] startup refresh failed:', error?.message);
+    });
 
   if (isContentBridgeConfigured()) {
     console.log('[content-bridge] retry scheduler started');

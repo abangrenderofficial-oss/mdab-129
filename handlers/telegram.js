@@ -17,7 +17,7 @@ import { handleLuahRasaCommand, processLuahRasaMessage } from '../src/features/l
 import { handleConnectQuoteCommand, processQuoteFilterCallback } from '../src/features/quote-filter.js';
 import { handleConnectPaymentDetailCommand, handlePaymentDetailTestCommand, handleSupportMonitorCommand, handleSupportCheckCommand } from '../src/features/payment-detail.js';
 import { handlePaymentPushSetupCommand } from '../src/features/payment-push.js';
-import { recordSupportMonitorSeen } from '../src/support/monitor.js';
+import { refreshSupportMonitorForMode, trackSupportMonitorActor } from '../src/support/monitor-hooks.js';
 import { handleAffiliateCommand, handleAffiliatePayoutCommand, handleAffiliateStartPayload, handleAffiliateWithdrawCommand, processAffiliateCallback } from '../src/features/affiliate.js';
 import { handleCheckMemberCommand } from '../src/features/channel-diagnostic.js';
 import { handleResetChannelCommand } from '../src/features/channel-reset.js';
@@ -174,9 +174,7 @@ export default async function handler(req, res) {
     const actorChatType = callbackQuery?.message?.chat?.type || message?.chat?.type;
     if (actorChatType === 'private' && actor?.id) {
       await recordUsage(actor.id);
-      await recordSupportMonitorSeen(actor).catch((error) => {
-        console.warn('[support-monitor] seen record failed:', error?.message);
-      });
+      await trackSupportMonitorActor(actor, actorChatType);
     }
 
     const command = commandFromMessage(message);
@@ -204,8 +202,8 @@ export default async function handler(req, res) {
     if (command === '/stopforcesupport') { await handleFridaySupportStopCommand(message, FRIDAY_SUPPORT_MODE_FORCE); return json(res, 200, { ok: true, friday_support_stop: 'FORCE' }); }
     if (command === '/stopdonatesupport') { await handleFridaySupportStopCommand(message, FRIDAY_SUPPORT_MODE_DONATE); return json(res, 200, { ok: true, friday_support_stop: 'DONATE' }); }
     if (command === '/stopnormalsupport' || command === '/stopsupportnormal') { await handleFridaySupportStopCommand(message, FRIDAY_SUPPORT_MODE_NORMAL); return json(res, 200, { ok: true, friday_support_stop: 'NORMAL' }); }
-    if (command === '/forcesupportdaily') { await handleDailyForceSupportCommand(message); return json(res, 200, { ok: true, daily_force_support: true }); }
-    if (command === '/stopforcesupportdaily') { await handleStopDailyForceSupportCommand(message); return json(res, 200, { ok: true, daily_force_support: false }); }
+    if (command === '/forcesupportdaily') { await handleDailyForceSupportCommand(message); await refreshSupportMonitorForMode('ON'); return json(res, 200, { ok: true, daily_force_support: true }); }
+    if (command === '/stopforcesupportdaily') { await handleStopDailyForceSupportCommand(message); await refreshSupportMonitorForMode('OFF'); return json(res, 200, { ok: true, daily_force_support: false }); }
     if (command === '/resetchannel') { await handleResetChannelCommand(message); return json(res, 200, { ok: true, channel_reset: true }); }
     if (command === '/totaluser') { await handleTotalUserCommand(message, context); return json(res, 200, { ok: true, stats: true }); }
     if (command === '/supporttest') { await handleSupportTestCommand(message, context); return json(res, 200, { ok: true, support_test: true }); }

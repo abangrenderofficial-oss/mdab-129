@@ -50,6 +50,20 @@ export async function recordSupportMonitorSeen(actor = {}) {
   const username = clean(actor?.username, 64).replace(/^@+/, '');
   const displayName = clean([actor?.first_name, actor?.last_name].filter(Boolean).join(' '), 120);
 
+  const before = await db.execute({
+    sql: `SELECT telegram_username, display_name
+          FROM support_user_monitor
+          WHERE environment = ? AND telegram_user_id = ?
+          LIMIT 1`,
+    args: [currentSupportEnvironment(), userId],
+  });
+  const previous = before.rows?.[0] || null;
+  const effectiveUsername = username || String(previous?.telegram_username || '');
+  const effectiveDisplayName = displayName || String(previous?.display_name || '');
+  const changed = !previous
+    || effectiveUsername !== String(previous.telegram_username || '')
+    || effectiveDisplayName !== String(previous.display_name || '');
+
   await db.execute({
     sql: `INSERT INTO support_user_monitor (
             environment, telegram_user_id, telegram_username, display_name,
@@ -75,7 +89,7 @@ export async function recordSupportMonitorSeen(actor = {}) {
       now,
     ],
   });
-  return true;
+  return { recorded: true, changed, isNew: !previous };
 }
 
 async function dailyForceState(userId) {

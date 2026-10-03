@@ -5,6 +5,7 @@ import { sendMessage } from '../src/telegram.js';
 import { notifySuccessfulSupportPayment } from '../src/support/payment-detail.js';
 import { notifyNtfySupportPayment } from '../src/support/ntfy-payment.js';
 import { notifyAffiliateCommission } from '../src/affiliate/notify.js';
+import { refreshSupportMonitorMessage } from '../src/support/monitor-publisher.js';
 
 function json(res, status, body) {
   res.status(status).json(body);
@@ -88,6 +89,9 @@ export default async function handler(req, res) {
     });
     await notifyNtfySupportPayment(result.orderNumber).catch((error) => {
       console.warn('[ntfy-payment] callback notification failed:', error?.message);
+    });
+    await refreshSupportMonitorMessage().catch((error) => {
+      console.warn('[support-monitor] refresh after paid support failed:', error?.message);
     });
   }
 

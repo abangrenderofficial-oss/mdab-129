@@ -1,5 +1,6 @@
 import { isResetAdmin } from '../recovery.js';
 import { sendMessage, telegram } from '../telegram.js';
+import { refreshSupportMonitorMessage } from './monitor-publisher.js';
 import { supportMenuKeyboard } from '../features/support.js';
 import { getActiveSupporterTitle } from './community-store.js';
 import { currentSupportEnvironment, getSupportDb } from './store.js';
@@ -255,6 +256,10 @@ export async function markDailyForceUsageSuccess(userId) {
       console.warn('[daily-force] first-use support prompt failed:', error?.message);
     });
   }
+
+  await refreshSupportMonitorMessage().catch((error) => {
+    console.warn('[support-monitor] refresh after Daily Force success failed:', error?.message);
+  });
   return true;
 }
 

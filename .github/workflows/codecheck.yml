@@ -40,6 +40,8 @@ jobs:
         run: node scripts/payping-analytics-selftest.mjs
       - name: Check support monitor
         run: node scripts/support-monitor-selftest.mjs
+      - name: Check auto Support Monitor message
+        run: node scripts/auto-support-monitor-selftest.mjs
       - name: Check gallery upload 200MB boundary
         run: node scripts/gallery-upload-limit-selftest.mjs
       - name: Check Premium HQ gallery isolation

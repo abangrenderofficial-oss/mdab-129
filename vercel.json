@@ -88,6 +88,18 @@
       "destination": "/api/router?route=affiliate-admin-page"
     },
     {
+      "source": "/api/payping-data",
+      "destination": "/api/router?route=payping-data"
+    },
+    {
+      "source": "/ar-payment/transactions",
+      "destination": "/api/router?route=payping-transactions-page"
+    },
+    {
+      "source": "/ar-payment/transactions/",
+      "destination": "/api/router?route=payping-transactions-page"
+    },
+    {
       "source": "/api/heavy-limit",
       "destination": "/api/router?route=heavy-limit"
     },

@@ -1,4 +1,5 @@
 import { parseMedia, chooseBestVideo, needsCustomHeaders } from '../downloader.js';
+import { positiveIntEnv } from '../env-number.js';
 import { resolveInstagramAudio } from '../instagram-audio.js';
 import { resolveInstagramYtDlpAudio } from '../instagram-ytdlp-audio.js';
 import { resolveInstagramProviderVideo } from '../instagram-provider-fallback.js';
@@ -23,7 +24,7 @@ async function tikwmRequest(attempt) {
     Referer: 'https://www.tikwm.com/',
     Origin: 'https://www.tikwm.com',
   };
-  const timeout = Number(process.env.DOWNLOADER_TIKWM_TIMEOUT_MS || process.env.DOWNLOADER_TIMEOUT_MS || 25000);
+  const timeout = positiveIntEnv('DOWNLOADER_TIKWM_TIMEOUT_MS', positiveIntEnv('DOWNLOADER_TIMEOUT_MS', 25000));
 
   if (attempt.method === 'GET') {
     const endpoint = new URL(TIKWM_API);

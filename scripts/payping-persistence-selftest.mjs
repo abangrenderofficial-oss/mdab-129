@@ -25,7 +25,7 @@ const createScript = `
   await ensureSubmissionSchema();
   await ensurePaymentFollowupSchema();
   await ensureWebPushSchema();
-  await getAffiliatePayoutProfile('123456789');
+  await getAffiliatePayoutProfile('1234567890');
 
   const db = await getSupportDb();
   await db.execute({

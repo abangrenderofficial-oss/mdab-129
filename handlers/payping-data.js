@@ -1,4 +1,4 @@
-import { getPayPingDashboard, getPayPingTransactionDetail, listPayPingTransactions } from '../src/payping/dashboard.js';
+import { getPayPingAnalytics, getPayPingAnalyticsExport, getPayPingDashboard, getPayPingTransactionDetail, listPayPingTransactions } from '../src/payping/dashboard.js';
 import { resolvePushDeviceOwner } from '../src/support/webpush-payment.js';
 
 function json(res,status,body){return res.status(status).json(body)}
@@ -25,6 +25,23 @@ export default async function handler(req,res){
   if(!auth)return json(res,401,{ok:false,error:'PAYPING_DEVICE_NOT_AUTHENTICATED'});
   try{
     const view=String(req.query?.view||'dashboard').trim().toLowerCase();
+    if(view==='analytics'){
+      if(!auth.owner)return json(res,403,{ok:false,error:'PAYPING_OWNER_ONLY'});
+      const analytics=await getPayPingAnalytics({
+        ...auth,
+        range:req.query?.range||'30d',
+      });
+      return json(res,200,{ok:true,...auth,...analytics});
+    }
+    if(view==='analytics-export'){
+      if(!auth.owner)return json(res,403,{ok:false,error:'PAYPING_OWNER_ONLY'});
+      const report=await getPayPingAnalyticsExport({
+        ...auth,
+        range:req.query?.range||'30d',
+        limit:req.query?.limit||5000,
+      });
+      return json(res,200,{ok:true,...auth,...report});
+    }
     if(view==='transaction'){
       const detail=await getPayPingTransactionDetail({
         ...auth,
@@ -45,6 +62,8 @@ export default async function handler(req,res){
     return json(res,200,{ok:true,...auth,...await getPayPingDashboard(auth)});
   }catch(error){
     console.error('[payping-data] failed:',error?.message);
-    return json(res,500,{ok:false,error:'PAYPING_DATA_FAILED',message:error?.message||'PayPing data failed.'});
+    const code=String(error?.code||'PAYPING_DATA_FAILED');
+    const status=code==='PAYPING_OWNER_ONLY'?403:500;
+    return json(res,status,{ok:false,error:code,message:error?.message||'PayPing data failed.'});
   }
 }

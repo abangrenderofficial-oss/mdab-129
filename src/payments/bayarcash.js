@@ -114,9 +114,30 @@ export function createSupportOrderNumber() {
   return `${prefix}-${stamp}-${random}`.slice(0, 30);
 }
 
+export function normalizeBayarcashPayerName(user = {}) {
+  const normalize = (value) => String(value || '')
+    .normalize('NFKC')
+    .replace(/[\p{Cc}\p{Cf}]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const meaningful = (value) => {
+    const text = normalize(value);
+    const alnum = text.match(/[\p{L}\p{N}]/gu)?.length || 0;
+    return alnum >= 2 ? text : '';
+  };
+
+  const full = meaningful([user.first_name, user.last_name].filter(Boolean).join(' '));
+  if (full) return full.slice(0, 80);
+
+  const username = meaningful(String(user.username || '').replace(/^@+/, '').replace(/[_\.\-]+/g, ' '));
+  if (username) return username.slice(0, 80);
+
+  return 'Telegram Supporter';
+}
+
 function payerName(user = {}) {
-  const full = [user.first_name, user.last_name].filter(Boolean).join(' ').trim();
-  return full || user.username || 'Telegram Supporter';
+  return normalizeBayarcashPayerName(user);
 }
 
 function payerEmail() {
@@ -321,12 +342,13 @@ export async function createSupportPayment({
     throw error;
   }
 
+  const resolvedPayerName = payerName(user);
   const data = {
     portal_key: portalKey,
     payment_channel: finalChannel,
     order_number: finalOrderNumber,
     amount: normalizedAmount,
-    payer_name: payerName(user),
+    payer_name: resolvedPayerName,
     payer_email: payerEmail(),
     callback_url: callbackUrl,
     return_url: returnUrl,

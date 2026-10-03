@@ -34,8 +34,8 @@ const {
 } = await import('../src/bot/stats.js');
 
 try {
-  if (CHANNEL_GATE_THRESHOLD !== 1) {
-    throw new Error(`Expected threshold 1, got ${CHANNEL_GATE_THRESHOLD}`);
+  if (CHANNEL_GATE_THRESHOLD !== 5) {
+    throw new Error(`Expected threshold 5, got ${CHANNEL_GATE_THRESHOLD}`);
   }
 
   // Existing users restart from this rollout, even if an older gate had already been reached.

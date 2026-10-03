@@ -13,6 +13,9 @@ import contentBridgeConnectHandler from '../handlers/content-bridge-connect.js';
 import contentBridgeVerifyHandler from '../handlers/content-bridge-verify.js';
 import paymentPushHandler from '../handlers/payment-push.js';
 import payPingDataHandler from '../handlers/payping-data.js';
+import payPingSettingsHandler from '../handlers/payping-settings.js';
+import payPingNotificationsPage from '../handlers/payping-notifications-pwa.js';
+import payPingSettingsPage from '../handlers/payping-settings-pwa.js';
 import payPingTransactionsPage from '../handlers/payping-transactions-pwa.js';
 import affiliateWebHandler from '../handlers/affiliate-web.js';
 import affiliateAdminHandler from '../handlers/affiliate-admin.js';
@@ -41,6 +44,9 @@ const routes = new Map([
   ['content-bridge-verify', contentBridgeVerifyHandler],
   ['payment-push', paymentPushHandler],
   ['payping-data', payPingDataHandler],
+  ['payping-settings', payPingSettingsHandler],
+  ['payping-notifications-page', payPingNotificationsPage],
+  ['payping-settings-page', payPingSettingsPage],
   ['payping-transactions-page', payPingTransactionsPage],
   ['affiliate-web', affiliateWebHandler],
   ['affiliate-admin', affiliateAdminHandler],

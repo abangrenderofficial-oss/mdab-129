@@ -289,6 +289,154 @@ export async function resolvePushDeviceOwner(deviceToken) {
   return /^\d+$/.test(userId) && Number(userId) > 0 ? userId : null;
 }
 
+export async function getPushDeviceContext(deviceToken) {
+  const token = String(deviceToken || '').trim();
+  if (!token) return null;
+
+  await ensureSchema();
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const tokenHash = deviceTokenHash(token);
+
+  const currentResult = await db.execute({
+    sql: `SELECT endpoint_hash, endpoint, owner_user_id, created_at, updated_at, disabled_at
+          FROM support_push_subscriptions
+          WHERE environment = ? AND device_token_hash = ?
+          LIMIT 1`,
+    args: [environment, tokenHash],
+  });
+  const current = currentResult.rows?.[0];
+  if (!current || current.disabled_at) return null;
+
+  const ownerUserId = String(current.owner_user_id || '');
+  const devicesResult = await db.execute({
+    sql: `SELECT endpoint_hash, endpoint, created_at, updated_at, disabled_at
+          FROM support_push_subscriptions
+          WHERE environment = ? AND owner_user_id = ?
+          ORDER BY updated_at DESC`,
+    args: [environment, ownerUserId],
+  });
+
+  const devices = (devicesResult.rows || []).map((row) => {
+    let endpointHost = '';
+    try { endpointHost = new URL(String(row.endpoint || '')).hostname; } catch {}
+    return {
+      id: String(row.endpoint_hash || ''),
+      current: String(row.endpoint_hash || '') === String(current.endpoint_hash || ''),
+      active: !String(row.disabled_at || ''),
+      endpointHost,
+      createdAt: String(row.created_at || ''),
+      updatedAt: String(row.updated_at || ''),
+      disabledAt: row.disabled_at ? String(row.disabled_at) : null,
+    };
+  });
+
+  return {
+    ownerUserId,
+    currentDeviceId: String(current.endpoint_hash || ''),
+    currentCreatedAt: String(current.created_at || ''),
+    currentUpdatedAt: String(current.updated_at || ''),
+    devices,
+    activeDeviceCount: devices.filter((device) => device.active).length,
+  };
+}
+
+export async function getPushNotificationHistory(deviceToken, limit = 50) {
+  const context = await getPushDeviceContext(deviceToken);
+  if (!context) {
+    const error = new Error('Device belum registered atau subscription expired.');
+    error.code = 'PUSH_DEVICE_NOT_FOUND';
+    throw error;
+  }
+
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const safeLimit = Math.max(1, Math.min(100, Number(limit || 50)));
+  const result = await db.execute({
+    sql: `SELECT d.delivery_key, d.endpoint_hash, d.status, d.last_error, d.updated_at
+          FROM support_webpush_delivery d
+          JOIN support_push_subscriptions s
+            ON s.environment = d.environment
+           AND s.endpoint_hash = d.endpoint_hash
+          WHERE d.environment = ?
+            AND s.owner_user_id = ?
+          ORDER BY d.updated_at DESC
+          LIMIT ?`,
+    args: [environment, context.ownerUserId, safeLimit],
+  });
+
+  return (result.rows || []).map((row) => ({
+    deliveryKey: String(row.delivery_key || ''),
+    deviceId: String(row.endpoint_hash || ''),
+    currentDevice: String(row.endpoint_hash || '') === context.currentDeviceId,
+    status: String(row.status || ''),
+    lastError: String(row.last_error || ''),
+    updatedAt: String(row.updated_at || ''),
+  }));
+}
+
+export async function disconnectPushDevice(deviceToken) {
+  const token = String(deviceToken || '').trim();
+  if (!token) {
+    const error = new Error('Device token missing.');
+    error.code = 'DEVICE_TOKEN_MISSING';
+    throw error;
+  }
+
+  await ensureSchema();
+  const db = await getSupportDb();
+  const now = new Date().toISOString();
+  const result = await db.execute({
+    sql: `UPDATE support_push_subscriptions
+          SET disabled_at = ?, updated_at = ?
+          WHERE environment = ? AND device_token_hash = ? AND disabled_at = ''`,
+    args: [now, now, currentSupportEnvironment(), deviceTokenHash(token)],
+  });
+  if (Number(result.rowsAffected || 0) < 1) {
+    const error = new Error('Device belum registered atau sudah disconnected.');
+    error.code = 'PUSH_DEVICE_NOT_FOUND';
+    throw error;
+  }
+  return { disconnected: true };
+}
+
+export async function revokePushDevice(deviceToken, targetDeviceId) {
+  const context = await getPushDeviceContext(deviceToken);
+  if (!context) {
+    const error = new Error('Device belum registered atau subscription expired.');
+    error.code = 'PUSH_DEVICE_NOT_FOUND';
+    throw error;
+  }
+
+  const target = String(targetDeviceId || '').trim();
+  if (!target) {
+    const error = new Error('Target device missing.');
+    error.code = 'PUSH_DEVICE_NOT_FOUND';
+    throw error;
+  }
+
+  const db = await getSupportDb();
+  const now = new Date().toISOString();
+  const result = await db.execute({
+    sql: `UPDATE support_push_subscriptions
+          SET disabled_at = ?, updated_at = ?
+          WHERE environment = ? AND owner_user_id = ?
+            AND endpoint_hash = ? AND disabled_at = ''`,
+    args: [now, now, currentSupportEnvironment(), context.ownerUserId, target],
+  });
+  if (Number(result.rowsAffected || 0) < 1) {
+    const error = new Error('Device tidak dijumpai atau sudah disconnected.');
+    error.code = 'PUSH_DEVICE_NOT_FOUND';
+    throw error;
+  }
+
+  return {
+    disconnected: true,
+    currentDevice: target === context.currentDeviceId,
+    deviceId: target,
+  };
+}
+
 async function disableSubscription(eHash) {
   const db = await getSupportDb();
   const now = new Date().toISOString();

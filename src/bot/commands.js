@@ -75,6 +75,8 @@ export function adminCommandMenuText() {
     '/menuadmin — Senarai semua command admin',
     '/supporttest — Test payment gateway',
     '/supportperclick — Statistik click button Support',
+    '/supportmonitor — Senarai supported / belum support (Payment Detail group)',
+    '/supportcheck <TelegramID> — Semak status support seorang user',
     '/resetadmin — Reset & recovery semua user',
     '/resetchannel — Bersihkan leak Downloader Bot di channel',
     '/connect — Sambung group pemantauan video',

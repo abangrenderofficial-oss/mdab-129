@@ -242,6 +242,7 @@ export async function processStatusButton(callbackQuery, context = {}) {
   await sendChatAction(chatId, isImage ? 'upload_document' : 'upload_video').catch(() => {});
   let prepared = null;
   let premiumVideoCompleted = false;
+  let premiumImageCompleted = false;
   const progress = await (isImage ? startImageStatusProgress(chatId) : startStatusProgress(chatId));
   try {
     if (!fileId) throw new Error('Media file_id missing from callback message.');
@@ -255,6 +256,7 @@ export async function processStatusButton(callbackQuery, context = {}) {
       }
       await progress.complete();
       await sendDocumentFileUpload(chatId, prepared.filePath, await statusImageCaption(), 'status-hq.jpg');
+      premiumImageCompleted = true;
     } else {
       prepared = await localMediaLane(async () => {
         let sourceError = null;
@@ -333,5 +335,12 @@ export async function processStatusButton(callbackQuery, context = {}) {
   } finally {
     if (prepared?.cleanup) await prepared.cleanup().catch(() => {});
   }
-  return premiumVideoCompleted ? { premiumVideoCompleted: true } : true;
+  if (premiumVideoCompleted || premiumImageCompleted) {
+    return {
+      premiumHqCompleted: true,
+      premiumVideoCompleted,
+      premiumImageCompleted,
+    };
+  }
+  return true;
 }

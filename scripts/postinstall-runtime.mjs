@@ -5,12 +5,7 @@ function run(command, args) {
   if (result.status !== 0) process.exit(result.status || 1);
 }
 
-const isVercel = String(process.env.VERCEL || '').toLowerCase() === '1';
-
-if (!isVercel) {
-  run(process.execPath, ['scripts/install-ytdlp.mjs']);
-} else {
-  console.log('[postinstall] Vercel detected: skipping local yt-dlp binary install; heavy media stays on GitHub Actions.');
-}
-
+// yt-dlp is a lightweight resolver/fallback used by both Railway and Vercel.
+// Heavy media encoding/transcoding remains isolated from this install step.
+run(process.execPath, ['scripts/install-ytdlp.mjs']);
 run('npm', ['run', 'check']);

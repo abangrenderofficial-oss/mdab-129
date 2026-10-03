@@ -20,6 +20,7 @@ async function ensureSchema() {
           enabled INTEGER NOT NULL DEFAULT 0,
           cycle_id INTEGER NOT NULL DEFAULT 1,
           updated_by TEXT NOT NULL DEFAULT '',
+          policy_version INTEGER NOT NULL DEFAULT 2,
           updated_at TEXT NOT NULL
         )`,
         `CREATE TABLE IF NOT EXISTS support_daily_force_usage (
@@ -43,6 +44,14 @@ async function ensureSchema() {
         );
       }
 
+      const refreshedModeColumns = await db.execute('PRAGMA table_info(support_daily_force_mode)');
+      const hasPolicyVersion = (refreshedModeColumns.rows || []).some((row) => String(row.name || '') === 'policy_version');
+      if (!hasPolicyVersion) {
+        await db.execute(
+          'ALTER TABLE support_daily_force_mode ADD COLUMN policy_version INTEGER NOT NULL DEFAULT 1',
+        );
+      }
+
       const usageColumns = await db.execute('PRAGMA table_info(support_daily_force_usage)');
       const hasSuccessCount = (usageColumns.rows || []).some((row) => String(row.name || '') === 'success_count');
       if (!hasSuccessCount) {
@@ -52,6 +61,37 @@ async function ensureSchema() {
         await db.execute(
           'UPDATE support_daily_force_usage SET success_count = 1 WHERE used_once = 1 AND success_count = 0',
         );
+      }
+
+      const environment = currentSupportEnvironment();
+      const policy = await db.execute({
+        sql: `SELECT cycle_id, policy_version
+              FROM support_daily_force_mode
+              WHERE environment = ?
+              LIMIT 1`,
+        args: [environment],
+      });
+      const policyRow = policy.rows?.[0];
+      if (policyRow && Number(policyRow.policy_version || 1) < 2) {
+        const cycleId = Math.max(1, Number(policyRow.cycle_id || 1));
+        const now = new Date().toISOString();
+        await db.execute({
+          sql: `UPDATE support_daily_force_usage
+                SET used_once = 0,
+                    use_claimed = 0,
+                    prompt_sent = 0,
+                    success_count = 0,
+                    updated_at = ?
+                WHERE environment = ? AND cycle_id = ?`,
+          args: [now, environment, cycleId],
+        });
+        await db.execute({
+          sql: `UPDATE support_daily_force_mode
+                SET policy_version = 2, updated_at = ?
+                WHERE environment = ?`,
+          args: [now, environment],
+        });
+        console.log('[daily-force] migrated current cycle to Premium+ HQ success policy', { cycleId });
       }
       return true;
     })().catch((error) => {
@@ -66,7 +106,7 @@ async function modeState() {
   await ensureSchema();
   const db = await getSupportDb();
   const result = await db.execute({
-    sql: `SELECT enabled, cycle_id
+    sql: `SELECT enabled, cycle_id, policy_version
           FROM support_daily_force_mode
           WHERE environment = ?
           LIMIT 1`,
@@ -75,6 +115,7 @@ async function modeState() {
   return {
     enabled: Number(result.rows?.[0]?.enabled || 0) === 1,
     cycleId: Math.max(1, Number(result.rows?.[0]?.cycle_id || 1)),
+    policyVersion: Math.max(1, Number(result.rows?.[0]?.policy_version || 2)),
   };
 }
 
@@ -103,12 +144,13 @@ async function setDailyForceSupportEnabled(enabled, adminUserId = '') {
 
   await db.execute({
     sql: `INSERT INTO support_daily_force_mode (
-            environment, enabled, cycle_id, updated_by, updated_at
-          ) VALUES (?, ?, ?, ?, ?)
+            environment, enabled, cycle_id, updated_by, policy_version, updated_at
+          ) VALUES (?, ?, ?, ?, 2, ?)
           ON CONFLICT(environment) DO UPDATE SET
             enabled = excluded.enabled,
             cycle_id = excluded.cycle_id,
             updated_by = excluded.updated_by,
+            policy_version = 2,
             updated_at = excluded.updated_at`,
     args: [
       environment,

@@ -4,6 +4,7 @@ import { activateSupportSubmissionAfterPayment, getSupportSubmission } from '../
 import { sendMessage } from '../src/telegram.js';
 import { notifySuccessfulSupportPayment } from '../src/support/payment-detail.js';
 import { notifyNtfySupportPayment } from '../src/support/ntfy-payment.js';
+import { notifyAffiliateCommission } from '../src/affiliate/notify.js';
 
 function json(res, status, body) {
   res.status(status).json(body);
@@ -66,6 +67,12 @@ export default async function handler(req, res) {
     duplicate: result?.duplicate || false,
     amount_mismatch: result?.amountMismatch || false,
   });
+
+  if (result?.affiliate?.created) {
+    await notifyAffiliateCommission(result.affiliate).catch((error) => {
+      console.warn('[affiliate] callback commission notification failed:', error?.message);
+    });
+  }
 
   let submission = null;
   if (result?.orderNumber) {

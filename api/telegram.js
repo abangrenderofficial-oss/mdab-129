@@ -17,6 +17,7 @@ import { handleLuahRasaCommand, processLuahRasaMessage } from '../src/features/l
 import { handleConnectQuoteCommand, processQuoteFilterCallback } from '../src/features/quote-filter.js';
 import { handleConnectPaymentDetailCommand, handlePaymentDetailTestCommand } from '../src/features/payment-detail.js';
 import { handlePaymentPushSetupCommand } from '../src/features/payment-push.js';
+import { handleAffiliateCommand, handleAffiliatePayoutCommand, handleAffiliateStartPayload, handleAffiliateWithdrawCommand, processAffiliateCallback } from '../src/features/affiliate.js';
 import { handleCheckMemberCommand } from '../src/features/channel-diagnostic.js';
 import { handleResetChannelCommand } from '../src/features/channel-reset.js';
 import {
@@ -82,6 +83,14 @@ async function processMessage(message, context) {
   if (command === '/connectquote') return handleConnectQuoteCommand(message);
   if (command === '/connectpaymentdetail') return handleConnectPaymentDetailCommand(message);
   if (command === '/pushsetup') return handlePaymentPushSetupCommand(message, context);
+  if (command === '/affiliate') return handleAffiliateCommand(message);
+  if (command === '/withdraw') return handleAffiliateWithdrawCommand(message);
+  if (command === '/affiliatepaid') return handleAffiliatePayoutCommand(message, 'PAID');
+  if (command === '/affiliatereject') return handleAffiliatePayoutCommand(message, 'REJECTED');
+  if (command === '/start' && startPayload(message).startsWith('ref_')) {
+    await handleAffiliateStartPayload(message, startPayload(message));
+    return sendMessage(chatId, startText(message?.from?.id));
+  }
   if (command === '/start' && startPayload(message) === 'support') return handleSupportCommand(message, context);
   if (command === '/start' || command === '/help') return sendMessage(chatId, startText(message?.from?.id));
   if (command === '/support') return handleSupportCommand(message, context);
@@ -119,6 +128,7 @@ async function runWebhookUpdate(update, context) {
     if (await processQuoteFilterCallback(callbackQuery)) return;
     if (await processFridaySupportCallback(callbackQuery)) return;
     if (await processChannelGateCallback(callbackQuery)) return;
+    if (await processAffiliateCallback(callbackQuery)) return;
     if (await processSupportCallback(callbackQuery, context)) return;
     if (await enforceSupportTestimonialGateForCallback(callbackQuery)) return;
     if (await enforceDailyForceSupportForCallback(callbackQuery)) return;

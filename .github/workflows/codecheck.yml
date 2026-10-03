@@ -20,6 +20,8 @@ jobs:
         run: npm install --ignore-scripts --no-audit --no-fund
       - name: Check JavaScript syntax
         run: npm run check
+      - name: Check PayPing affiliate ledger
+        run: node scripts/affiliate-selftest.mjs
       - name: Check gallery upload 200MB boundary
         run: node scripts/gallery-upload-limit-selftest.mjs
       - name: Check Premium HQ gallery isolation

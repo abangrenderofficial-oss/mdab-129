@@ -1,4 +1,5 @@
 import { createClient } from '@libsql/client';
+import { affiliateCommissionBps, affiliateHoldDays } from '../affiliate/config.js';
 
 let client = null;
 let schemaPromise = null;
@@ -78,6 +79,50 @@ export async function ensureSupportSchema() {
           last_support_at TEXT,
           PRIMARY KEY (environment, telegram_user_id)
         )`,
+        `CREATE TABLE IF NOT EXISTS affiliate_profiles (
+          environment TEXT NOT NULL,
+          telegram_user_id TEXT NOT NULL,
+          telegram_username TEXT NOT NULL DEFAULT '',
+          referral_code TEXT NOT NULL,
+          referred_by_user_id TEXT,
+          referred_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (environment, telegram_user_id),
+          UNIQUE (environment, referral_code)
+        )`,
+        `CREATE TABLE IF NOT EXISTS affiliate_commissions (
+          environment TEXT NOT NULL,
+          commission_id TEXT NOT NULL,
+          order_number TEXT NOT NULL,
+          referrer_user_id TEXT NOT NULL,
+          referred_user_id TEXT NOT NULL,
+          gross_cents INTEGER NOT NULL,
+          rate_bps INTEGER NOT NULL,
+          commission_cents INTEGER NOT NULL,
+          status TEXT NOT NULL,
+          available_at TEXT NOT NULL,
+          payout_request_id TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (environment, commission_id),
+          UNIQUE (environment, order_number)
+        )`,
+        `CREATE TABLE IF NOT EXISTS affiliate_withdrawals (
+          environment TEXT NOT NULL,
+          request_id TEXT NOT NULL,
+          telegram_user_id TEXT NOT NULL,
+          amount_cents INTEGER NOT NULL,
+          status TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          paid_at TEXT,
+          PRIMARY KEY (environment, request_id)
+        )`,
+        'CREATE INDEX IF NOT EXISTS idx_affiliate_profiles_referrer ON affiliate_profiles(environment, referred_by_user_id)',
+        'CREATE INDEX IF NOT EXISTS idx_affiliate_commissions_referrer ON affiliate_commissions(environment, referrer_user_id, status)',
+        'CREATE INDEX IF NOT EXISTS idx_affiliate_commissions_referred ON affiliate_commissions(environment, referred_user_id)',
+        'CREATE INDEX IF NOT EXISTS idx_affiliate_withdrawals_user ON affiliate_withdrawals(environment, telegram_user_id, status)',
         'CREATE INDEX IF NOT EXISTS idx_support_orders_user ON support_orders(environment, telegram_user_id)',
         'CREATE INDEX IF NOT EXISTS idx_support_orders_status ON support_orders(environment, status)',
         'CREATE INDEX IF NOT EXISTS idx_support_transactions_order ON support_transactions(environment, order_number)',
@@ -273,6 +318,71 @@ async function upsertTransaction(tx, {
   });
 }
 
+async function createAffiliateCommission(tx, {
+  environment,
+  orderNumber,
+  referredUserId,
+  grossCents,
+  now,
+}) {
+  const buyerId = validUserId(referredUserId);
+  const rateBps = affiliateCommissionBps();
+  if (!buyerId || rateBps <= 0 || grossCents <= 0) return null;
+
+  const referralResult = await tx.execute({
+    sql: `SELECT referred_by_user_id
+          FROM affiliate_profiles
+          WHERE environment = ? AND telegram_user_id = ?
+          LIMIT 1`,
+    args: [environment, buyerId],
+  });
+  const referrerUserId = validUserId(referralResult.rows?.[0]?.referred_by_user_id);
+  if (!referrerUserId || referrerUserId === buyerId) return null;
+
+  const commissionCents = Math.round((Number(grossCents) * rateBps) / 10000);
+  if (commissionCents <= 0) return null;
+
+  const availableAt = new Date(
+    new Date(now).getTime() + (affiliateHoldDays() * 24 * 60 * 60 * 1000),
+  ).toISOString();
+  const commissionId = `AFF:${orderNumber}`;
+
+  const inserted = await tx.execute({
+    sql: `INSERT OR IGNORE INTO affiliate_commissions (
+            environment, commission_id, order_number, referrer_user_id,
+            referred_user_id, gross_cents, rate_bps, commission_cents,
+            status, available_at, payout_request_id, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, NULL, ?, ?)`,
+    args: [
+      environment,
+      commissionId,
+      orderNumber,
+      referrerUserId,
+      buyerId,
+      Number(grossCents),
+      rateBps,
+      commissionCents,
+      availableAt,
+      now,
+      now,
+    ],
+  });
+
+  if (Number(inserted.rowsAffected || 0) !== 1) return null;
+
+  return {
+    created: true,
+    commissionId,
+    orderNumber,
+    referrerUserId,
+    referredUserId: buyerId,
+    grossAmount: moneyFromCents(grossCents),
+    ratePercent: (rateBps / 100).toFixed(2).replace(/\.00$/, ''),
+    commissionAmount: moneyFromCents(commissionCents),
+    availableAt,
+  };
+}
+
 export async function applyBayarcashTransaction(payload = {}) {
   const environment = currentSupportEnvironment();
   const orderNumber = String(payload?.order_number || '').trim();
@@ -421,6 +531,14 @@ export async function applyBayarcashTransaction(payload = {}) {
       ],
     });
 
+    const affiliate = await createAffiliateCommission(tx, {
+      environment,
+      orderNumber,
+      referredUserId: String(order.telegram_user_id || ''),
+      grossCents: expectedCents,
+      now,
+    });
+
     const userResult = await tx.execute({
       sql: `SELECT total_support_cents
             FROM support_users
@@ -441,6 +559,7 @@ export async function applyBayarcashTransaction(payload = {}) {
       amount: moneyFromCents(expectedCents),
       totalSupport: total.toFixed(2),
       tier: supportTier(total),
+      affiliate,
     };
   });
 }

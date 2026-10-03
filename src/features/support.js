@@ -22,6 +22,7 @@ import { recordSupportAmountClick } from '../support/click-analytics.js';
 import { hasMinimumWords } from '../support/text-validation.js';
 import { notifySuccessfulSupportPayment } from '../support/payment-detail.js';
 import { notifyNtfySupportPayment } from '../support/ntfy-payment.js';
+import { notifyAffiliateCommission } from '../affiliate/notify.js';
 
 const SUPPORT_SELECT_PREFIX = 'support:select:';
 const SUPPORT_CHECK_PREFIX = 'support:check:';
@@ -262,6 +263,12 @@ async function handlePaymentCheck(callbackQuery, paymentIntentId) {
         true,
       );
       return true;
+    }
+
+    if (status.result?.affiliate?.created) {
+      await notifyAffiliateCommission(status.result.affiliate).catch((error) => {
+        console.warn('[affiliate] reconciliation commission notification failed:', error?.message);
+      });
     }
 
     if (status.orderNumber) {

@@ -6,7 +6,7 @@ const EVENT_TYPES = new Set(['download', 'status_hq', 'live_wallpaper']);
 const STATS_FILE = String(process.env.STATS_FILE_PATH || '/data/bot-stats.json');
 const STATS_VERSION = 2;
 const CHANNEL_GATE_COUNTER_VERSION = 3;
-export const CHANNEL_GATE_THRESHOLD = 1;
+export const CHANNEL_GATE_THRESHOLD = 5;
 export const PREMIUM_HQ_CHANNEL_GATE_THRESHOLD = CHANNEL_GATE_THRESHOLD;
 
 let statePromise = null;
@@ -115,6 +115,9 @@ function touchUser(state, userId, now = new Date()) {
     channelUseCount,
     premiumHqCompletedCount,
     premiumHqCompleted: premiumHqCompletedCount >= PREMIUM_HQ_CHANNEL_GATE_THRESHOLD,
+    premiumHqCompletionKeys: Array.isArray(old.premiumHqCompletionKeys)
+      ? old.premiumHqCompletionKeys.filter((value) => typeof value === 'string' && value).slice(-100)
+      : [],
     joinPromptSent: counterWasCurrent ? Boolean(old.joinPromptSent) : false,
   };
   state.users[key] = user;
@@ -168,17 +171,46 @@ export async function hasChannelGateRequired(userId) {
   return (await getChannelUseCount(userId)) >= CHANNEL_GATE_THRESHOLD;
 }
 
-export async function markPremiumHqCompleted(userId) {
+export async function markPremiumHqCompleted(userId, completionKey = '') {
   const key = validUserKey(userId);
   if (!key) return false;
+
+  const normalizedCompletionKey = String(completionKey || '').trim().slice(0, 240);
+  let counted = false;
+
   await mutate((state) => {
     const user = touchUser(state, userId, new Date());
     if (!user) return;
-    user.premiumHqCompletedCount = Math.max(0, Number(user.premiumHqCompletedCount || 0)) + 1;
-    user.premiumHqCompleted = user.premiumHqCompletedCount >= PREMIUM_HQ_CHANNEL_GATE_THRESHOLD;
-    user.channelUseCount = Math.max(1, Number(user.channelUseCount || 0));
+
+    const currentCount = Math.max(0, Number(user.channelUseCount || 0));
+
+    // New callers supply a stable key for each successful Premium+ HQ delivery.
+    // Retries of the same completion key are ignored, so webhook retries cannot
+    // make a user reach the channel gate early.
+    if (normalizedCompletionKey) {
+      const keys = Array.isArray(user.premiumHqCompletionKeys)
+        ? user.premiumHqCompletionKeys
+        : [];
+      if (keys.includes(normalizedCompletionKey)) return;
+
+      keys.push(normalizedCompletionKey);
+      user.premiumHqCompletionKeys = keys.slice(-100);
+      user.channelUseCount = currentCount + 1;
+      counted = true;
+    } else {
+      // Backward-compatible fallback for legacy completion calls: retain the
+      // old idempotent behaviour instead of incrementing repeatedly.
+      user.channelUseCount = Math.max(1, currentCount);
+      counted = currentCount < 1;
+    }
+
+    if (counted) {
+      user.premiumHqCompletedCount = Math.max(0, Number(user.premiumHqCompletedCount || 0)) + 1;
+    }
+    user.premiumHqCompleted = user.channelUseCount >= PREMIUM_HQ_CHANNEL_GATE_THRESHOLD;
   });
-  return true;
+
+  return counted;
 }
 
 export async function getPremiumHqCompletedCount(userId) {

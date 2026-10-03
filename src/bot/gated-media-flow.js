@@ -131,7 +131,12 @@ export async function processMediaCallbackWithSupport(callbackQuery, context = {
   const premiumResult = await processStatusButton(callbackQuery, context);
   if (premiumResult) {
     if (isPremiumHq && premiumResult?.premiumHqCompleted) {
-      await recordPremiumHqSuccess({ userId, chatId, label: 'premium hq callback' });
+      await recordPremiumHqSuccess({
+        userId,
+        chatId,
+        label: 'premium hq callback',
+        completionKey: `callback:${String(callbackQuery?.id || '')}`,
+      });
     } else if (isPremiumHq && premiumResult?.premiumVideoDispatched) {
       // Keep the Friday/Daily claims until the heavy worker completion callback
       // confirms the Premium+ HQ media was actually delivered.

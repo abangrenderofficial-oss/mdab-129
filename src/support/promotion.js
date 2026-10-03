@@ -3,6 +3,7 @@ import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { sendMessage, sendSupportPromotionToChannel, telegram } from '../telegram.js';
 import { dailyForcePremiumChannelSupportText, supportCampaignText, supportMenuKeyboard } from '../features/support.js';
 import { FRIDAY_SUPPORT_MODE_OFF, getFridaySupportMode } from './friday-access.js';
+import { startPaymentFollowupScheduler } from './payment-followup.js';
 
 const STATS_FILE = String(process.env.STATS_FILE_PATH || '/data/bot-stats.json');
 const MALAYSIA_TIMEZONE = 'Asia/Kuala_Lumpur';
@@ -277,6 +278,7 @@ export async function runSupportPromotionCycle({ force = false } = {}) {
 }
 
 export function startSupportPromotionScheduler() {
+  startPaymentFollowupScheduler();
   if (schedulerTimer) return schedulerTimer;
 
   const run = () => {

@@ -1,5 +1,10 @@
 import { getPayPingAnalytics, getPayPingAnalyticsExport, getPayPingDashboard, getPayPingTransactionDetail, listPayPingTransactions } from '../src/payping/dashboard.js';
 import { resolvePayPingIdentity } from '../src/payping/auth.js';
+import {
+  reconcilePaymentFollowup,
+  sendPaymentFollowup,
+  stopPaymentFollowup,
+} from '../src/support/payment-followup.js';
 
 function json(res,status,body){return res.status(status).json(body)}
 async function identity(req){
@@ -16,14 +21,36 @@ async function identity(req){
 }
 
 export default async function handler(req,res){
-  if(req.method!=='GET'){
-    res.setHeader('Allow','GET');
+  if(!['GET','POST'].includes(req.method)){
+    res.setHeader('Allow','GET, POST');
     return json(res,405,{ok:false,error:'method_not_allowed'});
   }
   const auth=await identity(req);
   if(!auth)return json(res,401,{ok:false,error:'PAYPING_LOGIN_REQUIRED'});
   if(auth.needsTelegramLink&&!auth.owner)return json(res,409,{ok:false,error:'PAYPING_TELEGRAM_LINK_REQUIRED',role:auth.role,needsTelegramLink:true});
   try{
+    if(req.method==='POST'){
+      if(!auth.owner)return json(res,403,{ok:false,error:'PAYPING_OWNER_ONLY'});
+      const body=req.body&&typeof req.body==='object'?req.body:{};
+      const action=String(body.action||'').trim().toLowerCase();
+      const order=String(body.order||'').trim();
+      if(!order)return json(res,400,{ok:false,error:'ORDER_REQUIRED'});
+
+      let actionResult=null;
+      if(action==='payment_followup_send'){
+        actionResult=await sendPaymentFollowup(order,{manual:true});
+      }else if(action==='payment_followup_check'){
+        actionResult=await reconcilePaymentFollowup(order);
+      }else if(action==='payment_followup_stop'){
+        actionResult=await stopPaymentFollowup(order,'OWNER_STOPPED');
+      }else{
+        return json(res,400,{ok:false,error:'UNKNOWN_PAYPING_ACTION'});
+      }
+
+      const detail=await getPayPingTransactionDetail({...auth,orderNumber:order});
+      return json(res,200,{ok:true,...auth,actionResult,...detail});
+    }
+
     const view=String(req.query?.view||'dashboard').trim().toLowerCase();
     if(view==='analytics'){
       if(!auth.owner)return json(res,403,{ok:false,error:'PAYPING_OWNER_ONLY'});

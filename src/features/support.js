@@ -23,9 +23,15 @@ import { hasMinimumWords } from '../support/text-validation.js';
 import { notifySuccessfulSupportPayment } from '../support/payment-detail.js';
 import { notifyNtfySupportPayment } from '../support/ntfy-payment.js';
 import { notifyAffiliateCommission } from '../affiliate/notify.js';
+import {
+  cancelPaymentFollowupByUser,
+  markPaymentReview,
+} from '../support/payment-followup.js';
 
 const SUPPORT_SELECT_PREFIX = 'support:select:';
 const SUPPORT_CHECK_PREFIX = 'support:check:';
+const PAYMENT_FOLLOWUP_REVIEW_PREFIX = 'payfollow:review:';
+const PAYMENT_FOLLOWUP_CANCEL_PREFIX = 'payfollow:cancel:';
 const SUPPORT_AMOUNTS_ACTION = 'support:amounts';
 const SUPPORT_BACK_ACTION = 'support:back';
 const SUPPORT_AMOUNTS = new Set([10, 20, 30, 50, 100]);
@@ -370,6 +376,58 @@ async function handlePaymentCheck(callbackQuery, paymentIntentId) {
 
 export async function processSupportCallback(callbackQuery = {}, context = {}) {
   const action = String(callbackQuery?.data || '');
+
+  if (action.startsWith(PAYMENT_FOLLOWUP_REVIEW_PREFIX)) {
+    const orderNumber = action.slice(PAYMENT_FOLLOWUP_REVIEW_PREFIX.length).trim();
+    try {
+      const result = await markPaymentReview(orderNumber, callbackQuery?.from?.id);
+      if (result?.resolved) {
+        await answerSupportCallback(callbackQuery, '✅ Payment dah confirmed.');
+        await editSupportMessage(
+          callbackQuery,
+          '✅ Payment dah confirmed. Terima kasih banyak-banyak sebab support bot kita ❤️',
+          { inline_keyboard: [] },
+        );
+      } else {
+        await answerSupportCallback(callbackQuery, '🔎 Payment masuk untuk semakan.');
+        await editSupportMessage(
+          callbackQuery,
+          [
+            '🔎 PAYMENT REVIEW',
+            '',
+            'Awak dah maklumkan bayaran telah dibuat.',
+            'Kami akan semak status dengan Bayarcash.',
+            '',
+            'Jangan buat bayaran kali kedua untuk checkout ini sementara semakan dibuat.',
+            `Support ID: ${orderNumber}`,
+          ].join('\n'),
+          { inline_keyboard: [] },
+        );
+      }
+    } catch (error) {
+      console.warn('[payment-followup] review callback failed:', error?.code, error?.message);
+      await answerSupportCallback(callbackQuery, 'Tak berjaya semak payment sekarang. Cuba lagi kejap.', true);
+    }
+    return true;
+  }
+
+  if (action.startsWith(PAYMENT_FOLLOWUP_CANCEL_PREFIX)) {
+    const orderNumber = action.slice(PAYMENT_FOLLOWUP_CANCEL_PREFIX.length).trim();
+    try {
+      await cancelPaymentFollowupByUser(orderNumber, callbackQuery?.from?.id);
+      await answerSupportCallback(callbackQuery, 'Follow-up dihentikan.');
+      await editSupportMessage(
+        callbackQuery,
+        ['Checkout ini dah dihentikan.', '', `Support ID: ${orderNumber}`].join('\n'),
+        { inline_keyboard: [] },
+      );
+    } catch (error) {
+      console.warn('[payment-followup] cancel callback failed:', error?.code, error?.message);
+      await answerSupportCallback(callbackQuery, 'Tak berjaya hentikan checkout sekarang.', true);
+    }
+    return true;
+  }
+
   const amount = amountFromCallback(action);
   const retiredAmount = retiredAmountFromCallback(action);
   const isCheckAction = action.startsWith(SUPPORT_CHECK_PREFIX);

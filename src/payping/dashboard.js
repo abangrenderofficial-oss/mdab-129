@@ -1,6 +1,7 @@
 import { currentSupportEnvironment, getSupportDb } from '../support/store.js';
 import { ensureSubmissionSchema } from '../support/submissions.js';
 import { ensureWebPushSchema } from '../support/webpush-payment.js';
+import { classifyPaymentStage, ensurePaymentFollowupSchema, getPaymentFollowupInfo } from '../support/payment-followup.js';
 
 function money(value) {
   return (Math.max(0, Number(value || 0)) / 100).toFixed(2);
@@ -24,11 +25,17 @@ function transactionRow(row) {
     displayName: String(row.display_name || ''),
     createdAt: String(row.created_at || ''),
     paidAt: row.paid_at ? String(row.paid_at) : null,
+    paymentStage: classifyPaymentStage({
+      orderStatus: row.status,
+      gatewayTransactionId: row.gateway_transaction_id,
+      gatewayStatus: row.last_gateway_status,
+      followupState: row.followup_state,
+    }),
   };
 }
 
 export async function getPayPingDashboard({ userId, owner = false, limit = 8 } = {}) {
-  await ensureSubmissionSchema();
+  await Promise.all([ensureSubmissionSchema(), ensurePaymentFollowupSchema()]);
   const db = await getSupportDb();
   const env = currentSupportEnvironment();
   const args = [env];
@@ -94,7 +101,7 @@ export async function listPayPingTransactions({
   search = '',
   limit = 50,
 } = {}) {
-  await ensureSubmissionSchema();
+  await Promise.all([ensureSubmissionSchema(), ensurePaymentFollowupSchema()]);
   const db = await getSupportDb();
   const env = currentSupportEnvironment();
   const clauses = ['o.environment = ?'];
@@ -130,11 +137,15 @@ export async function listPayPingTransactions({
                  o.status_description, o.gateway_transaction_id,
                  o.created_at, o.paid_at,
                  COALESCE(s.tier_label, '') AS tier_label,
-                 COALESCE(s.display_name, '') AS display_name
+                 COALESCE(s.display_name, '') AS display_name,
+                 COALESCE(f.state, '') AS followup_state
           FROM support_orders o
           LEFT JOIN support_submissions s
             ON s.environment = o.environment
            AND s.order_number = o.order_number
+          LEFT JOIN support_payment_followups f
+            ON f.environment = o.environment
+           AND f.order_number = o.order_number
           WHERE ${clauses.join(' AND ')}
           ORDER BY COALESCE(o.paid_at, o.created_at) DESC
           LIMIT ?`,
@@ -153,7 +164,7 @@ export async function getPayPingTransactionDetail({
   const order = clean(orderNumber, 120);
   if (!order) return null;
 
-  await Promise.all([ensureSubmissionSchema(), ensureWebPushSchema()]);
+  await Promise.all([ensureSubmissionSchema(), ensureWebPushSchema(), ensurePaymentFollowupSchema()]);
   const db = await getSupportDb();
   const env = currentSupportEnvironment();
 
@@ -174,11 +185,15 @@ export async function getPayPingTransactionDetail({
                  COALESCE(s.support_message, '') AS support_message,
                  COALESCE(s.display_name, '') AS display_name,
                  COALESCE(s.state, '') AS submission_state,
-                 COALESCE(s.announced_at, '') AS announced_at
+                 COALESCE(s.announced_at, '') AS announced_at,
+                 COALESCE(f.state, '') AS followup_state
           FROM support_orders o
           LEFT JOIN support_submissions s
             ON s.environment = o.environment
            AND s.order_number = o.order_number
+          LEFT JOIN support_payment_followups f
+            ON f.environment = o.environment
+           AND f.order_number = o.order_number
           WHERE ${clauses.join(' AND ')}
           LIMIT 1`,
     args,
@@ -226,8 +241,11 @@ export async function getPayPingTransactionDetail({
   const sentCount = pushRows.filter((item) => String(item.status || '') === 'SENT').length;
   const failedCount = pushRows.filter((item) => String(item.status || '') === 'FAILED').length;
 
+  const followup = owner ? await getPaymentFollowupInfo(order).catch(() => null) : null;
+
   return {
     owner,
+    followup,
     transaction: {
       ...transaction,
       paymentIntentId: owner && row.payment_intent_id ? String(row.payment_intent_id) : '',

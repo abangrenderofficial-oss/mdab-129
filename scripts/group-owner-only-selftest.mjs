@@ -7,20 +7,21 @@ function must(source, needle, label) {
   if (!source.includes(needle)) throw new Error(`${label} missing: ${needle}`);
 }
 
-const [handler, quote, audit, payment, stats] = await Promise.all([
+const [handler, guard, quote, audit, payment, stats] = await Promise.all([
   readFile('handlers/telegram.js', 'utf8'),
+  readFile('src/bot/group-owner-guard.js', 'utf8'),
   readFile('src/features/quote-filter.js', 'utf8'),
   readFile('src/bot/audit.js', 'utf8'),
   readFile('src/features/payment-detail.js', 'utf8'),
   readFile('src/bot/stats.js', 'utf8'),
 ]);
 
-must(handler, 'rejectNonOwnerGroupMessage', 'group message guard');
-must(handler, 'rejectNonOwnerGroupCallback', 'group callback guard');
+must(handler, 'rejectNonOwnerGroupMessage', 'group message guard import/use');
+must(handler, 'rejectNonOwnerGroupCallback', 'group callback guard import/use');
 must(handler, "ignored: 'group_owner_only'", 'early webhook rejection');
-must(handler, "if (!userId || isResetAdmin(userId)) return false;", 'owner bypass');
-must(handler, "extractFirstUrl(text)", 'group link detection');
-must(handler, "message?.video", 'group media detection');
+must(guard, "if (!userId || isResetAdmin(userId)) return false;", 'owner bypass');
+must(guard, "extractFirstUrl(text)", 'group link detection');
+must(guard, "message?.video", 'group media detection');
 
 const guardIndex = handler.indexOf('if (message && await rejectNonOwnerGroupMessage(message))');
 const commandIndex = handler.indexOf("if (command === '/menu')");

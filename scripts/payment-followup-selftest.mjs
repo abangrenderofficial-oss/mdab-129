@@ -86,7 +86,7 @@ const [
 
 must(supportFeature,"payfollow:review:",'Telegram review callback');
 must(supportFeature,"payfollow:cancel:",'Telegram cancel callback');
-must(followupModule,'FIRST_FOLLOWUP_MS = 30 * 60 * 1000','first reminder timing');
+must(followupModule,'FIRST_FOLLOWUP_MS = 15 * 60 * 1000','first reminder timing');
 must(followupModule,'SECOND_FOLLOWUP_MS = 3 * 60 * 60 * 1000','second reminder timing');
 must(followupModule,'MAX_FOLLOWUPS = 2','reminder cap');
 must(followupModule,'Continue Payment','continue payment button');

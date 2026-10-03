@@ -11,7 +11,7 @@ import { notifyNtfySupportPayment } from './ntfy-payment.js';
 import { notifyAffiliateCommission } from '../affiliate/notify.js';
 import { sendMessage } from '../telegram.js';
 
-const FIRST_FOLLOWUP_MS = 30 * 60 * 1000;
+const FIRST_FOLLOWUP_MS = 15 * 60 * 1000;
 const SECOND_FOLLOWUP_MS = 3 * 60 * 60 * 1000;
 const CHECK_INTERVAL_MS = 60 * 1000;
 const MAX_FOLLOWUPS = 2;

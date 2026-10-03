@@ -5,7 +5,7 @@ import {
   getAffiliatePayoutProfile,
   saveAffiliatePayoutProfile,
 } from '../src/affiliate/store.js';
-import { resolvePushDeviceOwner } from '../src/support/webpush-payment.js';
+import { resolvePayPingIdentity } from '../src/payping/identity.js';
 import { sendMessage, telegram } from '../src/telegram.js';
 
 let botUsernamePromise = null;
@@ -21,9 +21,8 @@ function bearerToken(req) {
 }
 
 async function authenticatedUserId(req) {
-  const token = bearerToken(req);
-  if (!token) return null;
-  return resolvePushDeviceOwner(token);
+  const identity = await resolvePayPingIdentity(req);
+  return identity?.userId || null;
 }
 
 async function botUsername() {

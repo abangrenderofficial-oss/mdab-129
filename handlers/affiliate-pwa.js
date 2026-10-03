@@ -49,6 +49,31 @@ const PAGE = String.raw`<!doctype html>
   .row{font-size:14px}.refbox{font-size:14px}.msg{font-size:13px}.item-title{font-size:14px}.meta{font-size:12px}
   .field label{font-size:12px}.payout-summary{font-size:13px}
 }
+
+/* PAYPING_UX_POLISH_V2 */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+a,button,input,select{-webkit-tap-highlight-color:transparent}
+a,button,.btn,.quick a,.tab,.back,.link,.item,.tx{touch-action:manipulation}
+@media(max-width:619px){
+  main{scrollbar-width:none;overscroll-behavior-y:contain;scroll-padding-bottom:calc(104px + env(safe-area-inset-bottom))}
+  main::-webkit-scrollbar{display:none}
+  .top{margin-bottom:18px}
+  .grid{gap:12px}
+  button,.btn,.quick a,.back,.tab,.danger,.link,nav a{min-height:44px}
+  input,select,textarea{font-size:16px}
+  .card,.stat,.hero,.item,.tx,.rowbox,.device,.quick a,.btn,button,.back,.tab,nav a{
+    transition:transform .14s ease,opacity .14s ease,border-color .16s ease,background-color .16s ease
+  }
+  .quick a:active,.btn:active,button:active,.back:active,.tab:active,.item:active,.tx:active{transform:scale(.985)}
+  nav a:active{transform:scale(.96)}
+  .title,.heroValue,.available,.amount,.v{font-variant-numeric:tabular-nums}
+  .cardTitle,.card-title{letter-spacing:-.01em}
+  .muted,.meta,.sub,.k{letter-spacing:.005em}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}
+}
 </style>
 </head>
 <body>

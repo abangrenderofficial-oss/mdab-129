@@ -18,6 +18,11 @@ function must(source, needle, label) {
 for (const page of pages) {
   const source = await readFile(page, 'utf8');
   must(source, 'PAYPING_MOBILE_REFERENCE_V1', page);
+  must(source, 'PAYPING_UX_POLISH_V2', page);
+  must(source, 'min-height:44px', page);
+  must(source, 'touch-action:manipulation', page);
+  must(source, 'prefers-reduced-motion:reduce', page);
+  must(source, 'overscroll-behavior-y:contain', page);
   must(source, 'body::before', page);
   must(source, 'overflow:hidden;background-attachment:fixed;background-size:100vw 100vh;background-repeat:no-repeat', page);
   must(source, 'top:calc(env(safe-area-inset-top,0px) + 18px);height:1px;background:rgba(255,255,255,.06)', page);

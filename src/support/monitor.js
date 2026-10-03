@@ -14,9 +14,9 @@ function validUserId(value) {
 }
 
 async function ensureSchema() {
+  await ensureSubmissionSchema();
   if (!schemaPromise) {
     schemaPromise = (async () => {
-      await ensureSubmissionSchema();
       const db = await getSupportDb();
       await db.batch([
         `CREATE TABLE IF NOT EXISTS support_user_monitor (

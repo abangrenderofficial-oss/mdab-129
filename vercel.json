@@ -1,32 +1,107 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/router.js": { "maxDuration": 300 }
+    "api/router.js": {
+      "maxDuration": 300,
+      "includeFiles": "bin/yt-dlp"
+    }
   },
   "rewrites": [
-    { "source": "/", "destination": "/api/router?route=root" },
-    { "source": "/api/health", "destination": "/api/router?route=health" },
-    { "source": "/api/telegram", "destination": "/api/router?route=telegram" },
-    { "source": "/api/setup", "destination": "/api/router?route=setup" },
-    { "source": "/api/setup-webhook", "destination": "/api/router?route=setup-webhook" },
-    { "source": "/api/media", "destination": "/api/router?route=media" },
-    { "source": "/api/diagnostic", "destination": "/api/router?route=diagnostic" },
-    { "source": "/api/status-diagnostic", "destination": "/api/router?route=status-diagnostic" },
-    { "source": "/api/bayarcash", "destination": "/api/router?route=bayarcash" },
-    { "source": "/api/support-return", "destination": "/api/router?route=support-return" },
-    { "source": "/api/premium-hq-success", "destination": "/api/router?route=premium-hq-success" },
-    { "source": "/api/content-bridge/connect", "destination": "/api/router?route=content-bridge-connect" },
-    { "source": "/api/content-bridge/verify", "destination": "/api/router?route=content-bridge-verify" },
-    { "source": "/api/payment-push", "destination": "/api/router?route=payment-push" },
-    { "source": "/api/heavy-limit", "destination": "/api/router?route=heavy-limit" },
-    { "source": "/ar-payment", "destination": "/api/router?route=payment-pwa-page" },
-    { "source": "/ar-payment/", "destination": "/api/router?route=payment-pwa-page" },
-    { "source": "/ar-payment/manifest.webmanifest", "destination": "/api/router?route=payment-pwa-manifest" },
-    { "source": "/ar-payment/payping.webmanifest", "destination": "/api/router?route=payment-pwa-manifest" },
-    { "source": "/ar-payment/payping-v4.webmanifest", "destination": "/api/router?route=payment-pwa-manifest" },
-    { "source": "/ar-payment/sw.js", "destination": "/api/router?route=payment-pwa-sw" },
-    { "source": "/ar-payment/icon.svg", "destination": "/api/router?route=payment-pwa-icon" },
-    { "source": "/ar-payment/payping-icon.svg", "destination": "/api/router?route=payment-pwa-icon" },
-    { "source": "/ar-payment/payping-icon-v4.svg", "destination": "/api/router?route=payment-pwa-icon" }
+    {
+      "source": "/",
+      "destination": "/api/router?route=root"
+    },
+    {
+      "source": "/api/health",
+      "destination": "/api/router?route=health"
+    },
+    {
+      "source": "/api/telegram",
+      "destination": "/api/router?route=telegram"
+    },
+    {
+      "source": "/api/setup",
+      "destination": "/api/router?route=setup"
+    },
+    {
+      "source": "/api/setup-webhook",
+      "destination": "/api/router?route=setup-webhook"
+    },
+    {
+      "source": "/api/media",
+      "destination": "/api/router?route=media"
+    },
+    {
+      "source": "/api/diagnostic",
+      "destination": "/api/router?route=diagnostic"
+    },
+    {
+      "source": "/api/status-diagnostic",
+      "destination": "/api/router?route=status-diagnostic"
+    },
+    {
+      "source": "/api/bayarcash",
+      "destination": "/api/router?route=bayarcash"
+    },
+    {
+      "source": "/api/support-return",
+      "destination": "/api/router?route=support-return"
+    },
+    {
+      "source": "/api/premium-hq-success",
+      "destination": "/api/router?route=premium-hq-success"
+    },
+    {
+      "source": "/api/content-bridge/connect",
+      "destination": "/api/router?route=content-bridge-connect"
+    },
+    {
+      "source": "/api/content-bridge/verify",
+      "destination": "/api/router?route=content-bridge-verify"
+    },
+    {
+      "source": "/api/payment-push",
+      "destination": "/api/router?route=payment-push"
+    },
+    {
+      "source": "/api/heavy-limit",
+      "destination": "/api/router?route=heavy-limit"
+    },
+    {
+      "source": "/ar-payment",
+      "destination": "/api/router?route=payment-pwa-page"
+    },
+    {
+      "source": "/ar-payment/",
+      "destination": "/api/router?route=payment-pwa-page"
+    },
+    {
+      "source": "/ar-payment/manifest.webmanifest",
+      "destination": "/api/router?route=payment-pwa-manifest"
+    },
+    {
+      "source": "/ar-payment/payping.webmanifest",
+      "destination": "/api/router?route=payment-pwa-manifest"
+    },
+    {
+      "source": "/ar-payment/payping-v4.webmanifest",
+      "destination": "/api/router?route=payment-pwa-manifest"
+    },
+    {
+      "source": "/ar-payment/sw.js",
+      "destination": "/api/router?route=payment-pwa-sw"
+    },
+    {
+      "source": "/ar-payment/icon.svg",
+      "destination": "/api/router?route=payment-pwa-icon"
+    },
+    {
+      "source": "/ar-payment/payping-icon.svg",
+      "destination": "/api/router?route=payment-pwa-icon"
+    },
+    {
+      "source": "/ar-payment/payping-icon-v4.svg",
+      "destination": "/api/router?route=payment-pwa-icon"
+    }
   ]
 }

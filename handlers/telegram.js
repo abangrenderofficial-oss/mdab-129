@@ -28,6 +28,7 @@ import {
   processChannelGateCallback,
 } from '../src/features/channel-gate.js';
 import { scheduleLinkJob } from '../src/link-queue.js';
+import { consumePayPingTelegramLinkCode } from '../src/payping/auth.js';
 import {
   FRIDAY_SUPPORT_MODE_DONATE,
   FRIDAY_SUPPORT_MODE_FORCE,
@@ -89,6 +90,23 @@ async function processMessage(message, context) {
   if (command === '/withdraw') return handleAffiliateWithdrawCommand(message);
   if (command === '/affiliatepaid') return handleAffiliatePayoutCommand(message, 'PAID');
   if (command === '/affiliatereject') return handleAffiliatePayoutCommand(message, 'REJECTED');
+  if (command === '/start' && startPayload(message).startsWith('payping_')) {
+    if (message?.chat?.type !== 'private') {
+      return sendMessage(chatId, '❌ PayPing account linking hanya boleh dibuat dalam private chat bot.');
+    }
+    const code = startPayload(message).slice('payping_'.length);
+    try {
+      await consumePayPingTelegramLinkCode(code, message?.from?.id);
+      return sendMessage(chatId, '✅ PayPing account linked dengan Telegram ini.\n\nKembali ke PayPing dan buka semula app / refresh.');
+    } catch (error) {
+      const known = ['PAYPING_LINK_EXPIRED','PAYPING_LINK_ALREADY_USED','INVALID_PAYPING_LINK_CODE','TELEGRAM_ALREADY_LINKED','ACCOUNT_ALREADY_LINKED'];
+      if (known.includes(String(error?.code || ''))) {
+        return sendMessage(chatId, '❌ Link PayPing ini sudah expired / digunakan / tidak sah. Generate link baru dari PayPing.');
+      }
+      console.warn('[payping-link] failed:', error?.code, error?.message);
+      return sendMessage(chatId, '❌ Tak berjaya link PayPing sekarang. Cuba generate link baru dari app.');
+    }
+  }
   if (command === '/start' && startPayload(message).startsWith('ref_')) {
     await handleAffiliateStartPayload(message, startPayload(message));
     return sendMessage(chatId, startText(message?.from?.id));

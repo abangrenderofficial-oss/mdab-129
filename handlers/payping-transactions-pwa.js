@@ -63,14 +63,13 @@ a,button,.btn,.quick a,.tab,.back,.link,.item,.tx{touch-action:manipulation}
 <nav><a href="/ar-payment/"><b>⌂</b>Home</a><a class="active" href="/ar-payment/transactions"><b>≡</b>Transactions</a><a href="/ar-payment/affiliate"><b>₿</b>Earn</a><a href="/ar-payment/settings"><b>⚙</b>Settings</a></nav>
 <script>
 const token=localStorage.getItem('ar_payment_device_token_v1')||'';const $=id=>document.getElementById(id);let timer=null;
-const headers=()=>({Authorization:'Bearer '+token});const money=v=>'RM'+(Number(v||0)||0).toFixed(2);
+const headers=()=>token?{'X-PayPing-Device-Token':token}:{};const money=v=>'RM'+(Number(v||0)||0).toFixed(2);
 const date=v=>{if(!v)return '-';const d=new Date(v);return Number.isNaN(d.getTime())?'-':new Intl.DateTimeFormat('en-MY',{day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit'}).format(d)};
 const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 async function load(){
- if(!token){$('loading').innerHTML='<div class="error">Connect PayPing notification/device dulu dari Home.</div>';return}
  const p=new URLSearchParams({view:'transactions',status:$('status').value,search:$('search').value.trim(),limit:'100'});
- try{const r=await fetch('/api/payping-data?'+p,{headers:headers()});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Unable to load transactions.');
- $('scope').textContent=d.owner?'Merchant view · All payments':'My payments';
+ try{const r=await fetch('/api/payping-data?'+p,{headers:headers()});const d=await r.json();if(r.status===401){location.replace('/ar-payment/login');return}if(r.status===409&&d.error==='PAYPING_TELEGRAM_LINK_REQUIRED'){location.replace('/ar-payment/settings');return}if(!r.ok||!d.ok)throw new Error(d.message||'Unable to load transactions.');
+ $('scope').textContent=d.owner?'Merchant view · All payments':String(d.role||'user').toLowerCase()==='affiliate'?'Affiliate · My payments':'My payments';
  $('loading').hidden=true;
  $('list').innerHTML=d.transactions.length?d.transactions.map(t=>'<a class="item" href="/ar-payment/transaction?order='+encodeURIComponent(t.orderNumber)+'"><div class="line"><div><div class="who">'+esc(t.displayName||t.username||('ID '+t.userId))+'</div><div class="meta">'+esc(t.tierLabel)+' · '+esc(t.orderNumber)+'</div></div><div style="text-align:right"><div class="amount">'+money(t.amount)+'</div><span class="badge '+esc(t.status.toLowerCase())+'">'+esc(t.status)+'</span></div></div><div class="meta">Transaction: '+esc(t.transactionId||'-')+'<br>'+date(t.paidAt||t.createdAt)+' · Tap for details →</div></a>').join(''):'<div class="empty">No transactions found.</div>';
  }catch(e){$('loading').hidden=false;$('loading').innerHTML='<div class="error">'+esc(e.message||String(e))+'</div>'}

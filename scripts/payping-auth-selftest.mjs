@@ -10,10 +10,13 @@ const {
   authenticatePayPingAccount,
   clearPayPingSessionCookie,
   createPayPingAccount,
+  createPayPingTelegramLinkCode,
+  consumePayPingTelegramLinkCode,
   ensurePayPingAuthSchema,
   issuePayPingSession,
   linkTrustedTelegram,
   payPingSessionCookie,
+  promotePayPingAccountToAffiliate,
   resolvePayPingSession,
   revokePayPingSession,
 } = await import('../src/payping/auth.js');
@@ -45,6 +48,8 @@ assert(authenticated?.accountId===user.accountId,'valid login failed');
 const linked=await linkTrustedTelegram(user.accountId,'123456789');
 assert(linked.telegramUserId==='123456789','trusted Telegram linking failed');
 assert(linked.role==='user','normal Telegram link must not escalate role');
+const affiliate=await promotePayPingAccountToAffiliate(user.accountId);
+assert(affiliate.role==='affiliate','explicit affiliate join must update role');
 
 const session=await issuePayPingSession(user.accountId);
 const resolved=await resolvePayPingSession(session.token);
@@ -55,6 +60,25 @@ assert(clearPayPingSessionCookie().includes('Max-Age=0'),'logout cookie must exp
 assert(await revokePayPingSession(session.token),'session revoke failed');
 assert(await resolvePayPingSession(session.token)===null,'revoked session remained valid');
 
+const unlinked=await createPayPingAccount({
+  email:'link@test.example',
+  password:'LinkPass123!',
+  displayName:'Link User',
+});
+const linkCode=await createPayPingTelegramLinkCode(unlinked.accountId);
+assert(/^[A-F0-9]{12}$/.test(linkCode.code),'Telegram link code format invalid');
+const consumed=await consumePayPingTelegramLinkCode(linkCode.code,'222333444');
+assert(consumed.telegramUserId==='222333444','Telegram deep-link consume failed');
+
+let linkRequired=false;
+const noTelegram=await createPayPingAccount({
+  email:'nolink@test.example',
+  password:'NoLinkPass123!',
+});
+try{await promotePayPingAccountToAffiliate(noTelegram.accountId)}
+catch(error){linkRequired=error?.code==='PAYPING_TELEGRAM_LINK_REQUIRED'}
+assert(linkRequired,'affiliate join must require Telegram link');
+
 const owner=await createPayPingAccount({
   email:'owner@test.example',
   password:'OwnerPass123!',
@@ -63,11 +87,16 @@ const owner=await createPayPingAccount({
 });
 assert(owner.role==='owner'&&owner.telegramUserId==='987654321','trusted owner bootstrap failed');
 
-const [handler,login,register,settings,server,router,vercel]=await Promise.all([
+const [handler,login,register,settings,home,affiliatePage,dataApi,affiliateApi,telegramHandler,server,router,vercel]=await Promise.all([
   readFile('handlers/payping-auth.js','utf8'),
   readFile('handlers/payping-login-pwa.js','utf8'),
   readFile('handlers/payping-register-pwa.js','utf8'),
   readFile('handlers/payping-settings-pwa.js','utf8'),
+  readFile('handlers/payping-home-pwa.js','utf8'),
+  readFile('handlers/affiliate-pwa.js','utf8'),
+  readFile('handlers/payping-data.js','utf8'),
+  readFile('handlers/affiliate-web.js','utf8'),
+  readFile('handlers/telegram.js','utf8'),
   readFile('server.js','utf8'),
   readFile('api/router.js','utf8'),
   readFile('vercel.json','utf8'),
@@ -75,11 +104,21 @@ const [handler,login,register,settings,server,router,vercel]=await Promise.all([
 must(handler,"action==='register'",'auth register');
 must(handler,"action==='login'",'auth login');
 must(handler,"action==='logout'",'auth logout');
+must(handler,"action==='request_telegram_link'",'Telegram account link action');
+must(handler,"action==='join_affiliate'",'affiliate role action');
 must(handler,'trustedTelegramFromRequest','trusted Telegram bridge');
 must(login,"fetch('/api/payping-auth'",'login UI');
 must(register,"action:'register'",'register UI');
 must(settings,'PayPing Account','settings account section');
 must(settings,'/ar-payment/login','settings login link');
+must(settings,'accountLinkTelegram','settings Telegram linking UI');
+must(home,'connectTelegram','home Telegram onboarding');
+must(home,"location.replace('/ar-payment/login')",'home login route guard');
+must(affiliatePage,'joinAffiliate','affiliate onboarding UI');
+must(affiliatePage,"action:'join_affiliate'",'affiliate role activation');
+must(dataApi,'resolvePayPingIdentity','dashboard session identity');
+must(affiliateApi,"PAYPING_AFFILIATE_REQUIRED",'affiliate role backend guard');
+must(telegramHandler,"startsWith('payping_')",'Telegram deep-link handler');
 must(server,"['/api/payping-auth', payPingAuthHandler]",'Node auth API route');
 must(server,"['/ar-payment/login', payPingLoginPage]",'Node login route');
 must(server,"['/ar-payment/register', payPingRegisterPage]",'Node register route');
@@ -93,6 +132,9 @@ console.log('PAYPING_AUTH_SELFTEST_OK',JSON.stringify({
   account:user.accountId,
   telegram:linked.telegramUserId,
   ownerRole:owner.role,
+  affiliateRole:affiliate.role,
+  deepLinkTelegram:consumed.telegramUserId,
   duplicateBlocked:duplicate,
+  affiliateLinkRequired:linkRequired,
   sessionRevoked:true,
 }));

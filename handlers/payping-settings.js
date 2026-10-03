@@ -6,19 +6,22 @@ import {
   sendWebPushTest,
 } from '../src/support/webpush-payment.js';
 import { telegram } from '../src/telegram.js';
+import { resolvePayPingIdentity } from '../src/payping/auth.js';
 
 function json(res,status,body){return res.status(status).json(body)}
-function bearer(req){
+function deviceToken(req){
+  const direct=String(req?.headers?.['x-payping-device-token']||'').trim();
+  if(direct)return direct;
   const raw=String(req?.headers?.authorization||'').trim();
   const match=raw.match(/^Bearer\s+(.+)$/i);
-  return String(match?.[1]||req?.headers?.['x-payping-device-token']||'').trim();
+  return String(match?.[1]||'').trim();
 }
 async function contextFrom(req){
-  const token=bearer(req);
-  if(!token)return null;
-  const device=await getPushDeviceContext(token);
-  if(!device)return null;
-  return {token,device};
+  const identity=await resolvePayPingIdentity(req,{allowLegacyDevice:true});
+  if(!identity)return null;
+  const token=deviceToken(req);
+  const device=token?await getPushDeviceContext(token).catch(()=>null):null;
+  return {token,device,identity};
 }
 async function accountProfile(userId){
   try{
@@ -43,26 +46,38 @@ export default async function handler(req,res){
   try{
     if(req.method==='GET'){
       const view=String(req.query?.view||'account').trim().toLowerCase();
-      const ownerId=String(process.env.BOT_OWNER_ID||'').trim();
-      const owner=Boolean(ownerId&&ctx.device.ownerUserId===ownerId);
+      const owner=Boolean(ctx.identity.owner);
 
       if(view==='notifications'){
-        const history=await getPushNotificationHistory(ctx.token,req.query?.limit||50);
+        const history=ctx.token?await getPushNotificationHistory(ctx.token,req.query?.limit||50).catch(()=>[]):[];
         return json(res,200,{
           ok:true,
           owner,
-          device:ctx.device,
+          role:ctx.identity.role,
+          account:ctx.identity.account,
+          device:ctx.device||{ownerUserId:ctx.identity.userId||'',currentDeviceId:'',devices:[],activeDeviceCount:0},
           history,
-          notificationConfigured:true,
+          notificationConfigured:Boolean(ctx.device),
         });
       }
 
-      const profile=await accountProfile(ctx.device.ownerUserId);
+      const profile=ctx.identity.userId
+        ? await accountProfile(ctx.identity.userId)
+        : {
+            userId:'',
+            firstName:'',
+            lastName:'',
+            username:'',
+            displayName:String(ctx.identity.account?.displayName||ctx.identity.account?.email||'PayPing User'),
+          };
       return json(res,200,{
         ok:true,
         owner,
+        role:ctx.identity.role,
+        account:ctx.identity.account,
+        needsTelegramLink:ctx.identity.needsTelegramLink,
         profile,
-        device:ctx.device,
+        device:ctx.device||{ownerUserId:ctx.identity.userId||'',currentDeviceId:'',devices:[],activeDeviceCount:0},
         environment:String(process.env.BAYARCASH_SANDBOX||'').toLowerCase()==='true'?'sandbox':'production',
       });
     }
@@ -76,16 +91,19 @@ export default async function handler(req,res){
     const action=String(body.action||'').trim().toLowerCase();
 
     if(action==='test_notification'){
+      if(!ctx.token)return json(res,400,{ok:false,error:'PAYPING_DEVICE_NOT_CONNECTED'});
       const result=await sendWebPushTest(ctx.token);
       return json(res,200,{ok:true,...result});
     }
 
     if(action==='disconnect_current'){
+      if(!ctx.token)return json(res,400,{ok:false,error:'PAYPING_DEVICE_NOT_CONNECTED'});
       await disconnectPushDevice(ctx.token);
       return json(res,200,{ok:true,disconnected:true,currentDevice:true});
     }
 
     if(action==='revoke_device'){
+      if(!ctx.token)return json(res,400,{ok:false,error:'PAYPING_DEVICE_NOT_CONNECTED'});
       const result=await revokePushDevice(ctx.token,body.deviceId);
       return json(res,200,{ok:true,...result});
     }

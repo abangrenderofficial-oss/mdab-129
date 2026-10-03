@@ -92,7 +92,7 @@ const $=id=>document.getElementById(id);
 let state=null;
 const money=v=>'RM'+(Number(v||0)||0).toFixed(2);
 const date=v=>{const d=new Date(v);return Number.isNaN(d.getTime())?'-':new Intl.DateTimeFormat('en-MY',{day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit'}).format(d)};
-const headers=()=>({Authorization:'Bearer '+token,'Content-Type':'application/json'});
+const headers=()=>{const h={'Content-Type':'application/json'};if(token)h['X-PayPing-Device-Token']=token;return h};
 function setMsg(t,c=''){$('msg').textContent=t||'';$('msg').className='msg '+c}
 function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function badge(s){const v=String(s||'').toLowerCase();return '<span class="badge '+esc(v)+'">'+esc(String(s||'-'))+'</span>'}
@@ -124,11 +124,10 @@ function render(){
   document.querySelectorAll('[data-decision]').forEach(btn=>btn.onclick=()=>finalize(btn.dataset.id,btn.dataset.decision));
 }
 async function load(){
-  if(!token){$('loading').hidden=true;$('blocked').hidden=false;return}
   try{
     const r=await fetch('/api/affiliate-admin',{headers:headers()});
     const d=await r.json();
-    if(r.status===401||r.status===403){$('loading').hidden=true;$('blocked').hidden=false;return}
+    if(r.status===401){location.replace('/ar-payment/login');return}if(r.status===403){$('loading').hidden=true;$('blocked').hidden=false;return}
     if(!r.ok||!d.ok)throw new Error(d.message||'Admin dashboard gagal.');
     state=d;$('loading').hidden=true;$('app').hidden=false;render();
   }catch(e){$('loading').innerHTML='<div class="error">'+(e.message||String(e))+'</div>'}

@@ -89,15 +89,14 @@ a,button,.btn,.quick a,.tab,.back,.link,.item,.tx{touch-action:manipulation}
 const key='ar_payment_device_token_v1';const token=localStorage.getItem(key)||'';const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const date=v=>{if(!v)return '-';const d=new Date(v);return Number.isNaN(d.getTime())?'-':new Intl.DateTimeFormat('en-MY',{timeZone:'Asia/Kuala_Lumpur',day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit'}).format(d)};
-const money=v=>'RM'+(Number(v||0)||0).toFixed(2);const headers=()=>({Authorization:'Bearer '+token});
+const money=v=>'RM'+(Number(v||0)||0).toFixed(2);const headers=()=>token?{'X-PayPing-Device-Token':token}:{};
 function badge(s){const v=String(s||'').toLowerCase();return '<span class="badge '+esc(v)+'">'+esc(String(s||'-').replaceAll('_',' '))+'</span>'}
 async function copyText(v){if(!v||v==='-')return;try{await navigator.clipboard.writeText(v)}catch{}}
 async function load(){
  const order=new URLSearchParams(location.search).get('order')||'';
- if(!token){$('loading').innerHTML='<div class="error">Device belum connected.</div>';return}
  if(!order){$('loading').innerHTML='<div class="error">Order ID missing.</div>';return}
  try{
-  const r=await fetch('/api/payping-data?'+new URLSearchParams({view:'transaction',order}),{headers:headers()});const d=await r.json();if(!r.ok||!d.ok)throw new Error(r.status===404?'Transaction not found or access denied.':(d.message||'Transaction detail unavailable.'));
+  const r=await fetch('/api/payping-data?'+new URLSearchParams({view:'transaction',order}),{headers:headers()});const d=await r.json();if(r.status===401){location.replace('/ar-payment/login');return}if(r.status===409&&d.error==='PAYPING_TELEGRAM_LINK_REQUIRED'){location.replace('/ar-payment/settings');return}if(!r.ok||!d.ok)throw new Error(r.status===404?'Transaction not found or access denied.':(d.message||'Transaction detail unavailable.'));
   const t=d.transaction;$('orderTitle').textContent=t.orderNumber;$('amount').textContent=money(t.amount);$('tier').textContent=t.tierLabel||'Supporter';$('status').textContent=t.status||'-';$('status').className='badge '+String(t.status||'').toLowerCase();
   $('orderId').textContent=t.orderNumber;$('transactionId').textContent=t.transactionId||'-';$('gatewayStatus').textContent=t.gatewayStatus||'-';$('statusDescription').textContent=t.statusDescription||'-';$('createdAt').textContent=date(t.createdAt);$('paidAt').textContent=date(t.paidAt);
   $('displayName').textContent=t.displayName||'-';$('username').textContent=t.username?('@'+t.username):'-';$('userId').textContent=t.userId||'-';$('submissionState').textContent=t.submissionState||'-';

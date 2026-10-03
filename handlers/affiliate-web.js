@@ -5,7 +5,7 @@ import {
   getAffiliatePayoutProfile,
   saveAffiliatePayoutProfile,
 } from '../src/affiliate/store.js';
-import { resolvePushDeviceOwner } from '../src/support/webpush-payment.js';
+import { resolvePayPingIdentity } from '../src/payping/auth.js';
 import { sendMessage, telegram } from '../src/telegram.js';
 
 let botUsernamePromise = null;
@@ -14,16 +14,8 @@ function json(res, status, body) {
   return res.status(status).json(body);
 }
 
-function bearerToken(req) {
-  const raw = String(req?.headers?.authorization || '').trim();
-  const match = raw.match(/^Bearer\s+(.+)$/i);
-  return String(match?.[1] || req?.headers?.['x-payping-device-token'] || '').trim();
-}
-
-async function authenticatedUserId(req) {
-  const token = bearerToken(req);
-  if (!token) return null;
-  return resolvePushDeviceOwner(token);
+async function authenticatedIdentity(req) {
+  return resolvePayPingIdentity(req, { allowLegacyDevice: true });
 }
 
 async function botUsername() {
@@ -106,18 +98,33 @@ async function notifyWithdrawal(result) {
 }
 
 export default async function handler(req, res) {
-  const userId = await authenticatedUserId(req);
-  if (!userId) {
+  const identity = await authenticatedIdentity(req);
+  if (!identity) {
     return json(res, 401, {
       ok: false,
-      error: 'PAYPING_DEVICE_NOT_AUTHENTICATED',
-      message: 'Connect PayPing dengan /pushsetup dahulu.',
+      error: 'PAYPING_LOGIN_REQUIRED',
+      message: 'Login PayPing dahulu.',
     });
   }
+  if (!identity.userId) {
+    return json(res, 409, {
+      ok: false,
+      error: 'PAYPING_TELEGRAM_LINK_REQUIRED',
+      message: 'Connect Telegram dahulu.',
+    });
+  }
+  if (identity.source === 'account_session' && !['affiliate','admin','owner'].includes(String(identity.role || ''))) {
+    return json(res, 403, {
+      ok: false,
+      error: 'PAYPING_AFFILIATE_REQUIRED',
+      message: 'Join PayPing Affiliate dahulu.',
+    });
+  }
+  const userId = identity.userId;
 
   try {
     if (req.method === 'GET') {
-      return json(res, 200, { ok: true, ...(await payloadFor(userId)) });
+      return json(res, 200, { ok: true, role: identity.role, owner: identity.owner, ...(await payloadFor(userId)) });
     }
 
     if (req.method !== 'POST') {

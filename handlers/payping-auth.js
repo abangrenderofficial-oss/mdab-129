@@ -2,14 +2,28 @@ import {
   authenticatePayPingAccount,
   clearPayPingSessionCookie,
   createPayPingAccount,
+  createPayPingTelegramLinkCode,
   issuePayPingSession,
   linkTrustedTelegram,
+  promotePayPingAccountToAffiliate,
   payPingSessionCookie,
   payPingSessionTokenFromRequest,
   resolvePayPingIdentity,
   revokePayPingSession,
   trustedTelegramFromRequest,
 } from '../src/payping/auth.js';
+import { telegram } from '../src/telegram.js';
+
+let botUsernamePromise = null;
+
+async function telegramBotUsername(){
+  const configured=String(process.env.TELEGRAM_BOT_USERNAME||'').trim().replace(/^@+/,'');
+  if(configured)return configured;
+  if(!botUsernamePromise){
+    botUsernamePromise=telegram('getMe',{}).then((bot)=>String(bot?.username||'').trim().replace(/^@+/,'')).catch(()=>{botUsernamePromise=null;return ''});
+  }
+  return botUsernamePromise;
+}
 
 function json(res,status,body){
   res.setHeader('Cache-Control','no-store');
@@ -55,6 +69,37 @@ export default async function handler(req,res){
 
     const body=req.body&&typeof req.body==='object'?req.body:{};
     const action=String(body.action||'').trim().toLowerCase();
+
+    if(action==='request_telegram_link'){
+      const identity=await resolvePayPingIdentity(req,{allowLegacyDevice:false});
+      if(!identity?.accountId)return json(res,401,{ok:false,error:'PAYPING_LOGIN_REQUIRED'});
+      const result=await createPayPingTelegramLinkCode(identity.accountId);
+      if(result.alreadyLinked){
+        return json(res,200,{ok:true,alreadyLinked:true,telegramUserId:result.telegramUserId});
+      }
+      const username=await telegramBotUsername();
+      const payload='payping_'+result.code.toLowerCase();
+      return json(res,200,{
+        ok:true,
+        code:result.code,
+        expiresAt:result.expiresAt,
+        telegramLink:username?`https://t.me/${username}?start=${payload}`:'',
+        payload,
+      });
+    }
+
+    if(action==='join_affiliate'){
+      const identity=await resolvePayPingIdentity(req,{allowLegacyDevice:false});
+      if(!identity?.accountId)return json(res,401,{ok:false,error:'PAYPING_LOGIN_REQUIRED'});
+      const account=await promotePayPingAccountToAffiliate(identity.accountId);
+      return json(res,200,{
+        ok:true,
+        account,
+        role:account.role,
+        owner:['owner','admin'].includes(account.role),
+        needsTelegramLink:!account.telegramUserId,
+      });
+    }
 
     if(action==='logout'){
       const token=payPingSessionTokenFromRequest(req);
@@ -110,6 +155,9 @@ export default async function handler(req,res){
       EMAIL_ALREADY_EXISTS:409,
       TELEGRAM_ALREADY_LINKED:409,
       ACCOUNT_ALREADY_LINKED:409,
+      PAYPING_TELEGRAM_LINK_REQUIRED:409,
+      PAYPING_ACCOUNT_MISSING:400,
+      PAYPING_ACCOUNT_NOT_FOUND:404,
     }[code]||500;
     if(status>=500)console.error('[payping-auth] failed:',code,error?.message);
     return json(res,status,{ok:false,error:code,message:error?.message||'PayPing authentication failed.'});

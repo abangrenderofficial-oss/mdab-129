@@ -1,7 +1,7 @@
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 
-import { getSupportDb } from '../support/store.js';
+import { currentSupportEnvironment, getSupportDb } from '../support/store.js';
 import { resolvePushDeviceOwner } from '../support/webpush-payment.js';
 
 const scrypt = promisify(scryptCb);
@@ -50,8 +50,8 @@ async function affiliateExists(userId) {
   if (!/^\d+$/.test(String(userId || ''))) return false;
   const db = await getSupportDb();
   const result = await db.execute({
-    sql: `SELECT 1 FROM affiliate_profiles WHERE telegram_user_id = ? LIMIT 1`,
-    args: [String(userId)],
+    sql: `SELECT 1 FROM affiliate_profiles WHERE environment = ? AND telegram_user_id = ? LIMIT 1`,
+    args: [currentSupportEnvironment(), String(userId)],
   });
   return Boolean(result.rows?.length);
 }
@@ -87,6 +87,15 @@ export async function ensurePayPingAuthSchema() {
         )`,
         `CREATE INDEX IF NOT EXISTS idx_payping_sessions_account
           ON payping_sessions(account_id, revoked_at, expires_at)`,
+        `CREATE TABLE IF NOT EXISTS payping_telegram_link_codes (
+          code_hash TEXT PRIMARY KEY,
+          account_id TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          used_at TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_payping_link_codes_account
+          ON payping_telegram_link_codes(account_id, used_at, expires_at)`,
       ], 'write');
       return true;
     })().catch((error) => {
@@ -244,6 +253,127 @@ export async function linkTrustedTelegram(accountId, telegramUserId, { promoteOw
   row.updated_at = now;
   return accountFromRow(row);
 }
+
+export async function createPayPingTelegramLinkCode(accountId) {
+  const id = String(accountId || '').trim();
+  if (!id) {
+    const error = new Error('PayPing account missing.');
+    error.code = 'PAYPING_ACCOUNT_MISSING';
+    throw error;
+  }
+
+  await ensurePayPingAuthSchema();
+  const db = await getSupportDb();
+  const accountResult = await db.execute({
+    sql: `SELECT account_id, telegram_user_id FROM payping_accounts WHERE account_id = ? AND status = 'active' LIMIT 1`,
+    args: [id],
+  });
+  const account = accountResult.rows?.[0];
+  if (!account) {
+    const error = new Error('PayPing account tidak dijumpai.');
+    error.code = 'PAYPING_ACCOUNT_NOT_FOUND';
+    throw error;
+  }
+  if (String(account.telegram_user_id || '')) {
+    return { alreadyLinked: true, telegramUserId: String(account.telegram_user_id) };
+  }
+
+  const code = randomBytes(6).toString('hex').toUpperCase();
+  const hash = createHash('sha256').update('payping:telegram-link:'+code).digest('hex');
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 15 * 60 * 1000);
+
+  await db.batch([
+    {
+      sql: `DELETE FROM payping_telegram_link_codes
+            WHERE account_id = ? AND used_at = ''`,
+      args: [id],
+    },
+    {
+      sql: `INSERT INTO payping_telegram_link_codes (
+              code_hash, account_id, expires_at, used_at, created_at
+            ) VALUES (?, ?, ?, '', ?)`,
+      args: [hash, id, expiresAt.toISOString(), now.toISOString()],
+    },
+  ], 'write');
+
+  return { code, expiresAt: expiresAt.toISOString(), alreadyLinked: false };
+}
+
+export async function consumePayPingTelegramLinkCode(code, telegramUserId) {
+  const normalized = String(code || '').trim().toUpperCase();
+  const userId = /^\d+$/.test(String(telegramUserId || '')) ? String(telegramUserId) : '';
+  if (!/^[A-F0-9]{12}$/.test(normalized) || !userId) {
+    const error = new Error('PayPing link code tidak sah.');
+    error.code = 'INVALID_PAYPING_LINK_CODE';
+    throw error;
+  }
+
+  await ensurePayPingAuthSchema();
+  const db = await getSupportDb();
+  const hash = createHash('sha256').update('payping:telegram-link:'+normalized).digest('hex');
+  const now = new Date().toISOString();
+  const found = await db.execute({
+    sql: `SELECT account_id, expires_at, used_at
+          FROM payping_telegram_link_codes
+          WHERE code_hash = ?
+          LIMIT 1`,
+    args: [hash],
+  });
+  const row = found.rows?.[0];
+  if (!row || row.used_at || !row.expires_at || new Date(String(row.expires_at)).getTime() <= Date.now()) {
+    const error = new Error('PayPing link expired atau sudah digunakan.');
+    error.code = 'PAYPING_LINK_EXPIRED';
+    throw error;
+  }
+
+  const claim = await db.execute({
+    sql: `UPDATE payping_telegram_link_codes
+          SET used_at = ?
+          WHERE code_hash = ? AND used_at = '' AND expires_at > ?`,
+    args: [now, hash, now],
+  });
+  if (Number(claim.rowsAffected || 0) !== 1) {
+    const error = new Error('PayPing link sudah digunakan.');
+    error.code = 'PAYPING_LINK_ALREADY_USED';
+    throw error;
+  }
+
+  return linkTrustedTelegram(String(row.account_id || ''), userId);
+}
+
+export async function promotePayPingAccountToAffiliate(accountId) {
+  const id = String(accountId || '').trim();
+  if (!id) return null;
+  await ensurePayPingAuthSchema();
+  const db = await getSupportDb();
+  const result = await db.execute({
+    sql: `SELECT account_id,email,display_name,role,telegram_user_id,status,created_at,updated_at,last_login_at
+          FROM payping_accounts WHERE account_id = ? LIMIT 1`,
+    args: [id],
+  });
+  const row = result.rows?.[0];
+  if (!row) return null;
+  const telegramUserId = String(row.telegram_user_id || '');
+  if (!telegramUserId) {
+    const error = new Error('Connect Telegram dahulu sebelum join affiliate.');
+    error.code = 'PAYPING_TELEGRAM_LINK_REQUIRED';
+    throw error;
+  }
+
+  const role = String(row.role || 'user');
+  if (!['owner','admin','affiliate'].includes(role)) {
+    const now = new Date().toISOString();
+    await db.execute({
+      sql: `UPDATE payping_accounts SET role = 'affiliate', updated_at = ? WHERE account_id = ?`,
+      args: [now, id],
+    });
+    row.role = 'affiliate';
+    row.updated_at = now;
+  }
+  return accountFromRow(row);
+}
+
 
 export async function issuePayPingSession(accountId) {
   await ensurePayPingAuthSchema();

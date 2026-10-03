@@ -2,28 +2,16 @@ import {
   getAffiliateAdminDashboard,
   markAffiliateWithdrawal,
 } from '../src/affiliate/store.js';
-import { resolvePushDeviceOwner } from '../src/support/webpush-payment.js';
+import { resolvePayPingIdentity } from '../src/payping/auth.js';
 import { sendMessage } from '../src/telegram.js';
 
 function json(res, status, body) { return res.status(status).json(body); }
 
-function bearerToken(req) {
-  const raw = String(req?.headers?.authorization || '').trim();
-  const match = raw.match(/^Bearer\s+(.+)$/i);
-  return String(match?.[1] || req?.headers?.['x-payping-device-token'] || '').trim();
-}
-
 async function ownerAuth(req) {
-  const token = bearerToken(req);
-  if (!token) return { ok: false, status: 401, reason: 'missing_device_token' };
-  const userId = await resolvePushDeviceOwner(token);
-  if (!userId) return { ok: false, status: 401, reason: 'invalid_device_token' };
-
-  const ownerId = String(process.env.BOT_OWNER_ID || '').trim();
-  if (!ownerId || userId !== ownerId) {
-    return { ok: false, status: 403, reason: 'owner_only' };
-  }
-  return { ok: true, userId };
+  const identity = await resolvePayPingIdentity(req, { allowLegacyDevice: true });
+  if (!identity) return { ok: false, status: 401, reason: 'login_required' };
+  if (!identity.owner) return { ok: false, status: 403, reason: 'owner_only' };
+  return { ok: true, userId: identity.userId, role: identity.role, source: identity.source };
 }
 
 async function notifyAffiliateUser(result) {

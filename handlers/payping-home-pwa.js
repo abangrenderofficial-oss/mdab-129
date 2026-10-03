@@ -67,6 +67,7 @@ a,button,.btn,.quick a,.tab,.back,.link,.item,.tx{touch-action:manipulation}
 <div class="top"><div class="brand"><div class="logo"><img src="/ar-payment/payping-icon-v4.svg"></div><div><div class="title">PayPing!</div><div class="sub">Payment dashboard</div></div></div><div id="scope" class="scope">Not connected</div></div>
 
 <div id="dashLoading" class="loader">Loading PayPing…</div>
+<section id="onboarding" class="card" hidden><div class="cardTitle">Connect Telegram</div><div class="muted">Link PayPing account dengan Telegram supaya dashboard, payment dan affiliate ikut user yang betul.</div><button id="connectTelegram" class="btn">Connect Telegram</button><div id="linkMsg" class="msg"></div></section>
 <div id="dashboard" hidden>
 <section class="hero"><div class="eyebrow">Today received</div><div id="todayReceived" class="heroValue">RM0.00</div><div id="todayCount" class="muted">0 successful payments today</div></section>
 <section class="grid">
@@ -75,7 +76,7 @@ a,button,.btn,.quick a,.tab,.back,.link,.item,.tx{touch-action:manipulation}
 <div class="stat"><div class="k">Pending</div><div id="pendingCount" class="v">0</div></div>
 <div class="stat"><div class="k">All Transactions</div><div id="totalCount" class="v">0</div></div>
 </section>
-<section class="card"><div class="cardTitle">Quick Actions</div><div class="quick"><a class="primary" href="/ar-payment/transactions">Transactions</a><a href="/ar-payment/affiliate">Affiliate / Earn</a><a href="/ar-payment/notifications">Notifications</a><a href="/ar-payment/settings">Settings / Account</a><a id="analyticsQuick" href="/ar-payment/analytics" hidden>Analytics / Reports</a></div></section>
+<section class="card"><div class="cardTitle">Quick Actions</div><div class="quick"><a class="primary" href="/ar-payment/transactions">Transactions</a><a id="earnQuick" href="/ar-payment/affiliate">Affiliate / Earn</a><a href="/ar-payment/notifications">Notifications</a><a href="/ar-payment/settings">Settings / Account</a><a id="analyticsQuick" href="/ar-payment/analytics" hidden>Analytics / Reports</a></div></section>
 <section class="card"><div class="line"><div class="cardTitle">Recent Payments</div><a href="/ar-payment/transactions" style="font-size:11px;color:#bfaeff;text-decoration:none">View all</a></div><div id="recent" class="list"></div></section>
 </div>
 
@@ -90,18 +91,53 @@ a,button,.btn,.quick a,.tab,.back,.link,.item,.tx{touch-action:manipulation}
 </main>
 <nav><a class="active" href="/ar-payment/"><b>⌂</b>Home</a><a href="/ar-payment/transactions"><b>≡</b>Transactions</a><a href="/ar-payment/affiliate"><b>₿</b>Earn</a><a href="/ar-payment/settings"><b>⚙</b>Settings</a></nav>
 <script>
-const $=id=>document.getElementById(id);const deviceKey='ar_payment_device_token_v1';const token=()=>localStorage.getItem(deviceKey)||'';
+const $=id=>document.getElementById(id);const deviceKey='ar_payment_device_token_v1';const token=()=>localStorage.getItem(deviceKey)||'';let accountContext=null;
+const authHeaders=(json=false)=>{const h=json?{'Content-Type':'application/json'}:{};const t=token();if(t)h['X-PayPing-Device-Token']=t;return h};
 const money=v=>'RM'+(Number(v||0)||0).toFixed(2);const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const date=v=>{if(!v)return '-';const d=new Date(v);return Number.isNaN(d.getTime())?'-':new Intl.DateTimeFormat('en-MY',{day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}).format(d)};
 function refreshConnection(){const t=token();$('test').disabled=!t;$('dot').classList.toggle('ok',!!t);$('state').textContent=t?'Push connected ✅':'Belum connected'}
-async function loadDashboard(){
- const t=token();if(!t){$('dashLoading').innerHTML='<div class="empty">Connect PayPing notifications untuk buka dashboard.</div>';$('scope').textContent='Not connected';return}
- try{const r=await fetch('/api/payping-data?view=dashboard',{headers:{Authorization:'Bearer '+t}});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Dashboard unavailable.');
- const s=d.summary;$('scope').textContent=d.owner?'Merchant view':'My view';$('analyticsQuick').hidden=!d.owner;$('todayReceived').textContent=money(s.todayReceived);$('todayCount').textContent=s.todayTransactions+' successful payments today';$('totalReceived').textContent=money(s.totalReceived);$('paidCount').textContent=s.paidTransactions;$('pendingCount').textContent=s.pendingTransactions;$('totalCount').textContent=s.totalTransactions;
- $('recent').innerHTML=d.recent.length?d.recent.map(t=>'<a class="tx" href="/ar-payment/transaction?order='+encodeURIComponent(t.orderNumber)+'"><div class="line"><div><div class="name">'+esc(t.displayName||t.username||('ID '+t.userId))+'</div><div class="meta">'+esc(t.tierLabel)+' · '+date(t.paidAt||t.createdAt)+' · Details →</div></div><div style="text-align:right"><div class="amount">'+money(t.amount)+'</div><span class="badge '+esc(t.status.toLowerCase())+'">'+esc(t.status)+'</span></div></div></a>').join(''):'<div class="empty">No payments yet.</div>';
- $('dashLoading').hidden=true;$('dashboard').hidden=false;
- }catch(e){$('dashLoading').innerHTML='<div class="error">'+esc(e.message||String(e))+'</div>'}
+async function loadIdentity(){
+ try{
+  const r=await fetch('/api/payping-auth',{headers:authHeaders(false)});const d=await r.json();
+  if(r.status===401){
+    if(token())return {legacy:true,role:'legacy',needsTelegramLink:false};
+    location.replace('/ar-payment/login');return null;
+  }
+  if(!r.ok||!d.ok)throw new Error(d.message||'Account unavailable.');
+  accountContext=d;
+  const role=String(d.role||'user').toLowerCase();
+  $('scope').textContent=role==='owner'||role==='admin'?'Merchant view':role==='affiliate'?'Affiliate view':'User view';
+  $('earnQuick').textContent=role==='user'?'Join Affiliate / Earn':'Affiliate / Earn';
+  return d;
+ }catch(e){
+  $('dashLoading').innerHTML='<div class="error">'+esc(e.message||String(e))+'</div>';return null;
+ }
 }
+async function requestTelegramLink(){
+ try{
+  $('connectTelegram').disabled=true;$('linkMsg').textContent='Preparing Telegram link…';
+  const r=await fetch('/api/payping-auth',{method:'POST',headers:authHeaders(true),body:JSON.stringify({action:'request_telegram_link'})});
+  const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Tak berjaya generate Telegram link.');
+  if(d.alreadyLinked){location.reload();return}
+  if(!d.telegramLink)throw new Error('Telegram bot link belum tersedia.');
+  $('linkMsg').textContent='Opening Telegram…';location.href=d.telegramLink;
+ }catch(e){$('linkMsg').textContent=e.message||String(e)}finally{$('connectTelegram').disabled=false}
+}
+async function loadDashboard(){
+ const identity=await loadIdentity();if(!identity)return;
+ if(identity.needsTelegramLink){
+  $('dashLoading').hidden=true;$('dashboard').hidden=true;$('onboarding').hidden=false;return;
+ }
+ try{const r=await fetch('/api/payping-data?view=dashboard',{headers:authHeaders(false)});const d=await r.json();
+ if(r.status===401){location.replace('/ar-payment/login');return}
+ if(r.status===409&&d.error==='PAYPING_TELEGRAM_LINK_REQUIRED'){$('dashLoading').hidden=true;$('onboarding').hidden=false;return}
+ if(!r.ok||!d.ok)throw new Error(d.message||'Dashboard unavailable.');
+ const s=d.summary;$('scope').textContent=d.owner?'Merchant view':String(d.role||'user').toLowerCase()==='affiliate'?'Affiliate view':'My view';$('analyticsQuick').hidden=!d.owner;$('todayReceived').textContent=money(s.todayReceived);$('todayCount').textContent=s.todayTransactions+' successful payments today';$('totalReceived').textContent=money(s.totalReceived);$('paidCount').textContent=s.paidTransactions;$('pendingCount').textContent=s.pendingTransactions;$('totalCount').textContent=s.totalTransactions;
+ $('recent').innerHTML=d.recent.length?d.recent.map(t=>'<a class="tx" href="/ar-payment/transaction?order='+encodeURIComponent(t.orderNumber)+'"><div class="line"><div><div class="name">'+esc(t.displayName||t.username||('ID '+t.userId))+'</div><div class="meta">'+esc(t.tierLabel)+' · '+date(t.paidAt||t.createdAt)+' · Details →</div></div><div style="text-align:right"><div class="amount">'+money(t.amount)+'</div><span class="badge '+esc(t.status.toLowerCase())+'">'+esc(t.status)+'</span></div></div></a>').join(''):'<div class="empty">No payments yet.</div>';
+ $('dashLoading').hidden=true;$('onboarding').hidden=true;$('dashboard').hidden=false;
+ }catch(e){$('dashLoading').hidden=false;$('dashLoading').innerHTML='<div class="error">'+esc(e.message||String(e))+'</div>'}
+}
+$('connectTelegram').addEventListener('click',requestTelegramLink);
 $('toggleSetup').addEventListener('click',()=>{$('setupBody').hidden=!$('setupBody').hidden});
 const isStandalone=()=>window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
 const b64ToBytes=s=>{const p='='.repeat((4-s.length%4)%4);const b=(s+p).replace(/-/g,'+').replace(/_/g,'/');const raw=atob(b);return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)))};

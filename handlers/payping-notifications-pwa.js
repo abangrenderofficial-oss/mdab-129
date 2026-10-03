@@ -66,21 +66,20 @@ a,button,.btn,.quick a,.tab,.back,.link,.item,.tx{touch-action:manipulation}
 <nav><a href="/ar-payment/"><b>⌂</b>Home</a><a href="/ar-payment/transactions"><b>≡</b>Transactions</a><a href="/ar-payment/affiliate"><b>₿</b>Earn</a><a href="/ar-payment/settings"><b>⚙</b>Settings</a></nav>
 <script>
 const key='ar_payment_device_token_v1';const token=localStorage.getItem(key)||'';const $=id=>document.getElementById(id);
-const headers=()=>({Authorization:'Bearer '+token,'Content-Type':'application/json'});const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const headers=()=>{const h={'Content-Type':'application/json'};if(token)h['X-PayPing-Device-Token']=token;return h};const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const date=v=>{if(!v)return '-';const d=new Date(v);return Number.isNaN(d.getTime())?'-':new Intl.DateTimeFormat('en-MY',{day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit'}).format(d)};
 function setMsg(t,c=''){$('msg').textContent=t||'';$('msg').className='msg '+c}
 function permission(){const p=('Notification'in window)?Notification.permission:'unsupported';$('permission').textContent=p==='granted'?'Allowed':p==='denied'?'Blocked':'Not granted';$('permission').className='badge '+(p==='granted'?'sent':p==='denied'?'failed':'')}
 async function load(){
  permission();
- if(!token){$('loading').innerHTML='<div class="error">Device belum connected. Setup notification dari Home dulu.</div>';return}
  try{
-  const r=await fetch('/api/payping-settings?view=notifications',{headers:headers()});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Notifications unavailable.');
-  $('deviceText').textContent=d.device.activeDeviceCount+' active device'+(d.device.activeDeviceCount===1?'':'s')+' · current '+(d.device.devices.find(x=>x.current)?.endpointHost||'device');
+  const r=await fetch('/api/payping-settings?view=notifications',{headers:headers()});const d=await r.json();if(r.status===401){location.replace('/ar-payment/login');return}if(!r.ok||!d.ok)throw new Error(d.message||'Notifications unavailable.');
+  $('deviceText').textContent=d.notificationConfigured?(d.device.activeDeviceCount+' active device'+(d.device.activeDeviceCount===1?'':'s')+' · current '+(d.device.devices.find(x=>x.current)?.endpointHost||'device')):'No notification device connected';$('test').disabled=!d.notificationConfigured;
   $('history').innerHTML=d.history.length?d.history.map(x=>{const keyText=x.deliveryKey.startsWith('order:')?'Payment '+x.deliveryKey.slice(6):x.deliveryKey;return '<div class="item"><div class="line"><div><div class="name">'+esc(keyText)+'</div><div class="meta">'+(x.currentDevice?'Current device':'Other device')+' · '+date(x.updatedAt)+'</div></div><span class="badge '+esc(x.status.toLowerCase())+'">'+esc(x.status)+'</span></div>'+(x.lastError?'<div class="meta" style="color:#ffabab">'+esc(x.lastError)+'</div>':'')+'</div>'}).join(''):'<div class="empty">No notification deliveries yet.</div>';
   $('loading').hidden=true;$('app').hidden=false;
  }catch(e){$('loading').innerHTML='<div class="error">'+esc(e.message||String(e))+'</div>'}
 }
-$('test').addEventListener('click',async()=>{try{$('test').disabled=true;setMsg('Sending test…');const r=await fetch('/api/payping-settings',{method:'POST',headers:headers(),body:JSON.stringify({action:'test_notification'})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Test notification failed.');setMsg('Test notification sent ✅','ok')}catch(e){setMsg(e.message||String(e),'bad')}finally{$('test').disabled=false}});
+$('test').addEventListener('click',async()=>{try{if(!token)throw new Error('Connect notification device dari Home dulu.');$('test').disabled=true;setMsg('Sending test…');const r=await fetch('/api/payping-settings',{method:'POST',headers:headers(),body:JSON.stringify({action:'test_notification'})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Test notification failed.');setMsg('Test notification sent ✅','ok')}catch(e){setMsg(e.message||String(e),'bad')}finally{$('test').disabled=false}});
 load();
 </script></body></html>`;
 

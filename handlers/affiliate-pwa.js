@@ -84,7 +84,8 @@ a,button,.btn,.quick a,.tab,.back,.link,.item,.tx{touch-action:manipulation}
   </div>
 
   <div id="loading" class="loader">Loading affiliate wallet…</div>
-  <div id="connect" class="error" hidden>PayPing device belum connected. Buka PayPing dan buat <b>/pushsetup</b> dulu.<div style="margin-top:12px"><a class="btn" href="/ar-payment/">Open PayPing</a></div></div>
+  <div id="connect" class="error" hidden><div>Connect Telegram dengan PayPing account dahulu supaya referral dan payout ikut user yang betul.</div><div style="margin-top:12px"><button id="connectTelegram" class="btn">Connect Telegram</button></div><div id="connectMsg" class="msg"></div></div>
+  <section id="join" class="card" hidden><div class="card-title">Join PayPing Affiliate</div><div class="hint">Aktifkan affiliate untuk dapat referral link, commission wallet dan withdrawal.</div><button id="joinAffiliate" class="withdraw">Join Affiliate</button><div id="joinMsg" class="msg"></div></section>
 
   <div id="app" hidden>
     <section class="hero"><div class="eyebrow">Available balance</div><div id="available" class="available">RM0.00</div><div id="withdrawHint" class="hint">Minimum withdraw RM20.00</div></section>
@@ -156,7 +157,7 @@ function money(v){const n=Number(v||0);return 'RM'+(Number.isFinite(n)?n:0).toFi
 function dateText(v){if(!v)return '-';const d=new Date(v);if(Number.isNaN(d.getTime()))return '-';return new Intl.DateTimeFormat('en-MY',{day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit'}).format(d)}
 function setMsg(text,type=''){$('msg').textContent=text||'';$('msg').className='msg '+type}
 function badge(s){const value=String(s||'').toLowerCase();return '<span class="badge '+value+'">'+String(s||'-').replaceAll('_',' ')+'</span>'}
-function auth(){return {Authorization:'Bearer '+token,'Content-Type':'application/json'}}
+function auth(){const h={'Content-Type':'application/json'};if(token)h['X-PayPing-Device-Token']=token;return h}
 function togglePayoutFields(){
   const method=$('payoutMethod').value;
   $('duitnowFields').hidden=method!=='DUITNOW';
@@ -215,23 +216,37 @@ function render(){
 }
 
 async function probeAdmin(){
-  if(!token)return;
   try{
     const r=await fetch('/api/affiliate-admin',{headers:auth()});
     if(r.ok)$('adminLink').style.display='block';
   }catch{}
 }
+async function identity(){
+  const r=await fetch('/api/payping-auth',{headers:auth()});const d=await r.json();
+  if(r.status===401){
+    if(token)return {legacy:true,role:'legacy',needsTelegramLink:false};
+    location.replace('/ar-payment/login');return null;
+  }
+  if(!r.ok||!d.ok)throw new Error(d.message||'PayPing account unavailable.');
+  return d;
+}
 async function load(){
-  if(!token){$('loading').hidden=true;$('connect').hidden=false;return}
   try{
+    const id=await identity();if(!id)return;
+    if(id.needsTelegramLink){$('loading').hidden=true;$('connect').hidden=false;return}
+    if(!id.legacy&&String(id.role||'user').toLowerCase()==='user'){$('loading').hidden=true;$('join').hidden=false;return}
     const r=await fetch('/api/affiliate-web',{headers:auth()});
     const data=await r.json();
-    if(r.status===401){localStorage.removeItem(deviceKey);$('loading').hidden=true;$('connect').hidden=false;return}
+    if(r.status===401){location.replace('/ar-payment/login');return}
+    if(r.status===409&&data.error==='PAYPING_TELEGRAM_LINK_REQUIRED'){$('loading').hidden=true;$('connect').hidden=false;return}
+    if(r.status===403&&data.error==='PAYPING_AFFILIATE_REQUIRED'){$('loading').hidden=true;$('join').hidden=false;return}
     if(!r.ok||!data.ok)throw new Error(data.message||'Affiliate dashboard gagal dimuat.');
-    state=data;$('loading').hidden=true;$('app').hidden=false;render();probeAdmin();
+    state=data;$('loading').hidden=true;$('connect').hidden=true;$('join').hidden=true;$('app').hidden=false;render();probeAdmin();
   }catch(e){$('loading').innerHTML='<div class="error">'+(e.message||String(e))+'</div>'}
 }
 
+$('connectTelegram').addEventListener('click',async()=>{try{$('connectTelegram').disabled=true;$('connectMsg').textContent='Preparing Telegram link…';const r=await fetch('/api/payping-auth',{method:'POST',headers:auth(),body:JSON.stringify({action:'request_telegram_link'})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Tak berjaya generate Telegram link.');if(d.alreadyLinked){location.reload();return}if(!d.telegramLink)throw new Error('Telegram bot link belum tersedia.');$('connectMsg').textContent='Opening Telegram…';location.href=d.telegramLink}catch(e){$('connectMsg').textContent=e.message||String(e)}finally{$('connectTelegram').disabled=false}});
+$('joinAffiliate').addEventListener('click',async()=>{try{$('joinAffiliate').disabled=true;$('joinMsg').textContent='Activating affiliate…';const r=await fetch('/api/payping-auth',{method:'POST',headers:auth(),body:JSON.stringify({action:'join_affiliate'})});const d=await r.json();if(r.status===409&&d.error==='PAYPING_TELEGRAM_LINK_REQUIRED'){$('join').hidden=true;$('connect').hidden=false;return}if(!r.ok||!d.ok)throw new Error(d.message||'Join affiliate gagal.');$('joinMsg').textContent='Affiliate activated ✅';location.reload()}catch(e){$('joinMsg').textContent=e.message||String(e)}finally{$('joinAffiliate').disabled=false}});
 $('payoutMethod').addEventListener('change',togglePayoutFields);
 $('savePayout').addEventListener('click',async()=>{
   try{

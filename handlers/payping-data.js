@@ -1,19 +1,18 @@
 import { getPayPingAnalytics, getPayPingAnalyticsExport, getPayPingDashboard, getPayPingTransactionDetail, listPayPingTransactions } from '../src/payping/dashboard.js';
-import { resolvePushDeviceOwner } from '../src/support/webpush-payment.js';
+import { resolvePayPingIdentity } from '../src/payping/auth.js';
 
 function json(res,status,body){return res.status(status).json(body)}
-function bearer(req){
-  const raw=String(req?.headers?.authorization||'').trim();
-  const m=raw.match(/^Bearer\s+(.+)$/i);
-  return String(m?.[1]||req?.headers?.['x-payping-device-token']||'').trim();
-}
 async function identity(req){
-  const token=bearer(req);
-  if(!token)return null;
-  const userId=await resolvePushDeviceOwner(token);
-  if(!userId)return null;
-  const ownerId=String(process.env.BOT_OWNER_ID||'').trim();
-  return {userId,owner:Boolean(ownerId&&userId===ownerId)};
+  const auth=await resolvePayPingIdentity(req,{allowLegacyDevice:true});
+  if(!auth)return null;
+  return {
+    userId:String(auth.userId||''),
+    owner:Boolean(auth.owner),
+    role:String(auth.role||'user'),
+    accountId:String(auth.accountId||''),
+    source:String(auth.source||''),
+    needsTelegramLink:Boolean(auth.needsTelegramLink),
+  };
 }
 
 export default async function handler(req,res){
@@ -22,7 +21,8 @@ export default async function handler(req,res){
     return json(res,405,{ok:false,error:'method_not_allowed'});
   }
   const auth=await identity(req);
-  if(!auth)return json(res,401,{ok:false,error:'PAYPING_DEVICE_NOT_AUTHENTICATED'});
+  if(!auth)return json(res,401,{ok:false,error:'PAYPING_LOGIN_REQUIRED'});
+  if(auth.needsTelegramLink&&!auth.owner)return json(res,409,{ok:false,error:'PAYPING_TELEGRAM_LINK_REQUIRED',role:auth.role,needsTelegramLink:true});
   try{
     const view=String(req.query?.view||'dashboard').trim().toLowerCase();
     if(view==='analytics'){

@@ -1,4 +1,4 @@
-const PAGE = String.raw\`<!doctype html>
+const PAGE = String.raw`<!doctype html>
 <html lang="ms">
 <head>
   <meta charset="utf-8">
@@ -167,7 +167,7 @@ $('withdrawTab').addEventListener('click',()=>{tab='withdrawal';$('withdrawTab')
 load();
 </script>
 </body>
-</html>\`;
+</html>`;
 
 function send(res,type,body){res.statusCode=200;res.setHeader('Content-Type',type);res.setHeader('Cache-Control','no-store');res.end(body)}
 export default function affiliatePwaPageHandler(req,res){

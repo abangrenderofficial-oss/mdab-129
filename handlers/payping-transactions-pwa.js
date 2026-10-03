@@ -16,9 +16,9 @@ nav{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(sa
 /* PAYPING_MOBILE_REFERENCE_V1 */
 @media(max-width:619px){
   :root{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI",sans-serif}
-  body{padding-top:calc(env(safe-area-inset-top,0px) + 18px);padding-right:calc(18px + env(safe-area-inset-right));padding-left:calc(18px + env(safe-area-inset-left));background-attachment:fixed;background-size:100vw 100vh;background-repeat:no-repeat}
-  body::before{content:"";position:fixed;z-index:1000;left:0;right:0;top:0;height:calc(env(safe-area-inset-top,0px) + 18px);background:inherit;border-bottom:1px solid rgba(255,255,255,.06);pointer-events:none}
-  main{padding-top:14px}
+  body{padding:0;overflow:hidden;background-attachment:fixed;background-size:100vw 100vh;background-repeat:no-repeat}
+  body::before{content:"";position:fixed;z-index:1000;left:0;right:0;top:calc(env(safe-area-inset-top,0px) + 18px);height:1px;background:rgba(255,255,255,.06);pointer-events:none}
+  main{position:fixed;top:calc(env(safe-area-inset-top,0px) + 19px);left:calc(18px + env(safe-area-inset-left));right:calc(18px + env(safe-area-inset-right));bottom:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 0 calc(96px + env(safe-area-inset-bottom))}
   .title{font-size:24px;line-height:1.08}
   .sub{font-size:13px;line-height:1.3}
   nav{z-index:1002;left:0;transform:none;bottom:0;width:100%;height:calc(76px + env(safe-area-inset-bottom));padding:8px 18px calc(8px + env(safe-area-inset-bottom));background:#07070d;border:0;border-radius:0;backdrop-filter:none;box-shadow:none}

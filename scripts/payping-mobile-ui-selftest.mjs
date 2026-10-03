@@ -19,8 +19,10 @@ for (const page of pages) {
   const source = await readFile(page, 'utf8');
   must(source, 'PAYPING_MOBILE_REFERENCE_V1', page);
   must(source, 'body::before', page);
-  must(source, 'background-attachment:fixed;background-size:100vw 100vh;background-repeat:no-repeat', page);
-  must(source, 'background:inherit;border-bottom:1px solid rgba(255,255,255,.06)', page);
+  must(source, 'overflow:hidden;background-attachment:fixed;background-size:100vw 100vh;background-repeat:no-repeat', page);
+  must(source, 'top:calc(env(safe-area-inset-top,0px) + 18px);height:1px;background:rgba(255,255,255,.06)', page);
+  must(source, 'position:fixed;top:calc(env(safe-area-inset-top,0px) + 19px)', page);
+  must(source, 'overflow-y:auto;-webkit-overflow-scrolling:touch', page);
   must(source, 'padding-right:calc(18px + env(safe-area-inset-right))', page);
   must(source, 'padding-left:calc(18px + env(safe-area-inset-left))', page);
   must(source, '.title{font-size:24px;line-height:1.08}', page);

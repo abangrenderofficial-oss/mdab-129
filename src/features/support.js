@@ -55,6 +55,21 @@ export function dailyForcePremiumSupportText() {
   ].join('\n');
 }
 
+export function dailyForcePremiumChannelSupportText() {
+  return [
+    'Hi, korang!',
+    '',
+    'Best tak dapat download video and post di status whatsapp tak pecah?',
+    '',
+    'Whatsapp korang sekarang dah PREMIUM! ☕️',
+    'Utk pengetahuan korang bot ni hak milik kita semua 🇲🇾.',
+    '',
+    'Tapi sayang bot ni boleh mati bila2 masa 🥹, klau kita tak berjaya bayar kos sewa server.',
+    '',
+    'Jadi kalau korang suka bot ni, jom kita support nak? Setahun sekali pun boleh, terima kasih orang baik 🙇🏻✨',
+  ].join('\n');
+}
+
 export function supportCampaignText() {
   return [
     'Salam JUMAAT , Yaum Al - Mubarak 🌙',

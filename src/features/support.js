@@ -418,7 +418,7 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
       await answerSupportCallback(callbackQuery, 'Follow-up dihentikan.');
       await editSupportMessage(
         callbackQuery,
-        ['Checkout ini dah dihentikan.', '', `Support ID: ${orderNumber}`].join('\n'),
+        ['Okay, reminder untuk checkout ini dah dihentikan.', '', 'Kalau perlu, admin masih boleh follow up secara manual.', `Support ID: ${orderNumber}`].join('\n'),
         { inline_keyboard: [] },
       );
     } catch (error) {

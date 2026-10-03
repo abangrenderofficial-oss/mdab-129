@@ -22,7 +22,6 @@ const FINAL_ORDER_STATUSES = new Set([
   'EXPIRED',
   'INTENT_FAILED',
   'AMOUNT_MISMATCH',
-  'CANCELLED_BY_USER',
 ]);
 const TERMINAL_INTENT_STATUSES = new Map([
   ['failed', 'FAILED'],
@@ -344,22 +343,31 @@ function followupKeyboard(row) {
   return { inline_keyboard: buttons };
 }
 
-async function recordFollowupSent(orderNumber, messageId = '') {
+async function recordFollowupSent(orderNumber, messageId = '', { reactivate = true } = {}) {
   await ensureFollowupRow(orderNumber);
   const db = await getSupportDb();
   const env = currentSupportEnvironment();
   const now = new Date().toISOString();
   await db.execute({
     sql: `UPDATE support_payment_followups
-          SET state = 'ACTIVE',
+          SET state = CASE WHEN ? THEN 'ACTIVE' ELSE state END,
               followup_count = followup_count + 1,
               last_followup_at = ?,
               last_message_id = ?,
-              stopped_at = NULL,
-              stopped_reason = '',
+              stopped_at = CASE WHEN ? THEN NULL ELSE stopped_at END,
+              stopped_reason = CASE WHEN ? THEN '' ELSE stopped_reason END,
               updated_at = ?
           WHERE environment = ? AND order_number = ?`,
-    args: [now, String(messageId || ''), now, env, String(orderNumber || '')],
+    args: [
+      reactivate ? 1 : 0,
+      now,
+      String(messageId || ''),
+      reactivate ? 1 : 0,
+      reactivate ? 1 : 0,
+      now,
+      env,
+      String(orderNumber || ''),
+    ],
   });
   return followupRow(orderNumber);
 }
@@ -394,7 +402,12 @@ export async function sendPaymentFollowup(orderNumber, { manual = false } = {}) 
   const sent = await sendMessage(row.telegram_user_id, followupText(row), {
     reply_markup: followupKeyboard(row),
   });
-  await recordFollowupSent(orderNumber, sent?.message_id || '');
+  const keepStoppedAfterManual = manual
+    && String(row.followup_state || '').toUpperCase() === 'STOPPED'
+    && String(row.stopped_reason || '').toUpperCase() === 'USER_CANCELLED';
+  await recordFollowupSent(orderNumber, sent?.message_id || '', {
+    reactivate: !keepStoppedAfterManual,
+  });
   return {
     sent: true,
     messageId: sent?.message_id || null,

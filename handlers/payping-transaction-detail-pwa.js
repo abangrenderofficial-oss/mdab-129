@@ -104,7 +104,7 @@ function stageLabel(v){return String(v||'-').replaceAll('_',' ')}
 function renderFollowup(d){
  const f=d?.followup;if(!d?.owner||!f){$('followupCard').hidden=true;return}
  $('followupCard').hidden=false;$('followupState').textContent=stageLabel(f.state);$('followupCount').textContent=String(f.followupCount||0)+' / '+String(f.maxFollowups||2);$('followupLast').textContent=date(f.lastFollowupAt);$('followupNext').textContent=date(f.nextFollowupAt);
- const terminal=['PAID','FAILED','CANCELLED','EXPIRED','INTENT_FAILED','AMOUNT_MISMATCH','CANCELLED_BY_USER'].includes(String(d.transaction?.status||'').toUpperCase());
+ const terminal=['PAID','FAILED','CANCELLED','EXPIRED','INTENT_FAILED','AMOUNT_MISMATCH'].includes(String(d.transaction?.status||'').toUpperCase());
  $('followupNow').disabled=terminal||!f.canFollowUp;$('checkStatus').disabled=terminal;$('stopFollowup').disabled=terminal||['STOPPED','RESOLVED'].includes(String(f.state||'').toUpperCase());
 }
 async function followupAction(action){

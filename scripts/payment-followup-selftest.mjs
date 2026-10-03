@@ -69,6 +69,8 @@ await markSupportSubmissionCheckout(order2,'https://example.test/pay2','pi_follo
 const cancelled=await cancelPaymentFollowupByUser(order2,userId);
 assert(cancelled?.state==='STOPPED','user cancel should stop followup');
 assert(cancelled?.stoppedReason==='USER_CANCELLED','user cancel reason failed');
+assert(cancelled?.canFollowUp===true,'owner manual follow-up must remain available after user cancel');
+assert(cancelled?.stage==='CANCELLED_BY_USER','user cancel audit stage should remain visible');
 
 const [
   supportFeature,
@@ -92,6 +94,7 @@ must(followupModule,'MAX_FOLLOWUPS = 2','reminder cap');
 must(followupModule,'Continue Payment','continue payment button');
 must(followupModule,'Dah Bayar / Semak','review button');
 must(followupModule,'Tak Jadi','cancel button');
+must(followupModule,"keepStoppedAfterManual",'manual follow-up after user cancel');
 must(paypingData,"action==='payment_followup_send'",'owner followup action');
 must(paypingData,"action==='payment_followup_check'",'owner reconcile action');
 must(paypingData,"action==='payment_followup_stop'",'owner stop action');
@@ -105,5 +108,6 @@ console.log('PAYMENT_FOLLOWUP_SELFTEST_OK',JSON.stringify({
   stage:info.stage,
   stopped:stopped.state,
   cancelled:cancelled.state,
+  cancelledManualFollowup:cancelled.canFollowUp,
   reminderCap:2,
 }));

@@ -19,8 +19,8 @@ for (const page of pages) {
   const source = await readFile(page, 'utf8');
   must(source, 'PAYPING_MOBILE_REFERENCE_V1', page);
   must(source, 'body::before', page);
-  must(source, 'background:linear-gradient(90deg,#201041 0%,#1c1038 52%,#19102f 100%)', page);
-  must(source, 'border-bottom:1px solid rgba(255,255,255,.08)', page);
+  must(source, 'background-attachment:fixed;background-size:100vw 100vh;background-repeat:no-repeat', page);
+  must(source, 'background:inherit;border-bottom:1px solid rgba(255,255,255,.06)', page);
   must(source, 'padding-right:calc(18px + env(safe-area-inset-right))', page);
   must(source, 'padding-left:calc(18px + env(safe-area-inset-left))', page);
   must(source, '.title{font-size:24px;line-height:1.08}', page);

@@ -205,6 +205,14 @@ server.listen(port, '0.0.0.0', () => {
 
   startSupportPromotionScheduler();
 
+  void refreshSupportMonitorMessage({ force: true })
+    .then((result) => {
+      console.log('[support-monitor] startup refresh', result);
+    })
+    .catch((error) => {
+      console.warn('[support-monitor] startup refresh failed:', error?.message);
+    });
+
   if (isContentBridgeConfigured()) {
     console.log('[content-bridge] retry scheduler started');
     setInterval(() => {

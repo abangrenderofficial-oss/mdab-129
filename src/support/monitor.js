@@ -273,7 +273,32 @@ export async function getSupportMonitorReport(limit = 50) {
   const users = (await Promise.all(ids.map((id) => getSupportMonitorUserStatus(id))))
     .filter(Boolean);
   const schedule = malaysiaSupportSchedule();
-  const firstDaily = users.find((user) => user?.dailyForce)?.dailyForce || null;
+  let modeSummary = {
+    enabled: false,
+    cycleId: 0,
+    windowActive: false,
+    pausedForFriday: false,
+  };
+  try {
+    const db = await getSupportDb();
+    const mode = await db.execute({
+      sql: `SELECT enabled, cycle_id
+            FROM support_daily_force_mode
+            WHERE environment = ?
+            LIMIT 1`,
+      args: [currentSupportEnvironment()],
+    });
+    const enabled = Number(mode.rows?.[0]?.enabled || 0) === 1;
+    const cycleId = Math.max(1, Number(mode.rows?.[0]?.cycle_id || 1));
+    modeSummary = {
+      enabled,
+      cycleId,
+      windowActive: enabled && schedule.dailyForceWindowActive,
+      pausedForFriday: enabled && schedule.isFriday,
+    };
+  } catch (error) {
+    if (!/no such table/i.test(String(error?.message || ''))) throw error;
+  }
 
   return {
     users,
@@ -281,11 +306,11 @@ export async function getSupportMonitorReport(limit = 50) {
     unsupported: users.filter((user) => !user.support.active),
     locked: users.filter((user) => !user.support.active && user.dailyForce.state === 'LOCKED'),
     anomalies: users.filter((user) => user.dailyForce.anomaly),
-    dailyForceEnabled: users.some((user) => user.dailyForce.enabled),
-    dailyForceWindowActive: firstDaily?.enabled ? Boolean(firstDaily.windowActive) : schedule.dailyForceWindowActive,
-    dailyForcePausedForFriday: firstDaily?.enabled ? Boolean(firstDaily.pausedForFriday) : false,
+    dailyForceEnabled: modeSummary.enabled,
+    dailyForceWindowActive: modeSummary.windowActive,
+    dailyForcePausedForFriday: modeSummary.pausedForFriday,
     weekday: schedule.weekday,
-    cycleId: users.find((user) => user.dailyForce.enabled)?.dailyForce?.cycleId || 0,
+    cycleId: modeSummary.cycleId,
     limit: Math.max(1, Math.min(80, Number(limit || 50))),
   };
 }

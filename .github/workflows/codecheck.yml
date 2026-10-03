@@ -20,6 +20,8 @@ jobs:
         run: npm install --ignore-scripts --no-audit --no-fund
       - name: Check JavaScript syntax
         run: npm run check
+      - name: Check Node/Railway fallback runtime
+        run: node scripts/dual-runtime-selftest.mjs
       - name: Check PayPing affiliate ledger
         run: node scripts/affiliate-selftest.mjs
       - name: Check gallery upload 200MB boundary

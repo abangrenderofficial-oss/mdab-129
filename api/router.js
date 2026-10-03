@@ -1,0 +1,63 @@
+import healthHandler from '../handlers/health.js';
+import telegramHandler from '../handlers/telegram.js';
+import setupHandler from '../handlers/setup.js';
+import setupWebhookHandler from '../handlers/setup-webhook.js';
+import mediaHandler from '../handlers/media.js';
+import diagnosticHandler from '../handlers/diagnostic.js';
+import statusDiagnosticHandler from '../handlers/status-diagnostic.js';
+import bayarcashHandler from '../handlers/bayarcash.js';
+import supportReturnHandler from '../handlers/support-return.js';
+import premiumHqSuccessHandler from '../handlers/premium-hq-success.js';
+import contentBridgeConnectHandler from '../handlers/content-bridge-connect.js';
+import contentBridgeVerifyHandler from '../handlers/content-bridge-verify.js';
+import paymentPushHandler from '../handlers/payment-push.js';
+import heavyLimitHandler from '../handlers/heavy-limit.js';
+import {
+  paymentPwaPageHandler,
+  paymentPwaManifestHandler,
+  paymentPwaServiceWorkerHandler,
+  paymentPwaIconHandler,
+} from '../handlers/payment-pwa.js';
+
+const routes = new Map([
+  ['health', healthHandler],
+  ['telegram', telegramHandler],
+  ['setup', setupHandler],
+  ['setup-webhook', setupWebhookHandler],
+  ['media', mediaHandler],
+  ['diagnostic', diagnosticHandler],
+  ['status-diagnostic', statusDiagnosticHandler],
+  ['bayarcash', bayarcashHandler],
+  ['support-return', supportReturnHandler],
+  ['premium-hq-success', premiumHqSuccessHandler],
+  ['content-bridge-connect', contentBridgeConnectHandler],
+  ['content-bridge-verify', contentBridgeVerifyHandler],
+  ['payment-push', paymentPushHandler],
+  ['heavy-limit', heavyLimitHandler],
+  ['payment-pwa-page', paymentPwaPageHandler],
+  ['payment-pwa-manifest', paymentPwaManifestHandler],
+  ['payment-pwa-sw', paymentPwaServiceWorkerHandler],
+  ['payment-pwa-icon', paymentPwaIconHandler],
+]);
+
+function routeKey(req) {
+  const value = Array.isArray(req?.query?.route) ? req.query.route[0] : req?.query?.route;
+  if (value) return String(value);
+  try { return new URL(req.url || '', 'https://runtime.local').searchParams.get('route') || ''; }
+  catch { return ''; }
+}
+
+export default async function handler(req, res) {
+  const route = routeKey(req);
+  if (route === 'root') {
+    return res.status(200).json({
+      ok: true,
+      service: 'telegram-social-downloader',
+      runtime: 'vercel-node',
+      architecture: 'single-router-v1',
+    });
+  }
+  const target = routes.get(route);
+  if (!target) return res.status(404).json({ ok: false, error: 'route_not_found' });
+  return target(req, res);
+}

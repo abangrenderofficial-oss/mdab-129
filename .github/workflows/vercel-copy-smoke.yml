@@ -1,0 +1,58 @@
+name: Vercel Copy Smoke
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  smoke:
+    if: ${{ github.head_ref == 'migration/vercel-runtime' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PREVIEW_BASE: https://mdab-129-git-migration-272d5f-abangrenderofficial-oss-projects.vercel.app
+    steps:
+      - name: Probe Vercel preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 24); do
+            code="$(curl -L -sS -o /tmp/health.body -w '%{http_code}' "$PREVIEW_BASE/api/health" || true)"
+            echo "attempt=$i http=$code"
+            if [ "$code" = "200" ]; then
+              if grep -qiE 'vercel|sso-api|Continue with Email' /tmp/health.body && ! grep -q '"service":"telegram-social-downloader"' /tmp/health.body; then
+                echo "VERCEL_PREVIEW_PROTECTED=1" | tee /tmp/vercel-copy-state
+                echo "Preview is reachable but protected by Vercel Authentication."
+                exit 0
+              fi
+              if grep -q '"service":"telegram-social-downloader"' /tmp/health.body; then
+                echo "VERCEL_PREVIEW_PROTECTED=0" | tee /tmp/vercel-copy-state
+                cat /tmp/health.body
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo "Preview did not become reachable as app or Vercel-protected deployment."
+          head -c 1000 /tmp/health.body 2>/dev/null || true
+          exit 1
+
+      - name: Summarize copy state
+        shell: bash
+        run: |
+          set -euo pipefail
+          source /tmp/vercel-copy-state
+          if [ "$VERCEL_PREVIEW_PROTECTED" = "1" ]; then
+            echo "VERCEL_COPY_REACHABLE_PROTECTED"
+            echo "Runtime JSON cannot be read until preview protection is bypassed or production alias is used."
+            exit 0
+          fi
+          python - <<'PY'
+          import json
+          data = json.load(open('/tmp/health.body'))
+          print('VERCEL_COPY_HEALTH_OK')
+          print('runtime=', data.get('runtime'))
+          print('heavyMediaRuntime=', data.get('heavyMediaRuntime'))
+          print('databaseRuntime=', data.get('databaseRuntime'))
+          print('missingRuntimeEnv=', data.get('missingRuntimeEnv'))
+          PY

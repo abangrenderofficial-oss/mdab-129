@@ -1,12 +1,13 @@
 import { isResetAdmin } from '../recovery.js';
 import { sendMessage, telegram } from '../telegram.js';
 import { refreshSupportMonitorMessage } from './monitor-publisher.js';
-import { supportMenuKeyboard } from '../features/support.js';
+import { dailyForcePremiumSupportText, supportAmountKeyboard } from '../features/support.js';
 import { getActiveSupporterTitle } from './community-store.js';
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { malaysiaSupportSchedule } from './daily-force-schedule.js';
 
-const DAILY_FORCE_COPY = 'Minta support dulu utk guna bot ❤️';
+const DAILY_FORCE_COPY = 'Please support bot utk teruskan guna ❤️';
+const DAILY_FORCE_PROCESSING_COPY = '⏳ Premium+ HQ sedang diproses. Tunggu sampai siap dulu ya.';
 let schemaPromise = null;
 
 async function ensureSchema() {
@@ -150,7 +151,15 @@ async function sendDailyForceLock(chatId) {
   await sendMessage(
     chatId,
     DAILY_FORCE_COPY,
-    { reply_markup: supportMenuKeyboard() },
+    { reply_markup: supportAmountKeyboard() },
+  );
+}
+
+async function sendDailyForceFirstSuccessPrompt(chatId) {
+  await sendMessage(
+    chatId,
+    dailyForcePremiumSupportText(),
+    { reply_markup: supportAmountKeyboard() },
   );
 }
 
@@ -175,6 +184,9 @@ async function accessContext(userId) {
   const state = await usageState(userId, mode.cycleId);
   return {
     gated: state.usedOnce || state.useClaimed,
+    gateReason: state.usedOnce
+      ? 'support_required'
+      : (state.useClaimed ? 'processing_first_use' : ''),
     ...mode,
     supporter: null,
     state,
@@ -276,7 +288,7 @@ export async function markDailyForceUsageSuccess(userId) {
   });
 
   if (Number(prompt.rowsAffected || 0) > 0) {
-    await sendDailyForceLock(id).catch((error) => {
+    await sendDailyForceFirstSuccessPrompt(id).catch((error) => {
       console.warn('[daily-force] first-use support prompt failed:', error?.message);
     });
   }
@@ -296,6 +308,11 @@ export async function enforceDailyForceSupportForMessage(message = {}) {
   const context = await accessContext(userId);
   if (!context.gated) return false;
 
+  if (context.gateReason === 'processing_first_use') {
+    await sendMessage(chatId, DAILY_FORCE_PROCESSING_COPY).catch(() => {});
+    return true;
+  }
+
   await sendDailyForceLock(chatId).catch(() => {});
   return true;
 }
@@ -309,12 +326,18 @@ export async function enforceDailyForceSupportForCallback(callbackQuery = {}) {
   const context = await accessContext(userId);
   if (!context.gated) return false;
 
+  const copy = context.gateReason === 'processing_first_use'
+    ? DAILY_FORCE_PROCESSING_COPY
+    : DAILY_FORCE_COPY;
   await telegram('answerCallbackQuery', {
     callback_query_id: callbackQuery?.id,
-    text: DAILY_FORCE_COPY,
+    text: copy,
     show_alert: true,
   }).catch(() => {});
-  await sendDailyForceLock(chatId).catch(() => {});
+
+  if (context.gateReason !== 'processing_first_use') {
+    await sendDailyForceLock(chatId).catch(() => {});
+  }
   return true;
 }
 
@@ -355,8 +378,8 @@ export async function handleDailyForceSupportCommand(message = {}) {
       : [
           '🔒 /forcesupportdaily aktif.',
           'Jadual: Sabtu sampai Khamis (Malaysia time).',
-          'Non-supporter dapat 1 successful use dahulu.',
-          'Selepas penggunaan pertama berjaya, bot terus minta support dengan pilihan amount.',
+          'Non-supporter dapat 1 successful Premium+ HQ dahulu.',
+          'Selepas Premium+ HQ pertama berjaya diproses, bot terus minta support dengan pilihan RM10/RM20/RM30/RM50/RM100.',
           'Cubaan seterusnya kekal locked sampai support.',
           'Jumaat Daily Force auto-pause; /forcesupport, /donatesupport atau /normalsupport akan handle.',
           'Sabtu ia sambung semula secara automatik.',

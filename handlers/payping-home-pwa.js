@@ -83,8 +83,11 @@ a,button,.btn,.quick a,.tab,.back,.link,.item,.tx{touch-action:manipulation}
 <section class="card">
 <div class="setupHead"><div><div class="cardTitle" style="margin:0"><span id="dot" class="dot"></span>Notifications</div><div id="state" class="muted">Belum connected</div></div><button id="toggleSetup" class="btn secondary" style="width:auto;margin:0;padding:9px 11px">Setup</button></div>
 <div id="setupBody" class="setupBody" hidden>
-<ol class="setupSteps"><li>Add PayPing! to Home Screen on iPhone.</li><li>Dalam private chat bot, taip <b>/pushsetup</b>.</li><li>Masukkan setup code 8 digit dan enable notification.</li></ol>
+<div id="modernPushHint" class="muted" style="margin-bottom:12px"></div>
+<div id="legacyPushSetup">
+<ol class="setupSteps"><li>Dalam private chat bot, taip <b>/pushsetup</b>.</li><li>Masukkan setup code 8 digit.</li><li>Tekan Enable Notifications.</li></ol>
 <input id="code" class="code" inputmode="numeric" maxlength="8" placeholder="00000000" autocomplete="one-time-code">
+</div>
 <button id="enable" class="btn">Enable Notifications</button><button id="test" class="btn secondary" disabled>Send Test Notification</button><div id="msg" class="msg"></div>
 </div>
 </section>
@@ -104,7 +107,7 @@ async function loadIdentity(){
     location.replace('/ar-payment/login');return null;
   }
   if(!r.ok||!d.ok)throw new Error(d.message||'Account unavailable.');
-  accountContext=d;
+  accountContext=d;updateNotificationSetupUI();
   const role=String(d.role||'user').toLowerCase();
   $('scope').textContent=role==='owner'||role==='admin'?'Merchant view':role==='affiliate'?'Affiliate view':'User view';
   $('earnQuick').textContent=role==='user'?'Join Affiliate / Earn':'Affiliate / Earn';
@@ -163,19 +166,36 @@ async function loadDashboard(){
 }
 $('connectTelegram').addEventListener('click',requestTelegramLink);
 $('toggleSetup').addEventListener('click',()=>{$('setupBody').hidden=!$('setupBody').hidden});
-const isStandalone=()=>window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+const isStandalone=()=>window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);const isAndroid=/android/i.test(navigator.userAgent);
+function updateNotificationSetupUI(){
+ const linked=Boolean(accountContext?.account?.telegramUserId);
+ $('legacyPushSetup').hidden=linked;
+ if(linked){
+  $('modernPushHint').textContent=isIOS
+   ? 'iPhone/iPad: Add PayPing! ke Home Screen dahulu, kemudian tekan Enable Notifications.'
+   : isAndroid
+    ? 'Android: tekan Enable Notifications dan benarkan notification bila browser minta permission.'
+    : 'Tekan Enable Notifications dan benarkan notification bila browser minta permission.';
+ }else{
+  $('modernPushHint').textContent='Fallback setup: guna /pushsetup dan code 8 digit.';
+ }
+}
 const b64ToBytes=s=>{const p='='.repeat((4-s.length%4)%4);const b=(s+p).replace(/-/g,'+').replace(/_/g,'/');const raw=atob(b);return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)))};
 function setMsg(t,bad=false){$('msg').textContent=t;$('msg').style.color=bad?'#ff9a9a':'#abb2c0'}
 if('serviceWorker' in navigator)navigator.serviceWorker.getRegistration('/ar-payment/').then(r=>r?.update()).catch(()=>{});
 $('enable').addEventListener('click',async()=>{try{
- if(isIOS&&!isStandalone())throw new Error('iPhone: Add to Home Screen dulu, kemudian buka PayPing! dari Home Screen.');
- const code=$('code').value.trim();if(!/^\\d{8}$/.test(code))throw new Error('Masukkan setup code 8 digit daripada /pushsetup.');
+ if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window))throw new Error('Browser/device ini belum support Web Push notification.');
+ if(isIOS&&!isStandalone())throw new Error('iPhone/iPad: Add PayPing! ke Home Screen dulu, kemudian buka dari Home Screen.');
+ const linked=Boolean(accountContext?.account?.telegramUserId);
+ const code=$('code').value.trim();
+ if(!linked&&!/^\\d{8}$/.test(code))throw new Error('Masukkan setup code 8 digit daripada /pushsetup.');
  $('enable').disabled=true;setMsg('Preparing notifications…');
  const config=await fetch('/api/payment-push').then(r=>r.json());if(!config.ok||!config.configured||!config.publicKey)throw new Error('Web Push server belum ready.');
  const reg=await navigator.serviceWorker.register('/ar-payment/sw.js',{scope:'/ar-payment/'});const permission=await Notification.requestPermission();if(permission!=='granted')throw new Error('Notification permission tidak dibenarkan.');
  let sub=await reg.pushManager.getSubscription();if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToBytes(config.publicKey)});
- const response=await fetch('/api/payment-push',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'subscribe',code,subscription:sub.toJSON()})});const d=await response.json();if(!response.ok||!d.ok)throw new Error(d.message||'Tak berjaya register device.');
- localStorage.setItem(deviceKey,d.deviceToken);$('code').value='';refreshConnection();setMsg('Connected ✅');$('dashLoading').hidden=false;$('dashboard').hidden=true;loadDashboard();
+ const payload={action:'subscribe',subscription:sub.toJSON()};if(!linked)payload.code=code;
+ const response=await fetch('/api/payment-push',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const d=await response.json();if(!response.ok||!d.ok)throw new Error(d.message||'Tak berjaya register device.');
+ localStorage.setItem(deviceKey,d.deviceToken);$('code').value='';refreshConnection();setMsg('Notifications connected ✅');$('dashLoading').hidden=false;$('dashboard').hidden=true;loadDashboard();
  }catch(e){setMsg(e.message||String(e),true)}finally{$('enable').disabled=false}});
 $('test').addEventListener('click',async()=>{try{const t=token();if(!t)throw new Error('Device belum connected.');$('test').disabled=true;const r=await fetch('/api/payment-push',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'test',deviceToken:t})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Test push gagal.');setMsg('Test push sent ✅')}catch(e){setMsg(e.message||String(e),true)}finally{refreshConnection()}});
 window.addEventListener('pageshow',()=>{if(sessionStorage.getItem(telegramLinkKey)==='1')refreshTelegramLinkState()});

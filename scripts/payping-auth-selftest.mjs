@@ -87,7 +87,7 @@ const owner=await createPayPingAccount({
 });
 assert(owner.role==='owner'&&owner.telegramUserId==='987654321','trusted owner bootstrap failed');
 
-const [handler,login,register,settings,home,affiliatePage,dataApi,affiliateApi,telegramHandler,server,router,vercel]=await Promise.all([
+const [handler,login,register,settings,home,affiliatePage,dataApi,affiliateApi,paymentPush,webpushPayment,telegramHandler,server,router,vercel]=await Promise.all([
   readFile('handlers/payping-auth.js','utf8'),
   readFile('handlers/payping-login-pwa.js','utf8'),
   readFile('handlers/payping-register-pwa.js','utf8'),
@@ -96,6 +96,8 @@ const [handler,login,register,settings,home,affiliatePage,dataApi,affiliateApi,t
   readFile('handlers/affiliate-pwa.js','utf8'),
   readFile('handlers/payping-data.js','utf8'),
   readFile('handlers/affiliate-web.js','utf8'),
+  readFile('handlers/payment-push.js','utf8'),
+  readFile('src/support/webpush-payment.js','utf8'),
   readFile('handlers/telegram.js','utf8'),
   readFile('server.js','utf8'),
   readFile('api/router.js','utf8'),
@@ -118,11 +120,19 @@ must(home,'payping_telegram_link_pending_v1','home Telegram return marker');
 must(home,'refreshTelegramLinkState','home Telegram return refresh');
 must(home,"window.addEventListener('pageshow'",'home Telegram return pageshow');
 must(home,"location.replace('/ar-payment/login')",'home login route guard');
+must(home,'const isAndroid=/android/i','Android notification support');
+must(home,'legacyPushSetup','legacy push fallback UI');
+must(home,"const linked=Boolean(accountContext?.account?.telegramUserId)",'linked account push setup');
+must(home,"iPhone/iPad: Add PayPing! ke Home Screen", 'iOS installed PWA requirement');
+must(home,"Android: tekan Enable Notifications", 'Android notification instructions');
 must(affiliatePage,'joinAffiliate','affiliate onboarding UI');
 must(affiliatePage,'refreshTelegramLinkState','affiliate Telegram return refresh');
 must(affiliatePage,"action:'join_affiliate'",'affiliate role activation');
 must(dataApi,'resolvePayPingIdentity','dashboard session identity');
 must(affiliateApi,"PAYPING_AFFILIATE_REQUIRED",'affiliate role backend guard');
+must(paymentPush,'registerPushSubscriptionForUser','account-linked push registration');
+must(paymentPush,"resolvePayPingIdentity(req, { allowLegacyDevice: false })",'push account session identity');
+must(webpushPayment,'export async function registerPushSubscriptionForUser','push register by linked Telegram user');
 must(telegramHandler,"startsWith('payping_')",'Telegram deep-link handler');
 must(server,"['/api/payping-auth', payPingAuthHandler]",'Node auth API route');
 must(server,"['/ar-payment/login', payPingLoginPage]",'Node login route');

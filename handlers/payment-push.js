@@ -1,9 +1,11 @@
 import {
   isWebPushConfigured,
   registerPushSubscription,
+  registerPushSubscriptionForUser,
   sendWebPushTest,
   webPushPublicKey,
 } from '../src/support/webpush-payment.js';
+import { resolvePayPingIdentity } from '../src/payping/auth.js';
 
 function json(res, status, body) {
   res.status(status).json(body);
@@ -28,8 +30,23 @@ export default async function handler(req, res) {
 
   try {
     if (action === 'subscribe') {
+      const identity = await resolvePayPingIdentity(req, { allowLegacyDevice: false });
+      if (identity?.userId) {
+        const result = await registerPushSubscriptionForUser(identity.userId, body.subscription);
+        return json(res, 200, {
+          ok: true,
+          registered: true,
+          deviceToken: result.deviceToken,
+          linkedAccount: true,
+        });
+      }
       const result = await registerPushSubscription(body.code, body.subscription);
-      return json(res, 200, { ok: true, registered: true, deviceToken: result.deviceToken });
+      return json(res, 200, {
+        ok: true,
+        registered: true,
+        deviceToken: result.deviceToken,
+        linkedAccount: false,
+      });
     }
     if (action === 'test') {
       const result = await sendWebPushTest(body.deviceToken);
@@ -45,6 +62,7 @@ export default async function handler(req, res) {
       'INVALID_PUSH_SUBSCRIPTION',
       'DEVICE_TOKEN_MISSING',
       'PUSH_DEVICE_NOT_FOUND',
+      'PAYPING_TELEGRAM_LINK_REQUIRED',
     ].includes(code) ? 400 : 500;
     console.warn('[payment-push-api] request failed:', code, error?.message);
     return json(res, status, { ok: false, error: code, message: error?.message || 'Push request failed.' });

@@ -40,6 +40,7 @@ async function assertRelativeImportsResolve(file, source) {
 const productionFiles = [
   path.join(root, 'server.js'),
   ...await walk(path.join(root, 'api')),
+  ...await walk(path.join(root, 'handlers')),
   ...await walk(path.join(root, 'src')),
 ];
 
@@ -54,7 +55,7 @@ for (const file of productionFiles) {
   await assertRelativeImportsResolve(file, source);
 }
 
-const routerPath = path.join(root, 'api', 'telegram.js');
+const routerPath = path.join(root, 'handlers', 'telegram.js');
 const router = await readFile(routerPath, 'utf8');
 const forbiddenRouterTokens = [
   "node:child_process",
@@ -67,10 +68,10 @@ const forbiddenRouterTokens = [
   "../src/live-wallpaper.js",
 ];
 for (const token of forbiddenRouterTokens) {
-  if (router.includes(token)) fail(`api/telegram.js directly depends on heavy implementation: ${token}`);
+  if (router.includes(token)) fail(`handlers/telegram.js directly depends on heavy implementation: ${token}`);
 }
 if (router.split(/\r?\n/).length > 260) {
-  fail(`api/telegram.js grew beyond thin-router limit (${router.split(/\r?\n/).length} lines)`);
+  fail(`handlers/telegram.js grew beyond thin-router limit (${router.split(/\r?\n/).length} lines)`);
 }
 
 const featureDir = path.join(root, 'src', 'features');
@@ -114,7 +115,7 @@ if (!statusCore.includes('fetchWithHeaderTimeout')) {
   fail('Status HQ source fetch is missing header-only timeout protection');
 }
 
-const relay = await readFile(path.join(root, 'api', 'media.js'), 'utf8');
+const relay = await readFile(path.join(root, 'handlers', 'media.js'), 'utf8');
 if (relay.includes('AbortSignal.timeout(45000)')) {
   fail('Relay still has whole-stream 45s abort timeout');
 }

@@ -15,7 +15,7 @@ import { handleSupportCommand, processSupportCallback, processSupportMessage } f
 import { handleSupportPerClickCommand } from '../src/features/support-click-report.js';
 import { handleLuahRasaCommand, processLuahRasaMessage } from '../src/features/luahrasa.js';
 import { handleConnectQuoteCommand, processQuoteFilterCallback } from '../src/features/quote-filter.js';
-import { handleConnectPaymentDetailCommand, handlePaymentDetailTestCommand } from '../src/features/payment-detail.js';
+import { handleConnectPaymentDetailCommand, handlePaymentDetailTestCommand, handleSupportMonitorCommand, handleSupportCheckCommand } from '../src/features/payment-detail.js';
 import { handlePaymentPushSetupCommand } from '../src/features/payment-push.js';
 import { recordSupportMonitorSeen } from '../src/support/monitor.js';
 import { handleAffiliateCommand, handleAffiliatePayoutCommand, handleAffiliateStartPayload, handleAffiliateWithdrawCommand, processAffiliateCallback } from '../src/features/affiliate.js';
@@ -210,6 +210,9 @@ export default async function handler(req, res) {
     if (command === '/totaluser') { await handleTotalUserCommand(message, context); return json(res, 200, { ok: true, stats: true }); }
     if (command === '/supporttest') { await handleSupportTestCommand(message, context); return json(res, 200, { ok: true, support_test: true }); }
     if (command === '/supportperclick') { await handleSupportPerClickCommand(message, context); return json(res, 200, { ok: true, support_per_click: true }); }
+    if (command === '/supportmonitor') { await handleSupportMonitorCommand(message); return json(res, 200, { ok: true, support_monitor: true }); }
+    if (command === '/supportcheck') { await handleSupportCheckCommand(message); return json(res, 200, { ok: true, support_check: true }); }
+
     if (command === '/testpaymentdetail') { await handlePaymentDetailTestCommand(message); return json(res, 200, { ok: true, payment_detail_test: true }); }
     if (command === '/checkmember') { await handleCheckMemberCommand(message); return json(res, 200, { ok: true, channel_member_diagnostic: true }); }
 

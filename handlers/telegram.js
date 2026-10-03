@@ -17,6 +17,7 @@ import { handleLuahRasaCommand, processLuahRasaMessage } from '../src/features/l
 import { handleConnectQuoteCommand, processQuoteFilterCallback } from '../src/features/quote-filter.js';
 import { handleConnectPaymentDetailCommand, handlePaymentDetailTestCommand, handleSupportMonitorCommand, handleSupportCheckCommand } from '../src/features/payment-detail.js';
 import { handlePaymentPushSetupCommand } from '../src/features/payment-push.js';
+import { handlePayPingLinkCommand } from '../src/features/payping-auth.js';
 import { refreshSupportMonitorForMode, trackSupportMonitorActor } from '../src/support/monitor-hooks.js';
 import { handleAffiliateCommand, handleAffiliatePayoutCommand, handleAffiliateStartPayload, handleAffiliateWithdrawCommand, processAffiliateCallback } from '../src/features/affiliate.js';
 import { handleCheckMemberCommand } from '../src/features/channel-diagnostic.js';
@@ -84,6 +85,7 @@ async function processMessage(message, context) {
   if (command === '/connectquote') return handleConnectQuoteCommand(message);
   if (command === '/connectpaymentdetail') return handleConnectPaymentDetailCommand(message);
   if (command === '/pushsetup') return handlePaymentPushSetupCommand(message, context);
+  if (command === '/payping') return handlePayPingLinkCommand(message, context);
   if (command === '/affiliate') return handleAffiliateCommand(message);
   if (command === '/withdraw') return handleAffiliateWithdrawCommand(message);
   if (command === '/affiliatepaid') return handleAffiliatePayoutCommand(message, 'PAID');

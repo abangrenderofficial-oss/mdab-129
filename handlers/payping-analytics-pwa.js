@@ -1,4 +1,4 @@
-const PAGE = String.raw\`<!doctype html>
+const PAGE = String.raw`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -62,7 +62,7 @@ async function load(){
 function csvCell(v){let s=String(v??'');if(/^[=+\\-@]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"'}
 $('export').addEventListener('click',async()=>{try{$('export').disabled=true;$('export').textContent='Preparing…';const p=new URLSearchParams({view:'analytics-export',range:$('range').value,limit:'5000'});const r=await fetch('/api/payping-data?'+p,{headers:headers()});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Export failed.');const cols=['Order ID','Transaction ID','Telegram User ID','Username','Display Name','Tier','Amount RM','Status','Paid At','Affiliate Commission RM','Affiliate Status'];const lines=[cols.map(csvCell).join(',')];for(const x of d.rows)lines.push([x.orderNumber,x.transactionId,x.userId,x.username,x.displayName,x.tier,x.amount,x.status,x.paidAt,x.affiliateCommission,x.affiliateStatus].map(csvCell).join(','));const blob=new Blob(['\\uFEFF'+lines.join('\\r\\n')],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='payping-report-'+d.range.key+'-'+new Date().toISOString().slice(0,10)+'.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}catch(e){alert(e.message||String(e))}finally{$('export').disabled=false;$('export').textContent='Export CSV'}});
 $('range').addEventListener('change',load);load();
-</script></body></html>\`;
+</script></body></html>`;
 
 function send(res,type,body){res.statusCode=200;res.setHeader('Content-Type',type);res.setHeader('Cache-Control','no-store');res.end(body)}
 export default function payPingAnalyticsPage(req,res){

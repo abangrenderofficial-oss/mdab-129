@@ -18,7 +18,7 @@ nav{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(sa
 <div id="app" hidden>
 <section class="card"><div class="profile"><div id="avatar" class="avatar">P</div><div><div id="name" class="name">PayPing Owner</div><div id="username" class="muted"></div></div></div><div class="row"><span>Telegram ID</span><strong id="userId">-</strong></div><div class="row"><span>Role</span><strong id="role">Owner</strong></div><div class="row"><span>Environment</span><strong id="env">production</strong></div></section>
 <section id="merchantTools" class="card"><div class="cardTitle">Merchant Tools</div><a id="analyticsLink" class="link" href="/ar-payment/analytics" hidden>Analytics / Reports →</a><a class="link" href="/ar-payment/notifications">Notification Status & History →</a></section>
-<section id="merchantDevices" class="card"><div class="cardTitle">Notification Devices</div><div id="devices"></div><button id="disconnectCurrent" class="danger full">Disconnect This Device</button><div id="msg" class="msg"></div></section>
+<section id="merchantDevices" class="card"><div class="cardTitle">Devices & Sessions</div><div id="devices"></div><button id="disconnectCurrent" class="danger full">Disconnect This Device</button><div id="msg" class="msg"></div></section>
 <section class="card"><div class="cardTitle">Account Session</div><button id="logoutAccount" class="danger full">Logout PayPing Account</button></section><section class="card"><div class="cardTitle">About PayPing!</div><div class="row"><span>Payment provider</span><strong>Bayarcash</strong></div><div class="row"><span>Database</span><strong>Turso</strong></div><div class="row"><span>Heavy worker</span><strong>GitHub Actions</strong></div></section>
 </div>
 </main>

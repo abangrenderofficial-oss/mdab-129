@@ -24,7 +24,7 @@ nav{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(sa
 </main>
 <nav><a href="/ar-payment/"><b>⌂</b>Home</a><a href="/ar-payment/transactions"><b>≡</b>Transactions</a><a href="/ar-payment/affiliate"><b>₿</b>Earn</a><a class="active" href="/ar-payment/settings"><b>⚙</b>Settings</a></nav>
 <script>
-const key='ar_payment_device_token_v1';const token=localStorage.getItem(key)||'';const $=id=>document.getElementById(id);
+const key='payping_auth_session_v1';const deviceKey='ar_payment_device_token_v1';const token=localStorage.getItem(deviceKey)||localStorage.getItem(key)||'';const $=id=>document.getElementById(id);
 const headers=()=>({Authorization:'Bearer '+token,'Content-Type':'application/json'});const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const date=v=>{if(!v)return '-';const d=new Date(v);return Number.isNaN(d.getTime())?'-':new Intl.DateTimeFormat('en-MY',{day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit'}).format(d)};
 function setMsg(t,c=''){$('msg').textContent=t||'';$('msg').className='msg '+c}

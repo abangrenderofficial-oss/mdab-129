@@ -21,7 +21,7 @@ jobs:
           node --input-type=module <<'NODE'
           import { readFile } from 'node:fs/promises';
 
-          const api = await readFile('api/telegram.js', 'utf8');
+          const api = await readFile('handlers/telegram.js', 'utf8');
           const downloader = await readFile('src/downloader.js', 'utf8');
           const start = api.indexOf('async function processLiveWallpaperButton(callbackQuery, baseUrl) {');
           const end = api.indexOf("async function processStandardDownload(chatId, url, platform, baseUrl, mirrorGroupId = '', from = {}, sourceMessage = null, jobFence = null) {", start);

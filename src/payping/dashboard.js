@@ -11,6 +11,93 @@ function clean(value, max = 120) {
   return String(value || '').trim().slice(0, max);
 }
 
+let dailyStatsSchemaPromise = null;
+
+function malaysiaDateKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kuala_Lumpur',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+async function ensurePayPingDailyStatsSchema(db) {
+  if (!dailyStatsSchemaPromise) {
+    dailyStatsSchemaPromise = db.execute(`
+      CREATE TABLE IF NOT EXISTS payping_daily_stats (
+        environment TEXT NOT NULL,
+        local_date TEXT NOT NULL,
+        scope_type TEXT NOT NULL,
+        scope_user_id TEXT NOT NULL,
+        received_cents INTEGER NOT NULL DEFAULT 0,
+        successful_count INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (environment, local_date, scope_type, scope_user_id)
+      )
+    `).catch((error) => {
+      dailyStatsSchemaPromise = null;
+      throw error;
+    });
+  }
+  return dailyStatsSchemaPromise;
+}
+
+function dailyScopeKey({ owner = false, role = 'user', userId = '' } = {}) {
+  if (owner) return { type: 'owner', userId: '*' };
+  const normalizedRole = String(role || 'user').toLowerCase() === 'affiliate'
+    ? 'affiliate'
+    : 'user';
+  return {
+    type: normalizedRole,
+    userId: String(userId || ''),
+  };
+}
+
+async function persistTodayStats(db, {
+  environment,
+  owner = false,
+  role = 'user',
+  userId = '',
+  receivedCents = 0,
+  successfulCount = 0,
+} = {}) {
+  await ensurePayPingDailyStatsSchema(db);
+  const day = malaysiaDateKey();
+  const scope = dailyScopeKey({ owner, role, userId });
+  const now = new Date().toISOString();
+  const cents = Math.max(0, Number(receivedCents || 0));
+  const count = Math.max(0, Number(successfulCount || 0));
+
+  await db.execute({
+    sql: `INSERT INTO payping_daily_stats (
+            environment, local_date, scope_type, scope_user_id,
+            received_cents, successful_count, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(environment, local_date, scope_type, scope_user_id) DO UPDATE SET
+            received_cents = MAX(payping_daily_stats.received_cents, excluded.received_cents),
+            successful_count = MAX(payping_daily_stats.successful_count, excluded.successful_count),
+            updated_at = excluded.updated_at`,
+    args: [environment, day, scope.type, scope.userId, cents, count, now],
+  });
+
+  const result = await db.execute({
+    sql: `SELECT received_cents, successful_count
+          FROM payping_daily_stats
+          WHERE environment = ? AND local_date = ?
+            AND scope_type = ? AND scope_user_id = ?
+          LIMIT 1`,
+    args: [environment, day, scope.type, scope.userId],
+  });
+  const row = result.rows?.[0] || {};
+  return {
+    receivedCents: Number(row.received_cents || 0),
+    successfulCount: Number(row.successful_count || 0),
+  };
+}
+
 function paymentScope({ owner = false, role = 'user', userId = '' } = {}, alias = 'o') {
   if (owner) return { sql: '', args: [] };
   const id = String(userId || '').trim();
@@ -97,6 +184,15 @@ export async function getPayPingDashboard({ userId, owner = false, role = 'user'
   ]);
 
   const s = summaryResult.rows?.[0] || {};
+  const persistedToday = await persistTodayStats(db, {
+    environment: env,
+    owner,
+    role,
+    userId,
+    receivedCents: Number(s.today_cents || 0),
+    successfulCount: Number(s.today_count || 0),
+  });
+
   return {
     owner,
     summary: {
@@ -104,8 +200,8 @@ export async function getPayPingDashboard({ userId, owner = false, role = 'user'
       paidTransactions: Number(s.paid_count || 0),
       pendingTransactions: Number(s.pending_count || 0),
       totalReceived: money(s.paid_cents),
-      todayReceived: money(s.today_cents),
-      todayTransactions: Number(s.today_count || 0),
+      todayReceived: money(persistedToday.receivedCents),
+      todayTransactions: persistedToday.successfulCount,
     },
     recent: (recentResult.rows || []).map(transactionRow),
   };

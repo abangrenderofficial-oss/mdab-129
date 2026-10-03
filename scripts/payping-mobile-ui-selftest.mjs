@@ -41,6 +41,13 @@ for (const page of pages.filter((p) => !p.endsWith('affiliate-admin-pwa.js'))) {
   must(source, 'nav b{font-size:24px;line-height:1}', page);
 }
 
+const settings = await readFile('handlers/payping-settings-pwa.js', 'utf8');
+must(settings,'PayPing! ialah payment &amp; support dashboard','public About PayPing copy');
+must(settings,"$('environmentRow').hidden=!d.owner",'owner-only environment row');
+for (const forbidden of ['Payment provider</span>','Database</span>','Heavy worker</span>','>Turso<','>GitHub Actions<','>Bayarcash<']) {
+  if (settings.includes(forbidden)) throw new Error('settings exposes internal stack: ' + forbidden);
+}
+
 const home = await readFile('handlers/payping-home-pwa.js', 'utf8');
 must(home, '.cardTitle{font-size:16px}', 'home typography');
 must(home, '.quick a{font-size:14px}', 'home quick actions');

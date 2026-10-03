@@ -1,15 +1,15 @@
 import {
   createHash,
   randomBytes,
+  randomInt,
   scryptSync,
   timingSafeEqual,
 } from 'node:crypto';
 
 import { ensureAffiliateProfile } from '../affiliate/store.js';
 import { currentSupportEnvironment, getSupportDb } from '../support/store.js';
-import { ensureWebPushSchema } from '../support/webpush-payment.js';
-
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const LINK_CODE_TTL_MS = 10 * 60 * 1000;
 let authSchemaPromise = null;
 
 function cleanEmail(value) {
@@ -31,9 +31,9 @@ function sessionHash(token) {
     .digest('hex');
 }
 
-function setupCodeHash(code) {
+function linkCodeHash(code) {
   return createHash('sha256')
-    .update(`${currentSupportEnvironment()}:setup:${String(code || '').trim()}`)
+    .update(`${currentSupportEnvironment()}:payping-link:${String(code || '').trim()}`)
     .digest('hex');
 }
 
@@ -106,7 +106,17 @@ export async function ensurePayPingAuthSchema() {
           last_seen_at TEXT NOT NULL,
           PRIMARY KEY (environment, token_hash)
         )`,
+        `CREATE TABLE IF NOT EXISTS payping_link_codes (
+          environment TEXT NOT NULL,
+          code_hash TEXT NOT NULL,
+          telegram_user_id TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          used_at TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL,
+          PRIMARY KEY (environment, code_hash)
+        )`,
         'CREATE INDEX IF NOT EXISTS idx_payping_sessions_account ON payping_sessions(environment, account_id)',
+        'CREATE INDEX IF NOT EXISTS idx_payping_link_codes_user ON payping_link_codes(environment, telegram_user_id)',
       ], 'write');
       return true;
     })().catch((error) => {
@@ -279,9 +289,41 @@ export async function logoutPayPingSession(token) {
   return { loggedOut: true };
 }
 
+export async function createPayPingLinkCode(telegramUserId) {
+  await ensurePayPingAuthSchema();
+  const userId = String(telegramUserId || '').trim();
+  if (!/^\d+$/.test(userId)) {
+    const error = new Error('Telegram account tidak sah.');
+    error.code = 'INVALID_TELEGRAM_ACCOUNT';
+    throw error;
+  }
+
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const code = String(randomInt(10000000, 100000000));
+  const hash = linkCodeHash(code);
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + LINK_CODE_TTL_MS);
+
+  await db.batch([
+    {
+      sql: `DELETE FROM payping_link_codes
+            WHERE environment = ? AND telegram_user_id = ? AND used_at = ''`,
+      args: [environment, userId],
+    },
+    {
+      sql: `INSERT INTO payping_link_codes (
+              environment, code_hash, telegram_user_id, expires_at, used_at, created_at
+            ) VALUES (?, ?, ?, ?, '', ?)`,
+      args: [environment, hash, userId, expiresAt.toISOString(), now.toISOString()],
+    },
+  ], 'write');
+
+  return { code, expiresAt: expiresAt.toISOString() };
+}
+
 export async function linkPayPingTelegram({ accountId, code } = {}) {
   await ensurePayPingAuthSchema();
-  await ensureWebPushSchema();
 
   const normalizedCode = String(code || '').trim();
   if (!/^\d{8}$/.test(normalizedCode)) {
@@ -293,7 +335,7 @@ export async function linkPayPingTelegram({ accountId, code } = {}) {
   const db = await getSupportDb();
   const environment = currentSupportEnvironment();
   const now = new Date().toISOString();
-  const hash = setupCodeHash(normalizedCode);
+  const hash = linkCodeHash(normalizedCode);
 
   const account = await accountById(db, environment, accountId);
   if (!account) {
@@ -303,8 +345,8 @@ export async function linkPayPingTelegram({ accountId, code } = {}) {
   }
 
   const codeResult = await db.execute({
-    sql: `SELECT owner_user_id, expires_at, used_at
-          FROM support_push_setup_codes
+    sql: `SELECT telegram_user_id, expires_at, used_at
+          FROM payping_link_codes
           WHERE environment = ? AND code_hash = ?
           LIMIT 1`,
     args: [environment, hash],
@@ -316,7 +358,7 @@ export async function linkPayPingTelegram({ accountId, code } = {}) {
     throw error;
   }
 
-  const telegramUserId = String(row.owner_user_id || '').trim();
+  const telegramUserId = String(row.telegram_user_id || '').trim();
   if (!/^\d+$/.test(telegramUserId)) {
     const error = new Error('Telegram account tidak sah.');
     error.code = 'INVALID_TELEGRAM_ACCOUNT';
@@ -337,7 +379,7 @@ export async function linkPayPingTelegram({ accountId, code } = {}) {
   }
 
   const consume = await db.execute({
-    sql: `UPDATE support_push_setup_codes
+    sql: `UPDATE payping_link_codes
           SET used_at = ?
           WHERE environment = ? AND code_hash = ? AND used_at = '' AND expires_at > ?`,
     args: [now, environment, hash, now],

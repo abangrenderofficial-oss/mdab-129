@@ -51,7 +51,16 @@ const money=v=>'RM'+(Number(v||0)||0).toFixed(2);
 const date=v=>{const d=new Date(v);return Number.isNaN(d.getTime())?'-':new Intl.DateTimeFormat('en-MY',{day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit'}).format(d)};
 const headers=()=>({Authorization:'Bearer '+token,'Content-Type':'application/json'});
 function setMsg(t,c=''){$('msg').textContent=t||'';$('msg').className='msg '+c}
-function badge(s){const v=String(s||'').toLowerCase();return '<span class="badge '+v+'">'+String(s||'-')+'</span>'}
+function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function badge(s){const v=String(s||'').toLowerCase();return '<span class="badge '+esc(v)+'">'+esc(String(s||'-'))+'</span>'}
+function payoutHtml(p){
+  if(!p?.configured)return '<div class="meta" style="color:#ffb0b0">Payout details belum configured</div>';
+  const d=p.details||{};
+  if(p.method==='DUITNOW'){
+    return '<div class="meta">Payout: <b>DuitNow '+esc(d.identifierType||'')+'</b> · '+esc(d.identifier||'')+' · '+esc(d.accountName||'')+'</div>';
+  }
+  return '<div class="meta">Payout: <b>'+esc(d.bankName||'Bank')+'</b> · '+esc(d.accountNumber||'')+' · '+esc(d.accountName||'')+'</div>';
+}
 function render(){
   const s=state.summary||{};
   $('affiliates').textContent=s.affiliates||0;
@@ -65,9 +74,9 @@ function render(){
   $('list').innerHTML=rows.length?rows.map(w=>{
     const who=w.username?'@'+w.username:'ID '+w.userId;
     const actions=w.status==='PENDING'
-      ? '<div class="actions"><button data-id="'+w.requestId+'" data-decision="PAID">Mark Paid</button><button class="reject" data-id="'+w.requestId+'" data-decision="REJECTED">Reject</button></div>'
+      ? '<div class="actions"><button data-id="'+esc(w.requestId)+'" data-decision="PAID">Mark Paid</button><button class="reject" data-id="'+esc(w.requestId)+'" data-decision="REJECTED">Reject</button></div>'
       : '';
-    return '<div class="item"><div class="line"><div><div class="name">'+who+'</div><div class="meta">'+w.requestId+' · '+date(w.createdAt)+'</div></div><div style="text-align:right"><div class="amount">'+money(w.amount)+'</div>'+badge(w.status)+'</div></div>'+actions+'</div>';
+    return '<div class="item"><div class="line"><div><div class="name">'+esc(who)+'</div><div class="meta">'+esc(w.requestId)+' · '+date(w.createdAt)+'</div></div><div style="text-align:right"><div class="amount">'+money(w.amount)+'</div>'+badge(w.status)+'</div></div>'+payoutHtml(w.payout)+actions+'</div>';
   }).join(''):'<div class="empty">Belum ada withdrawal request.</div>';
   document.querySelectorAll('[data-decision]').forEach(btn=>btn.onclick=()=>finalize(btn.dataset.id,btn.dataset.decision));
 }

@@ -7,7 +7,7 @@ import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { malaysiaSupportSchedule } from './daily-force-schedule.js';
 
 const DAILY_FORCE_COPY = 'Please support bot utk teruskan guna ❤️';
-const DAILY_FORCE_PROCESSING_COPY = '⏳ Premium+ HQ sedang diproses. Tunggu sampai siap dulu ya.';
+const DAILY_FORCE_PROCESSING_COPY = '⏳ Penggunaan pertama sedang diproses. Tunggu sampai siap dulu ya.';
 let schemaPromise = null;
 
 async function ensureSchema() {
@@ -20,7 +20,7 @@ async function ensureSchema() {
           enabled INTEGER NOT NULL DEFAULT 0,
           cycle_id INTEGER NOT NULL DEFAULT 1,
           updated_by TEXT NOT NULL DEFAULT '',
-          policy_version INTEGER NOT NULL DEFAULT 2,
+          policy_version INTEGER NOT NULL DEFAULT 3,
           updated_at TEXT NOT NULL
         )`,
         `CREATE TABLE IF NOT EXISTS support_daily_force_usage (
@@ -72,26 +72,15 @@ async function ensureSchema() {
         args: [environment],
       });
       const policyRow = policy.rows?.[0];
-      if (policyRow && Number(policyRow.policy_version || 1) < 2) {
-        const cycleId = Math.max(1, Number(policyRow.cycle_id || 1));
+      if (policyRow && Number(policyRow.policy_version || 1) < 3) {
         const now = new Date().toISOString();
         await db.execute({
-          sql: `UPDATE support_daily_force_usage
-                SET used_once = 0,
-                    use_claimed = 0,
-                    prompt_sent = 0,
-                    success_count = 0,
-                    updated_at = ?
-                WHERE environment = ? AND cycle_id = ?`,
-          args: [now, environment, cycleId],
-        });
-        await db.execute({
           sql: `UPDATE support_daily_force_mode
-                SET policy_version = 2, updated_at = ?
+                SET policy_version = 3, updated_at = ?
                 WHERE environment = ?`,
           args: [now, environment],
         });
-        console.log('[daily-force] migrated current cycle to Premium+ HQ success policy', { cycleId });
+        console.log('[daily-force] restored one-free-success policy without resetting current cycle');
       }
       return true;
     })().catch((error) => {
@@ -115,7 +104,7 @@ async function modeState() {
   return {
     enabled: Number(result.rows?.[0]?.enabled || 0) === 1,
     cycleId: Math.max(1, Number(result.rows?.[0]?.cycle_id || 1)),
-    policyVersion: Math.max(1, Number(result.rows?.[0]?.policy_version || 2)),
+    policyVersion: Math.max(1, Number(result.rows?.[0]?.policy_version || 3)),
   };
 }
 
@@ -145,12 +134,12 @@ async function setDailyForceSupportEnabled(enabled, adminUserId = '') {
   await db.execute({
     sql: `INSERT INTO support_daily_force_mode (
             environment, enabled, cycle_id, updated_by, policy_version, updated_at
-          ) VALUES (?, ?, ?, ?, 2, ?)
+          ) VALUES (?, ?, ?, ?, 3, ?)
           ON CONFLICT(environment) DO UPDATE SET
             enabled = excluded.enabled,
             cycle_id = excluded.cycle_id,
             updated_by = excluded.updated_by,
-            policy_version = 2,
+            policy_version = 3,
             updated_at = excluded.updated_at`,
     args: [
       environment,
@@ -425,8 +414,8 @@ export async function handleDailyForceSupportCommand(message = {}) {
       : [
           '🔒 /forcesupportdaily aktif.',
           'Jadual: Sabtu sampai Khamis (Malaysia time).',
-          'Non-supporter dapat 1 successful Premium+ HQ dahulu.',
-          'Selepas Premium+ HQ pertama berjaya diproses, bot terus minta support dengan pilihan RM10/RM20/RM30/RM50/RM100.',
+          'Non-supporter dapat 1 successful use dahulu (download, upload, Status HQ, slideshow atau Live Wallpaper).',
+          'Selepas penggunaan pertama berjaya, bot terus minta support dengan pilihan RM10/RM20/RM30/RM50/RM100.',
           'Cubaan seterusnya kekal locked sampai support.',
           'Jumaat Daily Force auto-pause; /forcesupport, /donatesupport atau /normalsupport akan handle.',
           'Sabtu ia sambung semula secara automatik.',

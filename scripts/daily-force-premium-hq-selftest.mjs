@@ -51,22 +51,22 @@ must(daily,"const DAILY_FORCE_COPY = 'Please support bot utk teruskan guna ‚ù§Ô∏
 must(daily,'dailyForcePremiumSupportText()','first-success long promo');
 must(daily,'supportAmountKeyboard()','Daily Force amount buttons');
 must(daily,'AND used_once = 0','idempotent first success');
-must(daily,'policy_version INTEGER NOT NULL DEFAULT 2','Premium HQ policy version');
-must(daily,'migrated current cycle to Premium+ HQ success policy','one-time current-cycle reset');
+must(daily,'policy_version INTEGER NOT NULL DEFAULT 3','one-free-success policy version');
+must(daily,'restored one-free-success policy without resetting current cycle','non-destructive policy migration');
 must(daily,"gateReason: state.usedOnce",'support-required gate reason');
 must(daily,"'processing_first_use'",'processing gate reason');
 
-must(gated,'{ claimDaily: isPremiumHq }','Daily claim only for Premium HQ callback');
+must(gated,'const claims = await claimBoth(userId, callbackQuery, true);','Daily claim for every media callback');
 must(gated,'premiumResult?.premiumHqCompleted','local Premium HQ completion');
 must(gated,'premiumResult?.premiumVideoDispatched','heavy Premium HQ dispatch hold');
 must(gated,"label: 'premium hq callback'",'shared Premium completion');
 must(gated,'completionKey:','Premium completion dedupe key');
-assert(!gated.includes("markDailyForceUsageSuccess(userId)"),'gated generic flows must not directly mark Daily Force success');
+must(gated,'markDailyForceUsageSuccess(userId)','generic successful media consumes the free use');
 
-must(link,'if (statusMode) {','direct Status HQ Daily claim branch');
+must(link,'const dailyClaimed = await claimDailyForceUsageAttempt(userId);','Daily claim for every link job');
 must(link,"label: 'premium hq status link'",'status-link Premium completion');
 must(link,'completionKey:','status-link completion dedupe key');
-assert(!link.includes('markDailyForceUsageSuccess'),'normal link queue must never directly mark Daily Force success');
+must(link,'markDailyForceUsageSuccess(userId)','normal successful download consumes the free use');
 
 must(status,'premiumImageCompleted = true','photo Premium HQ completion');
 must(status,'premiumHqCompleted: true','unified Premium HQ completion flag');
@@ -83,12 +83,12 @@ must(promo,'dailyForcePremiumChannelSupportText()','channel uses korang Premium 
 must(monitor,"dailyState = 'PROCESSING_FIRST_USE'",'monitor processing state');
 must(audit,'PROCESSING FIRST USE','USER RECORD processing state');
 
-console.log('DAILY_FORCE_PREMIUM_HQ_SELFTEST_OK',JSON.stringify({
+console.log('DAILY_FORCE_ONE_FREE_SUCCESS_SELFTEST_OK',JSON.stringify({
   channelBefore:before,
   channelDue:due,
   privatePromptExact:true,
   amountButtons:[10,20,30,50,100],
-  onlyPremiumHqLocks:true,
+  allSuccessfulMediaLocks:true,
   heavyWorkerCovered:true,
   photoCovered:true,
 }));

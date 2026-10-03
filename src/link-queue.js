@@ -15,6 +15,7 @@ import {
 import {
   claimDailyForceUsageAttempt,
   enforceDailyForceSupportForMessage,
+  markDailyForceUsageSuccess,
   releaseDailyForceUsageAttempt,
 } from './support/daily-force.js';
 
@@ -64,6 +65,11 @@ async function runLinkJob({ message, context, url, platform, statusMode, fridayC
     } else if (hasDownloadableMedia(result)) {
       await recordUsage(userId, 'download');
       await markFridaySuccess(userId, 'download');
+      if (dailyClaimed) {
+        await markDailyForceUsageSuccess(userId).catch((error) => {
+          console.warn('[daily-force] download mark failed:', error?.message);
+        });
+      }
     } else {
       if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
       if (dailyClaimed) await releaseDailyForceUsageAttempt(userId).catch(() => {});
@@ -86,13 +92,10 @@ export async function scheduleLinkJob({ message, context = {}, url, platform, st
   const fridayClaimed = await claimFridayUsageAttempt(userId);
   if (!fridayClaimed && await enforceFridaySupportForMessage(message)) return true;
 
-  let dailyClaimed = false;
-  if (statusMode) {
-    dailyClaimed = await claimDailyForceUsageAttempt(userId);
-    if (!dailyClaimed && await enforceDailyForceSupportForMessage(message)) {
-      if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
-      return true;
-    }
+  const dailyClaimed = await claimDailyForceUsageAttempt(userId);
+  if (!dailyClaimed && await enforceDailyForceSupportForMessage(message)) {
+    if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+    return true;
   }
 
   const queued = enqueueUserHeavyJob(

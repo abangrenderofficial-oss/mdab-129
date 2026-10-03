@@ -34,7 +34,7 @@ nav{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(sa
 <section class="card"><div class="line"><div class="cardTitle">Recent Payments</div><a href="/ar-payment/transactions" style="font-size:11px;color:#bfaeff;text-decoration:none">View all</a></div><div id="recent" class="list"></div></section>
 </div>
 
-<section class="card">
+<section id="notificationCard" class="card">
 <div class="setupHead"><div><div class="cardTitle" style="margin:0"><span id="dot" class="dot"></span>Notifications</div><div id="state" class="muted">Belum connected</div></div><button id="toggleSetup" class="btn secondary" style="width:auto;margin:0;padding:9px 11px">Setup</button></div>
 <div id="setupBody" class="setupBody" hidden>
 <ol class="setupSteps"><li>Add PayPing! to Home Screen on iPhone.</li><li>Dalam private chat bot, taip <b>/pushsetup</b>.</li><li>Masukkan setup code 8 digit dan enable notification.</li></ol>
@@ -52,7 +52,7 @@ function refreshConnection(){const t=pushToken();$('test').disabled=!t;$('dot').
 async function loadDashboard(){
  const t=token();if(!t){location.href='/ar-payment/login';return}
  try{const r=await fetch('/api/payping-data?view=dashboard',{headers:{Authorization:'Bearer '+t}});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Dashboard unavailable.');
- const s=d.summary;$('scope').textContent=d.owner?'Merchant view':'My view';$('analyticsQuick').hidden=!d.owner;$('todayReceived').textContent=money(s.todayReceived);$('todayCount').textContent=s.todayTransactions+' successful payments today';$('totalReceived').textContent=money(s.totalReceived);$('paidCount').textContent=s.paidTransactions;$('pendingCount').textContent=s.pendingTransactions;$('totalCount').textContent=s.totalTransactions;
+ const s=d.summary;$('scope').textContent=d.owner?'Merchant view':'My view';$('analyticsQuick').hidden=!d.owner;$('notificationCard').hidden=!d.owner;$('todayReceived').textContent=money(s.todayReceived);$('todayCount').textContent=s.todayTransactions+' successful payments today';$('totalReceived').textContent=money(s.totalReceived);$('paidCount').textContent=s.paidTransactions;$('pendingCount').textContent=s.pendingTransactions;$('totalCount').textContent=s.totalTransactions;
  $('recent').innerHTML=d.recent.length?d.recent.map(t=>'<a class="tx" href="/ar-payment/transaction?order='+encodeURIComponent(t.orderNumber)+'"><div class="line"><div><div class="name">'+esc(t.displayName||t.username||('ID '+t.userId))+'</div><div class="meta">'+esc(t.tierLabel)+' · '+date(t.paidAt||t.createdAt)+' · Details →</div></div><div style="text-align:right"><div class="amount">'+money(t.amount)+'</div><span class="badge '+esc(t.status.toLowerCase())+'">'+esc(t.status)+'</span></div></div></a>').join(''):'<div class="empty">No payments yet.</div>';
  $('dashLoading').hidden=true;$('dashboard').hidden=false;
  }catch(e){$('dashLoading').innerHTML='<div class="error">'+esc(e.message||String(e))+'</div>'}

@@ -9,7 +9,7 @@ import { reconcileSupportPayment } from './reconcile.js';
 import { notifySuccessfulSupportPayment } from './payment-detail.js';
 import { notifyNtfySupportPayment } from './ntfy-payment.js';
 import { notifyAffiliateCommission } from '../affiliate/notify.js';
-import { sendMessage } from '../telegram.js';
+import { sendMessage, telegram } from '../telegram.js';
 
 const FIRST_FOLLOWUP_MS = 15 * 60 * 1000;
 const SECOND_FOLLOWUP_MS = 3 * 60 * 60 * 1000;
@@ -333,28 +333,61 @@ function followupAmountLabel(row) {
   return `RM${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(2)}`;
 }
 
-function followupText(row) {
-  const username = String(row?.telegram_username || '').replace(/^@+/, '').trim();
+function normalizeFollowupIdentity(value = '') {
+  const text = String(value || '')
+    .normalize('NFKC')
+    .replace(/[\p{Cc}\p{Cf}]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return (text.match(/[\p{L}\p{N}]/gu)?.length || 0) >= 2 ? text.slice(0, 80) : '';
+}
+
+async function followupRecipient(row) {
+  const username = normalizeFollowupIdentity(String(row?.telegram_username || '').replace(/^@+/, ''));
+  if (username) return `@${username}`;
+
+  try {
+    const chat = await telegram('getChat', { chat_id: row?.telegram_user_id });
+    const name = normalizeFollowupIdentity([chat?.first_name, chat?.last_name].filter(Boolean).join(' '));
+    if (name) return name;
+  } catch (error) {
+    console.warn('[payment-followup] Telegram name lookup failed:', error?.code, error?.message);
+  }
+
+  return '';
+}
+
+function followupText(row, recipient = '') {
   const amount = followupAmountLabel(row);
   return [
-    username ? `Hi, @${username} 😊` : 'Hi, 😊',
+    recipient ? `Hi, ${recipient}!😊` : 'Hi, Supporter! 😊',
     '',
-    `Awak ada checkout ${amount} tapi belum confirm. Kalau awak suka guna bot ni dan masih nak bantu bot kita semua kekal hidup, awak boleh sambung pembayaran. ${username ? 'Terima kasih buat pembayaran ❤️' : 'Terima kasih orang baik ❤️'}`,
+    `Awak ada checkout ${amount} tapi belum confirmkan? Kalau awak suka guna bot ni and masih nak sama2 bantu bot kita semua kekal hidup 🥹🇲🇾`,
+    '',
+    'Awak boleh continue pembayaran.Terima kasih orang baik! ❤️✨',
   ].join('\n');
 }
 
 function followupKeyboard(row) {
-  const buttons = [];
-  if (String(row.payment_url || '').startsWith('http')) {
-    buttons.push([{ text: `💳 Bayar ${followupAmountLabel(row)}`, url: String(row.payment_url) }]);
-  }
-  buttons.push([
-    { text: '✅ Dah Bayar / Semak', callback_data: `payfollow:review:${row.order_number}` },
-  ]);
-  buttons.push([
-    { text: '✖️ Tak Jadi', callback_data: `payfollow:cancel:${row.order_number}` },
-  ]);
-  return { inline_keyboard: buttons };
+  return {
+    inline_keyboard: [
+      [
+        { text: 'RM10', callback_data: 'support:select:10' },
+        { text: 'RM20', callback_data: 'support:select:20' },
+        { text: 'RM30', callback_data: 'support:select:30' },
+      ],
+      [
+        { text: 'RM50', callback_data: 'support:select:50' },
+        { text: 'RM100', callback_data: 'support:select:100' },
+      ],
+      [
+        { text: '✅ Dah Bayar / Semak', callback_data: `payfollow:review:${row.order_number}` },
+      ],
+      [
+        { text: '✖️ Tak Jadi', callback_data: `payfollow:cancel:${row.order_number}` },
+      ],
+    ],
+  };
 }
 
 function telegramDeliveryError(error) {
@@ -503,7 +536,8 @@ export async function sendPaymentFollowup(orderNumber, { manual = false } = {}) 
 
   let sent;
   try {
-    sent = await sendMessage(row.telegram_user_id, followupText(row), {
+    const recipient = await followupRecipient(row);
+    sent = await sendMessage(row.telegram_user_id, followupText(row, recipient), {
       reply_markup: followupKeyboard(row),
     });
   } catch (error) {
@@ -529,6 +563,34 @@ export async function sendPaymentFollowup(orderNumber, { manual = false } = {}) 
     reconciliation: checked,
     followup: await getPaymentFollowupInfo(orderNumber),
   };
+}
+
+export async function stopPaymentFollowupForAmountSelection(messageId, userId) {
+  const id = String(messageId || '').trim();
+  const uid = String(userId || '').trim();
+  if (!id || !uid) return null;
+
+  await ensurePaymentFollowupSchema();
+  const db = await getSupportDb();
+  const env = currentSupportEnvironment();
+  const result = await db.execute({
+    sql: `SELECT f.order_number
+          FROM support_payment_followups f
+          JOIN support_orders o
+            ON o.environment = f.environment
+           AND o.order_number = f.order_number
+          WHERE f.environment = ?
+            AND f.last_message_id = ?
+            AND o.telegram_user_id = ?
+          ORDER BY f.updated_at DESC
+          LIMIT 1`,
+    args: [env, id, uid],
+  });
+  const orderNumber = String(result.rows?.[0]?.order_number || '');
+  if (!orderNumber) return null;
+
+  await markFollowupState(orderNumber, 'STOPPED', 'AMOUNT_RESELECTED');
+  return orderNumber;
 }
 
 export async function stopPaymentFollowup(orderNumber, reason = 'OWNER_STOPPED') {

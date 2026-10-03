@@ -26,6 +26,7 @@ import { notifyAffiliateCommission } from '../affiliate/notify.js';
 import {
   cancelPaymentFollowupByUser,
   markPaymentReview,
+  stopPaymentFollowupForAmountSelection,
 } from '../support/payment-followup.js';
 
 const SUPPORT_SELECT_PREFIX = 'support:select:';
@@ -450,6 +451,9 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
   }
 
   if (amount) {
+    await stopPaymentFollowupForAmountSelection(messageId, user.id).catch((error) => {
+      console.warn('[payment-followup] amount selection stop failed:', error?.message);
+    });
     await recordSupportAmountClick(callbackQuery, amount).catch((error) => {
       console.warn('[support-per-click] record failed:', error?.message);
     });

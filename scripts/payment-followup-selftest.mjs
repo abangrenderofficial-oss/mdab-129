@@ -88,15 +88,21 @@ const [
 
 must(supportFeature,"payfollow:review:",'Telegram review callback');
 must(supportFeature,"payfollow:cancel:",'Telegram cancel callback');
+must(supportFeature,'stopPaymentFollowupForAmountSelection','amount selection stops old follow-up');
 must(followupModule,'FIRST_FOLLOWUP_MS = 15 * 60 * 1000','first reminder timing');
 must(followupModule,'SECOND_FOLLOWUP_MS = 3 * 60 * 60 * 1000','second reminder timing');
 must(followupModule,'MAX_FOLLOWUPS = 2','reminder cap');
-must(followupModule,'Hi, @','username greeting');
-must(followupModule,"'Hi, 😊'",'fallback greeting');
-must(followupModule,'Awak ada checkout','new follow-up copy');
-must(followupModule,'Terima kasih buat pembayaran ❤️','username thank-you copy');
-must(followupModule,'Terima kasih orang baik ❤️','fallback thank-you copy');
-must(followupModule,'💳 Bayar ${followupAmountLabel(row)}','amount payment button');
+must(followupModule,'Hi, ${recipient}!😊','username or name greeting');
+must(followupModule,"'Hi, Supporter! 😊'",'supporter fallback greeting');
+must(followupModule,'tapi belum confirmkan?','updated follow-up copy');
+must(followupModule,'masih nak sama2 bantu bot kita semua kekal hidup 🥹🇲🇾','community support copy');
+must(followupModule,'Awak boleh continue pembayaran.Terima kasih orang baik! ❤️✨','follow-up closing copy');
+must(followupModule,"callback_data: 'support:select:10'",'RM10 amount button');
+must(followupModule,"callback_data: 'support:select:20'",'RM20 amount button');
+must(followupModule,"callback_data: 'support:select:30'",'RM30 amount button');
+must(followupModule,"callback_data: 'support:select:50'",'RM50 amount button');
+must(followupModule,"callback_data: 'support:select:100'",'RM100 amount button');
+must(followupModule,'followupRecipient','Telegram username or name lookup');
 must(followupModule,'Dah Bayar / Semak','review button');
 must(followupModule,'Tak Jadi','cancel button');
 must(followupModule,"keepPassiveAfterManual",'manual follow-up stays passive after cancel');

@@ -7,6 +7,7 @@ export async function recordPremiumHqSuccess({
   userId,
   chatId,
   label = 'premium hq',
+  completionKey = '',
 } = {}) {
   const id = Number(userId || 0);
   const chat = Number(chatId || 0);
@@ -15,7 +16,7 @@ export async function recordPremiumHqSuccess({
   }
 
   await recordUsage(id, 'status_hq');
-  await markPremiumHqCompleted(id);
+  const channelCounted = await markPremiumHqCompleted(id, completionKey);
 
   const fridayMarked = await markFridayUsageSuccess(id).catch((error) => {
     console.warn(`[friday-support] ${label} mark failed:`, error?.message);
@@ -39,5 +40,6 @@ export async function recordPremiumHqSuccess({
     fridayMarked: Boolean(fridayMarked),
     dailyMarked: Boolean(dailyMarked),
     channelPrompted: Boolean(channelPrompted),
+    channelCounted: Boolean(channelCounted),
   };
 }

@@ -131,6 +131,14 @@ async function requestWithdrawal(message = {}) {
   });
 
   if (!result.created) {
+    if (result.reason === 'payout_profile_required') {
+      await sendMessage(
+        chatId,
+        '💳 Set payout details dulu dalam PayPing! → Affiliate → Payout Method. Selepas save DuitNow/bank details, cuba Withdraw semula.',
+      ).catch(() => {});
+      return true;
+    }
+
     await sendMessage(
       chatId,
       `Belum cukup minimum withdrawal.\n\nAvailable: RM${result.available}\nMinimum: RM${result.minimum}`,

@@ -9,6 +9,7 @@ process.env.BAYARCASH_SANDBOX = 'true';
 process.env.AFFILIATE_COMMISSION_PERCENT = '20';
 process.env.AFFILIATE_HOLD_DAYS = '0';
 process.env.AFFILIATE_MIN_WITHDRAW_RM = '1';
+process.env.SETUP_SECRET = 'affiliate-selftest-encryption-secret';
 
 const {
   ensureAffiliateProfile,
@@ -16,6 +17,7 @@ const {
   getAffiliateDashboard,
   createAffiliateWithdrawal,
   markAffiliateWithdrawal,
+  saveAffiliatePayoutProfile,
 } = await import('../src/affiliate/store.js');
 const {
   createPendingSupport,
@@ -94,11 +96,31 @@ assert(!duplicate.affiliate, 'duplicate callback must not create another commiss
 const afterDuplicate = await getAffiliateDashboard({ userId: referrerId });
 assert(afterDuplicate.totalEarned === '2.00', 'duplicate callback must not change affiliate total');
 
+const blockedWithdrawal = await createAffiliateWithdrawal({
+  userId: referrerId,
+  username: 'referrer_test',
+});
+assert(
+  blockedWithdrawal.created === false && blockedWithdrawal.reason === 'payout_profile_required',
+  'withdrawal should require payout profile first',
+);
+
+const payout = await saveAffiliatePayoutProfile({
+  userId: referrerId,
+  payout: {
+    method: 'BANK',
+    bankName: 'Test Bank',
+    accountName: 'Referrer Test',
+    accountNumber: '1234567890',
+  },
+});
+assert(payout.configured === true && payout.readable === true, 'payout profile should save');
+
 const withdrawal = await createAffiliateWithdrawal({
   userId: referrerId,
   username: 'referrer_test',
 });
-assert(withdrawal.created === true, 'withdrawal should be created');
+assert(withdrawal.created === true, 'withdrawal should be created after payout setup');
 assert(withdrawal.amount === '2.00', 'withdrawal should claim RM2');
 
 const duringWithdrawal = await getAffiliateDashboard({ userId: referrerId });

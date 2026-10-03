@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 
 import { currentSupportEnvironment, getSupportDb } from '../support/store.js';
 import {
@@ -18,6 +18,125 @@ function cleanUsername(value) {
 
 function money(value) {
   return (Math.max(0, Number(value || 0)) / 100).toFixed(2);
+}
+
+let payoutSchemaPromise = null;
+
+function payoutKey() {
+  const secret = String(
+    process.env.AFFILIATE_PAYOUT_ENCRYPTION_KEY
+    || process.env.SETUP_SECRET
+    || ''
+  ).trim();
+  if (!secret) {
+    const error = new Error('Affiliate payout encryption belum configured.');
+    error.code = 'PAYOUT_ENCRYPTION_NOT_CONFIGURED';
+    throw error;
+  }
+  return createHash('sha256')
+    .update(`payping-affiliate-payout-v1:${secret}`)
+    .digest();
+}
+
+function encryptPayoutDetails(value) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', payoutKey(), iv);
+  const plaintext = Buffer.from(JSON.stringify(value || {}), 'utf8');
+  const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return [
+    'v1',
+    iv.toString('base64url'),
+    tag.toString('base64url'),
+    encrypted.toString('base64url'),
+  ].join('.');
+}
+
+function decryptPayoutDetails(payload) {
+  const parts = String(payload || '').split('.');
+  if (parts.length !== 4 || parts[0] !== 'v1') return null;
+  try {
+    const decipher = createDecipheriv(
+      'aes-256-gcm',
+      payoutKey(),
+      Buffer.from(parts[1], 'base64url'),
+    );
+    decipher.setAuthTag(Buffer.from(parts[2], 'base64url'));
+    const clear = Buffer.concat([
+      decipher.update(Buffer.from(parts[3], 'base64url')),
+      decipher.final(),
+    ]);
+    return JSON.parse(clear.toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function cleanPayoutText(value, max = 120) {
+  return String(value || '').replace(/\u0000/g, '').trim().slice(0, max);
+}
+
+function payoutDisplayHint(method, details = {}) {
+  const tail = (value) => {
+    const text = String(value || '').replace(/\s+/g, '');
+    return text ? `••••${text.slice(-4)}` : '-';
+  };
+  if (method === 'DUITNOW') {
+    return `DuitNow ${cleanPayoutText(details.identifierType, 24)} · ${tail(details.identifier)}`;
+  }
+  return `${cleanPayoutText(details.bankName, 50) || 'Bank'} · ${tail(details.accountNumber)}`;
+}
+
+async function ensureAffiliatePayoutSchema(db) {
+  if (!payoutSchemaPromise) {
+    payoutSchemaPromise = db.execute(`
+      CREATE TABLE IF NOT EXISTS affiliate_payout_profiles (
+        environment TEXT NOT NULL,
+        telegram_user_id TEXT NOT NULL,
+        method TEXT NOT NULL,
+        display_hint TEXT NOT NULL,
+        details_ciphertext TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (environment, telegram_user_id)
+      )
+    `).catch((error) => {
+      payoutSchemaPromise = null;
+      throw error;
+    });
+  }
+  await payoutSchemaPromise;
+}
+
+function normalizePayoutInput(input = {}) {
+  const method = cleanPayoutText(input.method, 16).toUpperCase();
+  if (method === 'DUITNOW') {
+    const identifierType = cleanPayoutText(input.identifierType, 24).toUpperCase();
+    const identifier = cleanPayoutText(input.identifier, 80);
+    const accountName = cleanPayoutText(input.accountName, 100);
+    if (!['PHONE', 'NRIC', 'BUSINESS'].includes(identifierType) || !identifier || !accountName) {
+      const error = new Error('Maklumat DuitNow tidak lengkap.');
+      error.code = 'INVALID_PAYOUT_PROFILE';
+      throw error;
+    }
+    return { method, details: { identifierType, identifier, accountName } };
+  }
+
+  if (method === 'BANK') {
+    const bankName = cleanPayoutText(input.bankName, 80);
+    const accountName = cleanPayoutText(input.accountName, 100);
+    const accountNumber = cleanPayoutText(input.accountNumber, 80).replace(/\s+/g, '');
+    if (!bankName || !accountName || !accountNumber) {
+      const error = new Error('Maklumat bank tidak lengkap.');
+      error.code = 'INVALID_PAYOUT_PROFILE';
+      throw error;
+    }
+    return { method, details: { bankName, accountName, accountNumber } };
+  }
+
+  const error = new Error('Payout method tidak sah.');
+  error.code = 'INVALID_PAYOUT_PROFILE';
+  throw error;
 }
 
 function normalizeReferralCode(value) {
@@ -213,6 +332,14 @@ export async function getAffiliateDashboard({ userId, username = '' } = {}) {
 
 export async function createAffiliateWithdrawal({ userId, username = '' } = {}) {
   const profile = await ensureAffiliateProfile({ userId, username });
+  const payoutProfile = await getAffiliatePayoutProfile({ userId: profile.userId });
+  if (!payoutProfile?.configured || payoutProfile?.readable === false) {
+    return {
+      created: false,
+      reason: 'payout_profile_required',
+    };
+  }
+
   const db = await getSupportDb();
   const environment = currentSupportEnvironment();
   const tx = await db.transaction('write');
@@ -329,11 +456,80 @@ export async function getAffiliateActivity({ userId, username = '', limit = 30 }
   };
 }
 
+export async function getAffiliatePayoutProfile({ userId } = {}) {
+  const key = validUserId(userId);
+  if (!key) throw new Error('Invalid affiliate user.');
+
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  await ensureAffiliatePayoutSchema(db);
+
+  const result = await db.execute({
+    sql: `SELECT method, display_hint, details_ciphertext, created_at, updated_at
+          FROM affiliate_payout_profiles
+          WHERE environment = ? AND telegram_user_id = ?
+          LIMIT 1`,
+    args: [environment, key],
+  });
+  const row = result.rows?.[0];
+  if (!row) return { configured: false };
+
+  const details = decryptPayoutDetails(row.details_ciphertext);
+  if (!details) {
+    return {
+      configured: true,
+      readable: false,
+      method: String(row.method || ''),
+      displayHint: String(row.display_hint || ''),
+    };
+  }
+
+  return {
+    configured: true,
+    readable: true,
+    method: String(row.method || ''),
+    displayHint: String(row.display_hint || ''),
+    details,
+    createdAt: String(row.created_at || ''),
+    updatedAt: String(row.updated_at || ''),
+  };
+}
+
+export async function saveAffiliatePayoutProfile({ userId, payout = {} } = {}) {
+  const key = validUserId(userId);
+  if (!key) throw new Error('Invalid affiliate user.');
+
+  const normalized = normalizePayoutInput(payout);
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  await ensureAffiliatePayoutSchema(db);
+
+  const now = new Date().toISOString();
+  const ciphertext = encryptPayoutDetails(normalized.details);
+  const displayHint = payoutDisplayHint(normalized.method, normalized.details);
+
+  await db.execute({
+    sql: `INSERT INTO affiliate_payout_profiles (
+            environment, telegram_user_id, method, display_hint,
+            details_ciphertext, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(environment, telegram_user_id) DO UPDATE SET
+            method = excluded.method,
+            display_hint = excluded.display_hint,
+            details_ciphertext = excluded.details_ciphertext,
+            updated_at = excluded.updated_at`,
+    args: [environment, key, normalized.method, displayHint, ciphertext, now, now],
+  });
+
+  return getAffiliatePayoutProfile({ userId: key });
+}
+
 export async function getAffiliateAdminDashboard({ limit = 50 } = {}) {
   const db = await getSupportDb();
   const environment = currentSupportEnvironment();
   const now = new Date().toISOString();
   await releaseMaturedCommissions(db, environment, now);
+  await ensureAffiliatePayoutSchema(db);
 
   const safeLimit = Math.max(1, Math.min(200, Number(limit || 50)));
 
@@ -371,11 +567,17 @@ export async function getAffiliateAdminDashboard({ limit = 50 } = {}) {
     db.execute({
       sql: `SELECT w.request_id, w.telegram_user_id, w.amount_cents, w.status,
                    w.created_at, w.updated_at, w.paid_at,
-                   COALESCE(p.telegram_username, '') AS telegram_username
+                   COALESCE(p.telegram_username, '') AS telegram_username,
+                   COALESCE(pay.method, '') AS payout_method,
+                   COALESCE(pay.display_hint, '') AS payout_display_hint,
+                   COALESCE(pay.details_ciphertext, '') AS payout_details_ciphertext
             FROM affiliate_withdrawals w
             LEFT JOIN affiliate_profiles p
               ON p.environment = w.environment
              AND p.telegram_user_id = w.telegram_user_id
+            LEFT JOIN affiliate_payout_profiles pay
+              ON pay.environment = w.environment
+             AND pay.telegram_user_id = w.telegram_user_id
             WHERE w.environment = ?
             ORDER BY CASE WHEN w.status = 'PENDING' THEN 0 ELSE 1 END,
                      w.created_at DESC
@@ -412,6 +614,12 @@ export async function getAffiliateAdminDashboard({ limit = 50 } = {}) {
       createdAt: String(row.created_at || ''),
       updatedAt: String(row.updated_at || ''),
       paidAt: row.paid_at ? String(row.paid_at) : null,
+      payout: row.payout_method ? {
+        configured: true,
+        method: String(row.payout_method || ''),
+        displayHint: String(row.payout_display_hint || ''),
+        details: decryptPayoutDetails(row.payout_details_ciphertext),
+      } : { configured: false },
     })),
   };
 }

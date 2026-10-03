@@ -40,6 +40,21 @@ const SUPPORT_TIERS = new Map([
   [100, { key: 'legend', label: '👑 Legend Supporter' }],
 ]);
 
+export function dailyForcePremiumSupportText() {
+  return [
+    'Hi, awak!',
+    '',
+    'Best tak dapat download video and post di status whatsapp tak pecah?',
+    '',
+    'Whatsapp awak sekarang dah PREMIUM! ☕️',
+    'Utk pengetahuan awak bot ni hak milik kita semua 🇲🇾.',
+    '',
+    'Tapi sayang bot ni boleh mati bila2 masa 🥹, klau kita tak berjaya bayar kos sewa server.',
+    '',
+    'Jadi kalau awak suka bot ni, jom kita support nak? Setahun sekali pun boleh, terima kasih orang baik 🙇🏻✨',
+  ].join('\n');
+}
+
 export function supportCampaignText() {
   return [
     'Salam JUMAAT , Yaum Al - Mubarak 🌙',
@@ -104,6 +119,22 @@ function supportMenuText() {
   const lines = [supportCommandText()];
   if (!isBayarcashConfigured()) lines.push('', '⚙️ Payment gateway belum lengkap di Railway.');
   return lines.join('\n');
+}
+
+export function supportAmountKeyboard() {
+  return {
+    inline_keyboard: [
+      [
+        { text: 'RM10', callback_data: `${SUPPORT_SELECT_PREFIX}10` },
+        { text: 'RM20', callback_data: `${SUPPORT_SELECT_PREFIX}20` },
+        { text: 'RM30', callback_data: `${SUPPORT_SELECT_PREFIX}30` },
+      ],
+      [
+        { text: 'RM50', callback_data: `${SUPPORT_SELECT_PREFIX}50` },
+        { text: 'RM100', callback_data: `${SUPPORT_SELECT_PREFIX}100` },
+      ],
+    ],
+  };
 }
 
 export function supportMenuKeyboard() {

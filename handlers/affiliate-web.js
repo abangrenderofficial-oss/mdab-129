@@ -2,6 +2,8 @@ import {
   createAffiliateWithdrawal,
   getAffiliateActivity,
   getAffiliateDashboard,
+  getAffiliatePayoutProfile,
+  saveAffiliatePayoutProfile,
 } from '../src/affiliate/store.js';
 import { resolvePushDeviceOwner } from '../src/support/webpush-payment.js';
 import { sendMessage, telegram } from '../src/telegram.js';
@@ -45,9 +47,10 @@ function referralLink(username, code) {
 }
 
 async function payloadFor(userId) {
-  const [dashboard, activity, username] = await Promise.all([
+  const [dashboard, activity, payoutProfile, username] = await Promise.all([
     getAffiliateDashboard({ userId }),
     getAffiliateActivity({ userId, limit: 40 }),
+    getAffiliatePayoutProfile({ userId }),
     botUsername(),
   ]);
 
@@ -56,13 +59,19 @@ async function payloadFor(userId) {
   return {
     dashboard,
     activity,
+    payoutProfile,
     referralLink: referralLink(username, dashboard.profile?.referralCode),
-    withdrawAllowed: Number.isFinite(available) && Number.isFinite(minimum) && available >= minimum,
+    withdrawAllowed: Number.isFinite(available)
+      && Number.isFinite(minimum)
+      && available >= minimum
+      && payoutProfile?.configured === true
+      && payoutProfile?.readable !== false,
   };
 }
 
 async function notifyWithdrawal(result) {
   if (!result?.created) return;
+  const payout = await getAffiliatePayoutProfile({ userId: result.userId }).catch(() => null);
 
   const userText = [
     '✅ PayPing Affiliate withdrawal diterima',
@@ -84,6 +93,7 @@ async function notifyWithdrawal(result) {
     `User: ${username}`,
     `Telegram ID: ${result.userId}`,
     `Amount: RM${result.amount}`,
+    `Payout: ${payout?.displayHint || 'Belum configured'}`,
     '',
     'Selepas transfer manual:',
     `/affiliatepaid ${result.requestId}`,
@@ -118,6 +128,18 @@ export default async function handler(req, res) {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const action = String(body.action || '').trim().toLowerCase();
 
+    if (action === 'save_payout') {
+      const payoutProfile = await saveAffiliatePayoutProfile({
+        userId,
+        payout: body.payout || {},
+      });
+      return json(res, 200, {
+        ok: true,
+        payoutProfile,
+        ...(await payloadFor(userId)),
+      });
+    }
+
     if (action === 'withdraw') {
       const result = await createAffiliateWithdrawal({ userId });
       await notifyWithdrawal(result);
@@ -131,7 +153,8 @@ export default async function handler(req, res) {
     return json(res, 400, { ok: false, error: 'unknown_action' });
   } catch (error) {
     console.error('[affiliate-web] request failed:', error?.code, error?.message);
-    return json(res, 500, {
+    const status = error?.code === 'INVALID_PAYOUT_PROFILE' ? 400 : 500;
+    return json(res, status, {
       ok: false,
       error: String(error?.code || 'AFFILIATE_WEB_FAILED'),
       message: error?.message || 'Affiliate request failed.',

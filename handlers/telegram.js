@@ -17,6 +17,7 @@ import { handleLuahRasaCommand, processLuahRasaMessage } from '../src/features/l
 import { handleConnectQuoteCommand, processQuoteFilterCallback } from '../src/features/quote-filter.js';
 import { handleConnectPaymentDetailCommand, handlePaymentDetailTestCommand } from '../src/features/payment-detail.js';
 import { handlePaymentPushSetupCommand } from '../src/features/payment-push.js';
+import { recordSupportMonitorSeen } from '../src/support/monitor.js';
 import { handleAffiliateCommand, handleAffiliatePayoutCommand, handleAffiliateStartPayload, handleAffiliateWithdrawCommand, processAffiliateCallback } from '../src/features/affiliate.js';
 import { handleCheckMemberCommand } from '../src/features/channel-diagnostic.js';
 import { handleResetChannelCommand } from '../src/features/channel-reset.js';
@@ -171,7 +172,12 @@ export default async function handler(req, res) {
     const callbackQuery = update?.callback_query;
     const actor = callbackQuery?.from || message?.from;
     const actorChatType = callbackQuery?.message?.chat?.type || message?.chat?.type;
-    if (actorChatType === 'private' && actor?.id) await recordUsage(actor.id);
+    if (actorChatType === 'private' && actor?.id) {
+      await recordUsage(actor.id);
+      await recordSupportMonitorSeen(actor).catch((error) => {
+        console.warn('[support-monitor] seen record failed:', error?.message);
+      });
+    }
 
     const command = commandFromMessage(message);
     if (command === '/menu') {

@@ -1,4 +1,4 @@
-const PAGE = String.raw\`<!doctype html>
+const PAGE = String.raw`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -74,7 +74,7 @@ $('enable').addEventListener('click',async()=>{try{
  }catch(e){setMsg(e.message||String(e),true)}finally{$('enable').disabled=false}});
 $('test').addEventListener('click',async()=>{try{const t=token();if(!t)throw new Error('Device belum connected.');$('test').disabled=true;const r=await fetch('/api/payment-push',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'test',deviceToken:t})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Test push gagal.');setMsg('Test push sent ✅')}catch(e){setMsg(e.message||String(e),true)}finally{refreshConnection()}});
 refreshConnection();loadDashboard();
-</script></body></html>\`;
+</script></body></html>`;
 
 function send(res,type,body){res.statusCode=200;res.setHeader('Content-Type',type);res.setHeader('Cache-Control','no-store');res.end(body)}
 export default function payPingHomePage(req,res){

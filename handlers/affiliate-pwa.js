@@ -28,7 +28,7 @@ const PAGE = String.raw`<!doctype html>
     .list{display:flex;flex-direction:column;gap:8px}.item{background:#0c0f16;border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:12px}.item-top{display:flex;justify-content:space-between;gap:12px;align-items:center}.item-title{font-size:14px;font-weight:800}.amount{font-size:15px;font-weight:900}.meta{font-size:11px;color:#828999;margin-top:6px;display:flex;gap:8px;flex-wrap:wrap}.badge{font-size:10px;font-weight:850;padding:4px 7px;border-radius:999px;background:#282d38;color:#c6ccd8}.badge.available,.badge.paid{background:rgba(57,217,138,.14);color:#78e3ad}.badge.pending,.badge.withdrawal_pending{background:rgba(252,190,58,.13);color:#ffd273}.badge.rejected{background:rgba(255,94,94,.13);color:#ff9c9c}
     .empty{padding:18px;text-align:center;color:#7f8797;font-size:13px}.loader{padding:35px;text-align:center;color:#aab0bd}.error{background:rgba(255,80,80,.08);border:1px solid rgba(255,100,100,.18);border-radius:18px;padding:18px;color:#ffc0c0;line-height:1.45}
     .formgrid{display:grid;grid-template-columns:1fr;gap:9px}.field label{display:block;font-size:11px;color:#8d95a5;margin:0 0 6px}.pinput,.pselect{width:100%;background:#0b0e15;border:1px solid #2a303d;border-radius:12px;padding:12px;color:#fff;font-size:14px;outline:none}.pinput:focus,.pselect:focus{border-color:#8b5cf6}.payout-summary{font-size:12px;color:#9fa7b7;margin:8px 0 0}.save-payout{width:100%;margin-top:10px}
-    nav{position:fixed;z-index:20;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom));width:min(92%,560px);height:62px;border:1px solid rgba(255,255,255,.08);background:rgba(18,20,29,.9);backdrop-filter:blur(18px);border-radius:19px;display:grid;grid-template-columns:1fr 1fr;padding:6px;box-shadow:0 18px 55px rgba(0,0,0,.4)}nav a{display:flex;flex-direction:column;align-items:center;justify-content:center;text-decoration:none;color:#7f8797;font-size:11px;font-weight:750;gap:3px;border-radius:14px}nav a.active{color:#fff;background:rgba(126,77,255,.18)}nav b{font-size:19px;line-height:1}
+    nav{position:fixed;z-index:20;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom));width:min(92%,560px);height:62px;border:1px solid rgba(255,255,255,.08);background:rgba(18,20,29,.9);backdrop-filter:blur(18px);border-radius:19px;display:grid;grid-template-columns:repeat(4,1fr);padding:6px;box-shadow:0 18px 55px rgba(0,0,0,.4)}nav a{display:flex;flex-direction:column;align-items:center;justify-content:center;text-decoration:none;color:#7f8797;font-size:10px;font-weight:750;gap:3px;border-radius:14px}nav a.active{color:#fff;background:rgba(126,77,255,.18)}nav b{font-size:19px;line-height:1}
     @media(min-width:560px){.grid{grid-template-columns:repeat(4,1fr)}.stat{min-height:100px}.stat .v{font-size:19px}}
   </style>
 </head>
@@ -99,7 +99,7 @@ const PAGE = String.raw`<!doctype html>
     </section>
   </div>
 </main>
-<nav><a href="/ar-payment/"><b>⌂</b><span>PayPing</span></a><a href="/ar-payment/affiliate" class="active"><b>₿</b><span>Earn</span></a></nav>
+<nav><a href="/ar-payment/"><b>⌂</b><span>Home</span></a><a href="/ar-payment/transactions"><b>≡</b><span>Transactions</span></a><a href="/ar-payment/affiliate" class="active"><b>₿</b><span>Earn</span></a><a href="/ar-payment/settings"><b>⚙</b><span>Settings</span></a></nav>
 
 <script>
 const deviceKey='ar_payment_device_token_v1';

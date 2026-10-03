@@ -91,7 +91,7 @@ a,button,.btn,.quick a,.tab,.back,.link,.item,.tx{touch-action:manipulation}
 </main>
 <nav><a class="active" href="/ar-payment/"><b>⌂</b>Home</a><a href="/ar-payment/transactions"><b>≡</b>Transactions</a><a href="/ar-payment/affiliate"><b>₿</b>Earn</a><a href="/ar-payment/settings"><b>⚙</b>Settings</a></nav>
 <script>
-const $=id=>document.getElementById(id);const deviceKey='ar_payment_device_token_v1';const token=()=>localStorage.getItem(deviceKey)||'';let accountContext=null;
+const $=id=>document.getElementById(id);const deviceKey='ar_payment_device_token_v1';const telegramLinkKey='payping_telegram_link_pending_v1';const token=()=>localStorage.getItem(deviceKey)||'';let accountContext=null;let telegramLinkWatch=null;let telegramLinkCheckBusy=false;
 const authHeaders=(json=false)=>{const h=json?{'Content-Type':'application/json'}:{};const t=token();if(t)h['X-PayPing-Device-Token']=t;return h};
 const money=v=>'RM'+(Number(v||0)||0).toFixed(2);const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const date=v=>{if(!v)return '-';const d=new Date(v);return Number.isNaN(d.getTime())?'-':new Intl.DateTimeFormat('en-MY',{day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}).format(d)};
@@ -113,14 +113,38 @@ async function loadIdentity(){
   $('dashLoading').innerHTML='<div class="error">'+esc(e.message||String(e))+'</div>';return null;
  }
 }
+async function refreshTelegramLinkState(){
+ if(telegramLinkCheckBusy)return false;
+ telegramLinkCheckBusy=true;
+ try{
+  const r=await fetch('/api/payping-auth',{headers:authHeaders(false),cache:'no-store'});const d=await r.json();
+  if(!r.ok||!d.ok)return false;
+  if(!d.needsTelegramLink&&d.account?.telegramUserId){
+   sessionStorage.removeItem(telegramLinkKey);
+   if(telegramLinkWatch){clearInterval(telegramLinkWatch);telegramLinkWatch=null}
+   $('linkMsg').textContent='Telegram linked ✅';
+   $('onboarding').hidden=true;$('dashLoading').hidden=false;$('dashLoading').textContent='Loading PayPing…';
+   await loadDashboard();
+   return true;
+  }
+  return false;
+ }catch{return false}
+ finally{telegramLinkCheckBusy=false}
+}
+function startTelegramLinkWatch(){
+ sessionStorage.setItem(telegramLinkKey,'1');
+ if(telegramLinkWatch)clearInterval(telegramLinkWatch);
+ telegramLinkWatch=setInterval(()=>{if(!document.hidden)refreshTelegramLinkState()},1500);
+ setTimeout(()=>{if(telegramLinkWatch){clearInterval(telegramLinkWatch);telegramLinkWatch=null}},90000);
+}
 async function requestTelegramLink(){
  try{
   $('connectTelegram').disabled=true;$('linkMsg').textContent='Preparing Telegram link…';
   const r=await fetch('/api/payping-auth',{method:'POST',headers:authHeaders(true),body:JSON.stringify({action:'request_telegram_link'})});
   const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Tak berjaya generate Telegram link.');
-  if(d.alreadyLinked){location.reload();return}
+  if(d.alreadyLinked){sessionStorage.removeItem(telegramLinkKey);await refreshTelegramLinkState();return}
   if(!d.telegramLink)throw new Error('Telegram bot link belum tersedia.');
-  $('linkMsg').textContent='Opening Telegram…';location.href=d.telegramLink;
+  $('linkMsg').textContent='Opening Telegram…';startTelegramLinkWatch();location.href=d.telegramLink;
  }catch(e){$('linkMsg').textContent=e.message||String(e)}finally{$('connectTelegram').disabled=false}
 }
 async function loadDashboard(){
@@ -154,6 +178,9 @@ $('enable').addEventListener('click',async()=>{try{
  localStorage.setItem(deviceKey,d.deviceToken);$('code').value='';refreshConnection();setMsg('Connected ✅');$('dashLoading').hidden=false;$('dashboard').hidden=true;loadDashboard();
  }catch(e){setMsg(e.message||String(e),true)}finally{$('enable').disabled=false}});
 $('test').addEventListener('click',async()=>{try{const t=token();if(!t)throw new Error('Device belum connected.');$('test').disabled=true;const r=await fetch('/api/payment-push',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'test',deviceToken:t})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Test push gagal.');setMsg('Test push sent ✅')}catch(e){setMsg(e.message||String(e),true)}finally{refreshConnection()}});
+window.addEventListener('pageshow',()=>{if(sessionStorage.getItem(telegramLinkKey)==='1')refreshTelegramLinkState()});
+window.addEventListener('focus',()=>{if(sessionStorage.getItem(telegramLinkKey)==='1')refreshTelegramLinkState()});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&sessionStorage.getItem(telegramLinkKey)==='1')refreshTelegramLinkState()});
 refreshConnection();loadDashboard();
 </script></body></html>`;
 

@@ -152,6 +152,7 @@ const token=localStorage.getItem(deviceKey)||'';
 const $=id=>document.getElementById(id);
 let state=null;
 let tab='commission';
+const telegramLinkKey='payping_telegram_link_pending_v1';let telegramLinkCheckBusy=false;
 
 function money(v){const n=Number(v||0);return 'RM'+(Number.isFinite(n)?n:0).toFixed(2)}
 function dateText(v){if(!v)return '-';const d=new Date(v);if(Number.isNaN(d.getTime()))return '-';return new Intl.DateTimeFormat('en-MY',{day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit'}).format(d)}
@@ -245,7 +246,11 @@ async function load(){
   }catch(e){$('loading').innerHTML='<div class="error">'+(e.message||String(e))+'</div>'}
 }
 
-$('connectTelegram').addEventListener('click',async()=>{try{$('connectTelegram').disabled=true;$('connectMsg').textContent='Preparing Telegram link…';const r=await fetch('/api/payping-auth',{method:'POST',headers:auth(),body:JSON.stringify({action:'request_telegram_link'})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Tak berjaya generate Telegram link.');if(d.alreadyLinked){location.reload();return}if(!d.telegramLink)throw new Error('Telegram bot link belum tersedia.');$('connectMsg').textContent='Opening Telegram…';location.href=d.telegramLink}catch(e){$('connectMsg').textContent=e.message||String(e)}finally{$('connectTelegram').disabled=false}});
+async function refreshTelegramLinkState(){
+ if(telegramLinkCheckBusy)return;telegramLinkCheckBusy=true;
+ try{const id=await identity();if(id&&!id.needsTelegramLink){sessionStorage.removeItem(telegramLinkKey);$('connectMsg').textContent='Telegram linked ✅';$('connect').hidden=true;$('loading').hidden=false;$('loading').textContent='Loading affiliate wallet…';await load()}}catch{}finally{telegramLinkCheckBusy=false}
+}
+$('connectTelegram').addEventListener('click',async()=>{try{$('connectTelegram').disabled=true;$('connectMsg').textContent='Preparing Telegram link…';const r=await fetch('/api/payping-auth',{method:'POST',headers:auth(),body:JSON.stringify({action:'request_telegram_link'})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Tak berjaya generate Telegram link.');if(d.alreadyLinked){sessionStorage.removeItem(telegramLinkKey);await refreshTelegramLinkState();return}if(!d.telegramLink)throw new Error('Telegram bot link belum tersedia.');sessionStorage.setItem(telegramLinkKey,'1');$('connectMsg').textContent='Opening Telegram…';location.href=d.telegramLink}catch(e){$('connectMsg').textContent=e.message||String(e)}finally{$('connectTelegram').disabled=false}});
 $('joinAffiliate').addEventListener('click',async()=>{try{$('joinAffiliate').disabled=true;$('joinMsg').textContent='Activating affiliate…';const r=await fetch('/api/payping-auth',{method:'POST',headers:auth(),body:JSON.stringify({action:'join_affiliate'})});const d=await r.json();if(r.status===409&&d.error==='PAYPING_TELEGRAM_LINK_REQUIRED'){$('join').hidden=true;$('connect').hidden=false;return}if(!r.ok||!d.ok)throw new Error(d.message||'Join affiliate gagal.');$('joinMsg').textContent='Affiliate activated ✅';location.reload()}catch(e){$('joinMsg').textContent=e.message||String(e)}finally{$('joinAffiliate').disabled=false}});
 $('payoutMethod').addEventListener('change',togglePayoutFields);
 $('savePayout').addEventListener('click',async()=>{
@@ -289,6 +294,9 @@ $('withdraw').addEventListener('click',async()=>{
 });
 $('commissionTab').addEventListener('click',()=>{tab='commission';$('commissionTab').classList.add('active');$('withdrawTab').classList.remove('active');renderActivity()});
 $('withdrawTab').addEventListener('click',()=>{tab='withdrawal';$('withdrawTab').classList.add('active');$('commissionTab').classList.remove('active');renderActivity()});
+window.addEventListener('pageshow',()=>{if(sessionStorage.getItem(telegramLinkKey)==='1')refreshTelegramLinkState()});
+window.addEventListener('focus',()=>{if(sessionStorage.getItem(telegramLinkKey)==='1')refreshTelegramLinkState()});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&sessionStorage.getItem(telegramLinkKey)==='1')refreshTelegramLinkState()});
 load();
 </script>
 </body>

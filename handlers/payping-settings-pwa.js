@@ -68,7 +68,7 @@ a,button,.btn,.quick a,.tab,.back,.link,.item,.tx{touch-action:manipulation}
 </main>
 <nav><a href="/ar-payment/"><b>⌂</b>Home</a><a href="/ar-payment/transactions"><b>≡</b>Transactions</a><a href="/ar-payment/affiliate"><b>₿</b>Earn</a><a class="active" href="/ar-payment/settings"><b>⚙</b>Settings</a></nav>
 <script>
-const key='ar_payment_device_token_v1';const token=localStorage.getItem(key)||'';const $=id=>document.getElementById(id);
+const key='ar_payment_device_token_v1';const telegramLinkKey='payping_telegram_link_pending_v1';const token=localStorage.getItem(key)||'';const $=id=>document.getElementById(id);let telegramLinkCheckBusy=false;
 const headers=()=>{const h={'Content-Type':'application/json'};if(token)h['X-PayPing-Device-Token']=token;return h};const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const date=v=>{if(!v)return '-';const d=new Date(v);return Number.isNaN(d.getTime())?'-':new Intl.DateTimeFormat('en-MY',{day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit'}).format(d)};
 function setMsg(t,c=''){$('msg').textContent=t||'';$('msg').className='msg '+c}
@@ -98,8 +98,15 @@ async function load(){
 }
 async function revoke(id){if(!confirm('Disconnect this PayPing device?'))return;try{const r=await fetch('/api/payping-settings',{method:'POST',headers:headers(),body:JSON.stringify({action:'revoke_device',deviceId:id})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Disconnect failed.');setMsg('Device disconnected ✅');load()}catch(e){setMsg(e.message||String(e),'bad')}}
 $('disconnectCurrent').addEventListener('click',async()=>{if(!confirm('Disconnect current PayPing device? Notification dan dashboard access pada device ini akan berhenti sehingga /pushsetup dibuat semula.'))return;try{const r=await fetch('/api/payping-settings',{method:'POST',headers:headers(),body:JSON.stringify({action:'disconnect_current'})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Disconnect failed.');localStorage.removeItem(key);location.href='/ar-payment/'}catch(e){setMsg(e.message||String(e),'bad')}});
-$('accountLinkTelegram').addEventListener('click',async()=>{try{$('accountLinkTelegram').disabled=true;$('accountLinkStatus').textContent='Preparing Telegram link…';const r=await fetch('/api/payping-auth',{method:'POST',headers:headers(),body:JSON.stringify({action:'request_telegram_link'})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Tak berjaya generate Telegram link.');if(d.alreadyLinked){location.reload();return}if(!d.telegramLink)throw new Error('Telegram bot link belum tersedia.');$('accountLinkStatus').textContent='Opening Telegram…';location.href=d.telegramLink}catch(e){$('accountLinkStatus').textContent=e.message||String(e)}finally{$('accountLinkTelegram').disabled=false}});
+async function refreshTelegramLinkState(){
+ if(telegramLinkCheckBusy)return;telegramLinkCheckBusy=true;
+ try{const r=await fetch('/api/payping-auth',{headers:headers(),cache:'no-store'});const d=await r.json();if(r.ok&&d.ok&&!d.needsTelegramLink&&d.account?.telegramUserId){sessionStorage.removeItem(telegramLinkKey);$('accountLinkStatus').textContent='Telegram linked ✅';await loadAccount();await load()}}catch{}finally{telegramLinkCheckBusy=false}
+}
+$('accountLinkTelegram').addEventListener('click',async()=>{try{$('accountLinkTelegram').disabled=true;$('accountLinkStatus').textContent='Preparing Telegram link…';const r=await fetch('/api/payping-auth',{method:'POST',headers:headers(),body:JSON.stringify({action:'request_telegram_link'})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Tak berjaya generate Telegram link.');if(d.alreadyLinked){sessionStorage.removeItem(telegramLinkKey);await refreshTelegramLinkState();return}if(!d.telegramLink)throw new Error('Telegram bot link belum tersedia.');sessionStorage.setItem(telegramLinkKey,'1');$('accountLinkStatus').textContent='Opening Telegram…';location.href=d.telegramLink}catch(e){$('accountLinkStatus').textContent=e.message||String(e)}finally{$('accountLinkTelegram').disabled=false}});
 $('accountLogout').addEventListener('click',async()=>{try{const r=await fetch('/api/payping-auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'logout'})});if(!r.ok)throw new Error('Logout gagal.');location.href='/ar-payment/login'}catch(e){setMsg(e.message||String(e),'bad')}});
+window.addEventListener('pageshow',()=>{if(sessionStorage.getItem(telegramLinkKey)==='1')refreshTelegramLinkState()});
+window.addEventListener('focus',()=>{if(sessionStorage.getItem(telegramLinkKey)==='1')refreshTelegramLinkState()});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&sessionStorage.getItem(telegramLinkKey)==='1')refreshTelegramLinkState()});
 loadAccount();load();
 </script></body></html>`;
 

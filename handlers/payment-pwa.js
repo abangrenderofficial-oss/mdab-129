@@ -23,6 +23,7 @@ const PAGE = String.raw`<!doctype html>
     input:focus{border-color:#8b5cf6;box-shadow:0 0 0 3px rgba(139,92,246,.14)}button{width:100%;border:0;border-radius:14px;padding:15px 16px;font-size:16px;font-weight:800;margin-top:11px;color:white;background:linear-gradient(135deg,#9b6bff,#6d28d9)}
     button.secondary{background:#202532}button:disabled{opacity:.45}#msg{font-size:14px;line-height:1.45;margin-top:12px;color:#b7bdca;min-height:20px}
     .sample{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#090b11;border-radius:14px;padding:14px;white-space:pre-wrap;font-size:12px;line-height:1.5;color:#d6dae3}.small{font-size:12px;color:#777e8d;margin-top:10px}
+    .earn-card{background:linear-gradient(145deg,rgba(126,77,255,.18),rgba(19,22,31,.9))}.earn-top{display:flex;align-items:center;justify-content:space-between;gap:14px}.earn-title{font-size:18px;font-weight:850}.earn-icon{font-size:28px}.earn-copy{font-size:13px;color:#aeb4c2;line-height:1.45;margin:8px 0 14px}.earn-btn{display:block;text-align:center;text-decoration:none;border-radius:14px;padding:14px 16px;font-size:15px;font-weight:850;color:white;background:linear-gradient(135deg,#9b6bff,#6d28d9)}
   </style>
 </head>
 <body>
@@ -42,6 +43,11 @@ const PAGE = String.raw`<!doctype html>
     <button id="test" class="secondary" disabled>Send Test Notification</button>
     <div id="msg"></div>
     <div class="small">Setup code hanya sah 10 minit dan hanya boleh digunakan sekali.</div>
+  </section>
+  <section class="card earn-card">
+    <div class="earn-top"><div><div class="earn-title">PayPing Affiliate</div><div class="muted">Earn & wallet</div></div><div class="earn-icon">💰</div></div>
+    <div class="earn-copy">Tengok available commission, pending, referrals, history dan buat withdrawal terus dari PayPing.</div>
+    <a class="earn-btn" href="/ar-payment/affiliate">Open Affiliate / Earn</a>
   </section>
   <section class="card"><div class="muted" style="margin-bottom:10px">Contoh notification</div><div class="sample">PayPing!
 ID 123456789 - RM10.00 - Successful ✅</div></section>

@@ -16,7 +16,7 @@ const PAGE = String.raw`<!doctype html>
     body{margin:0;min-height:100vh;background:radial-gradient(circle at 18% 0,#27114e 0,#11111b 38%,#07070d 100%);color:#f8f8fb;padding:env(safe-area-inset-top) 16px calc(16px + env(safe-area-inset-right)) calc(92px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))}
     main{max-width:620px;margin:0 auto;padding:24px 0 32px}
     .top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}.brand{display:flex;align-items:center;gap:11px}.logo{width:44px;height:44px;border-radius:14px;overflow:hidden;flex:0 0 44px}.logo img{width:100%;height:100%;display:block}.title{font-size:21px;font-weight:850}.sub{font-size:12px;color:#969cac;margin-top:2px}
-    .back{color:#d7cdfd;text-decoration:none;font-size:14px;font-weight:750;padding:9px 11px;border:1px solid rgba(255,255,255,.09);border-radius:12px;background:rgba(255,255,255,.04)}
+    .back{color:#d7cdfd;text-decoration:none;font-size:14px;font-weight:750;padding:9px 11px;border:1px solid rgba(255,255,255,.09);border-radius:12px;background:rgba(255,255,255,.04)}.admin-link{display:none;margin-top:8px;color:#d9d0ff;text-decoration:none;font-size:12px;font-weight:800}
     .hero{position:relative;overflow:hidden;background:linear-gradient(145deg,rgba(132,75,255,.26),rgba(35,22,72,.74));border:1px solid rgba(164,126,255,.22);border-radius:24px;padding:21px;box-shadow:0 22px 70px rgba(0,0,0,.3);margin-bottom:14px}.hero:after{content:"";position:absolute;width:190px;height:190px;border-radius:50%;right:-90px;top:-100px;background:radial-gradient(circle,rgba(114,255,175,.16),transparent 68%)}
     .eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#bba7ff;font-weight:800}.available{font-size:38px;font-weight:900;letter-spacing:-1px;margin:7px 0 3px}.hint{font-size:13px;color:#b7bdca}
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}.stat{background:rgba(19,22,31,.84);border:1px solid rgba(255,255,255,.075);border-radius:18px;padding:15px;min-height:91px}.stat .k{font-size:12px;color:#8f96a8}.stat .v{font-size:22px;font-weight:850;margin-top:7px}.stat .v.smallv{font-size:18px}
@@ -35,7 +35,7 @@ const PAGE = String.raw`<!doctype html>
 <main>
   <div class="top">
     <div class="brand"><div class="logo"><img src="/ar-payment/payping-icon-v4.svg" alt=""></div><div><div class="title">PayPing! Affiliate</div><div class="sub">Earn from successful referrals</div></div></div>
-    <a class="back" href="/ar-payment/">PayPing</a>
+    <div style="text-align:right"><a class="back" href="/ar-payment/">PayPing</a><a id="adminLink" class="admin-link" href="/ar-payment/affiliate/admin">Admin</a></div>
   </div>
 
   <div id="loading" class="loader">Loading affiliate wallet…</div>
@@ -126,6 +126,13 @@ function render(){
   renderActivity();
 }
 
+async function probeAdmin(){
+  if(!token)return;
+  try{
+    const r=await fetch('/api/affiliate-admin',{headers:auth()});
+    if(r.ok)$('adminLink').style.display='block';
+  }catch{}
+}
 async function load(){
   if(!token){$('loading').hidden=true;$('connect').hidden=false;return}
   try{
@@ -133,7 +140,7 @@ async function load(){
     const data=await r.json();
     if(r.status===401){localStorage.removeItem(deviceKey);$('loading').hidden=true;$('connect').hidden=false;return}
     if(!r.ok||!data.ok)throw new Error(data.message||'Affiliate dashboard gagal dimuat.');
-    state=data;$('loading').hidden=true;$('app').hidden=false;render();
+    state=data;$('loading').hidden=true;$('app').hidden=false;render();probeAdmin();
   }catch(e){$('loading').innerHTML='<div class="error">'+(e.message||String(e))+'</div>'}
 }
 

@@ -58,6 +58,9 @@ function unsupportedLine(user = {}) {
   if (daily.state === 'LOCKED') {
     return `🔒 ${identity(user)} · ID ${user.userId} · LOCKED · success ${daily.successCount}x · cycle ${daily.cycleId}`;
   }
+  if (daily.state === 'PAUSED_FRIDAY') {
+    return `⏸ ${identity(user)} · ID ${user.userId} · FRIDAY MODE`;
+  }
   if (daily.state === 'FREE_USE_AVAILABLE') {
     return `❌ ${identity(user)} · ID ${user.userId} · FREE 1x available · cycle ${daily.cycleId}`;
   }
@@ -93,7 +96,11 @@ export function buildSupportMonitorMessage(report = {}) {
     '📊 SUPPORT MONITOR — AUTO',
     '',
     report.dailyForceEnabled
-      ? `Daily Force: ON · Cycle ${report.cycleId}`
+      ? (
+          report.dailyForcePausedForFriday
+            ? `Daily Force: ON · PAUSED FRIDAY · Cycle ${report.cycleId}`
+            : `Daily Force: ON · Sabtu–Khamis · Cycle ${report.cycleId}`
+        )
       : 'Daily Force: OFF',
     `Tracked users: ${report.users?.length || 0}`,
     `✅ Active supporter: ${report.supported?.length || 0}`,
@@ -107,6 +114,7 @@ export function buildSupportMonitorMessage(report = {}) {
 
   lines.push(
     '',
+    'Daily Force: Sabtu–Khamis. Jumaat dikendalikan Friday Support System.',
     'Auto update bila user baru dikesan, Daily Force berubah atau payment berjaya.',
     'Manual check: /supportcheck <TelegramID>',
   );

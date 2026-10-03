@@ -71,6 +71,10 @@ export async function ensurePaymentFollowupSchema() {
           followup_count INTEGER NOT NULL DEFAULT 0,
           last_followup_at TEXT,
           last_message_id TEXT NOT NULL DEFAULT '',
+          last_attempt_at TEXT,
+          last_delivery_status TEXT NOT NULL DEFAULT '',
+          last_error_code TEXT NOT NULL DEFAULT '',
+          last_error TEXT NOT NULL DEFAULT '',
           review_at TEXT,
           stopped_at TEXT,
           stopped_reason TEXT NOT NULL DEFAULT '',
@@ -81,6 +85,17 @@ export async function ensurePaymentFollowupSchema() {
         `CREATE INDEX IF NOT EXISTS idx_support_payment_followups_state
           ON support_payment_followups(environment, state, followup_count, last_followup_at)`,
       ], 'write');
+
+      for (const statement of [
+        `ALTER TABLE support_payment_followups ADD COLUMN last_attempt_at TEXT`,
+        `ALTER TABLE support_payment_followups ADD COLUMN last_delivery_status TEXT NOT NULL DEFAULT ''`,
+        `ALTER TABLE support_payment_followups ADD COLUMN last_error_code TEXT NOT NULL DEFAULT ''`,
+        `ALTER TABLE support_payment_followups ADD COLUMN last_error TEXT NOT NULL DEFAULT ''`,
+      ]) {
+        await db.execute(statement).catch((error) => {
+          if (!/duplicate column|already exists/i.test(String(error?.message || ''))) throw error;
+        });
+      }
       return true;
     })().catch((error) => {
       schemaPromise = null;
@@ -96,6 +111,7 @@ async function followupRow(orderNumber) {
   const env = currentSupportEnvironment();
   const result = await db.execute({
     sql: `SELECT state, followup_count, last_followup_at, last_message_id,
+                 last_attempt_at, last_delivery_status, last_error_code, last_error,
                  review_at, stopped_at, stopped_reason, created_at, updated_at
           FROM support_payment_followups
           WHERE environment = ? AND order_number = ?
@@ -135,7 +151,11 @@ async function orderContext(orderNumber) {
                  COALESCE(s.tier_label, '') AS tier_label,
                  COALESCE(f.state, '') AS followup_state,
                  COALESCE(f.followup_count, 0) AS followup_count,
-                 f.last_followup_at, f.review_at, f.stopped_at,
+                 f.last_followup_at, f.last_attempt_at,
+                 COALESCE(f.last_delivery_status, '') AS last_delivery_status,
+                 COALESCE(f.last_error_code, '') AS last_error_code,
+                 COALESCE(f.last_error, '') AS last_error,
+                 f.review_at, f.stopped_at,
                  COALESCE(f.stopped_reason, '') AS stopped_reason
           FROM support_orders o
           LEFT JOIN support_submissions s
@@ -337,6 +357,74 @@ function followupKeyboard(row) {
   return { inline_keyboard: buttons };
 }
 
+function telegramDeliveryError(error) {
+  const raw = String(error?.message || '').trim();
+  const lower = raw.toLowerCase();
+  if (lower.includes('bot was blocked by the user')) {
+    return {
+      code: 'TELEGRAM_BOT_BLOCKED',
+      status: 'BLOCKED',
+      message: 'Follow-up gagal — user telah block bot.',
+      stopAuto: true,
+    };
+  }
+  if (lower.includes('user is deactivated')) {
+    return {
+      code: 'TELEGRAM_USER_DEACTIVATED',
+      status: 'UNAVAILABLE',
+      message: 'Follow-up gagal — akaun Telegram user tidak aktif.',
+      stopAuto: true,
+    };
+  }
+  if (lower.includes('chat not found')) {
+    return {
+      code: 'TELEGRAM_CHAT_UNAVAILABLE',
+      status: 'UNAVAILABLE',
+      message: 'Follow-up gagal — private chat Telegram user tidak tersedia.',
+      stopAuto: true,
+    };
+  }
+  return {
+    code: String(error?.code || 'TELEGRAM_SEND_FAILED'),
+    status: 'FAILED',
+    message: 'Follow-up gagal dihantar ke Telegram user.',
+    stopAuto: false,
+  };
+}
+
+async function recordFollowupFailure(orderNumber, delivery) {
+  await ensureFollowupRow(orderNumber);
+  const db = await getSupportDb();
+  const env = currentSupportEnvironment();
+  const now = new Date().toISOString();
+  await db.execute({
+    sql: `UPDATE support_payment_followups
+          SET state = CASE WHEN ? THEN 'STOPPED' ELSE state END,
+              stopped_at = CASE WHEN ? THEN COALESCE(stopped_at, ?) ELSE stopped_at END,
+              stopped_reason = CASE WHEN ? THEN ? ELSE stopped_reason END,
+              last_attempt_at = ?,
+              last_delivery_status = ?,
+              last_error_code = ?,
+              last_error = ?,
+              updated_at = ?
+          WHERE environment = ? AND order_number = ?`,
+    args: [
+      delivery.stopAuto ? 1 : 0,
+      delivery.stopAuto ? 1 : 0,
+      now,
+      delivery.stopAuto ? 1 : 0,
+      delivery.code,
+      now,
+      delivery.status,
+      delivery.code,
+      clean(delivery.message, 240),
+      now,
+      env,
+      String(orderNumber || ''),
+    ],
+  });
+}
+
 async function recordFollowupSent(orderNumber, messageId = '', { reactivate = true } = {}) {
   await ensureFollowupRow(orderNumber);
   const db = await getSupportDb();
@@ -348,6 +436,10 @@ async function recordFollowupSent(orderNumber, messageId = '', { reactivate = tr
               followup_count = followup_count + 1,
               last_followup_at = ?,
               last_message_id = ?,
+              last_attempt_at = ?,
+              last_delivery_status = 'SENT',
+              last_error_code = '',
+              last_error = '',
               stopped_at = CASE WHEN ? THEN NULL ELSE stopped_at END,
               stopped_reason = CASE WHEN ? THEN '' ELSE stopped_reason END,
               updated_at = ?
@@ -356,6 +448,7 @@ async function recordFollowupSent(orderNumber, messageId = '', { reactivate = tr
       reactivate ? 1 : 0,
       now,
       String(messageId || ''),
+      now,
       reactivate ? 1 : 0,
       reactivate ? 1 : 0,
       now,
@@ -408,9 +501,21 @@ export async function sendPaymentFollowup(orderNumber, { manual = false } = {}) 
     return { sent: false, reason: 'missing_payment_url', followup: await getPaymentFollowupInfo(orderNumber) };
   }
 
-  const sent = await sendMessage(row.telegram_user_id, followupText(row), {
-    reply_markup: followupKeyboard(row),
-  });
+  let sent;
+  try {
+    sent = await sendMessage(row.telegram_user_id, followupText(row), {
+      reply_markup: followupKeyboard(row),
+    });
+  } catch (error) {
+    const delivery = telegramDeliveryError(error);
+    await recordFollowupFailure(orderNumber, delivery).catch((recordError) => {
+      console.warn('[payment-followup] delivery failure record failed:', recordError?.message);
+    });
+    const friendly = new Error(delivery.message);
+    friendly.code = delivery.code;
+    friendly.status = error?.status;
+    throw friendly;
+  }
   const keepPassiveAfterManual = manual && (
     ['STOPPED','RESOLVED'].includes(String(row.followup_state || '').toUpperCase())
     || ['CANCELLED','CANCELLED_BY_USER'].includes(String(row.status || '').toUpperCase())
@@ -532,6 +637,10 @@ export async function getPaymentFollowupInfo(orderNumber) {
     reviewAt: row.review_at ? String(row.review_at) : null,
     stoppedAt: row.stopped_at ? String(row.stopped_at) : null,
     stoppedReason: String(row.stopped_reason || ''),
+    lastAttemptAt: row.last_attempt_at ? String(row.last_attempt_at) : null,
+    telegramDeliveryStatus: String(row.last_delivery_status || ''),
+    telegramErrorCode: String(row.last_error_code || ''),
+    telegramError: String(row.last_error || ''),
     canFollowUp: Boolean(row.payment_url)
       && !['PAID','FAILED','EXPIRED','INTENT_FAILED','AMOUNT_MISMATCH'].includes(String(row.status || '').toUpperCase())
       && state !== 'REVIEW',

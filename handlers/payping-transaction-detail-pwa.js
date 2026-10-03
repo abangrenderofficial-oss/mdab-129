@@ -77,6 +77,7 @@ a,button,.btn,.quick a,.tab,.back,.link,.item,.tx{touch-action:manipulation}
 <div class="row"><span>Name</span><strong id="displayName">-</strong></div>
 <div class="row"><span>Telegram</span><strong id="username">-</strong></div>
 <div class="row"><span>User ID</span><strong id="userId">-</strong></div>
+<div id="botStatusRow" class="row" hidden><span>Telegram Bot</span><strong id="botStatus">-</strong></div>
 <div class="row"><span>Support State</span><strong id="submissionState">-</strong></div>
 <div id="supportMessageWrap" hidden><div class="meta" style="margin:10px 0 6px">Support message</div><div id="supportMessage" class="msgbox"></div></div>
 </section>
@@ -102,6 +103,13 @@ const money=v=>'RM'+(Number(v||0)||0).toFixed(2);const headers=(json=false)=>{co
 function badge(s){const v=String(s||'').toLowerCase();return '<span class="badge '+esc(v)+'">'+esc(String(s||'-').replaceAll('_',' '))+'</span>'}
 async function copyText(v){if(!v||v==='-')return;try{await navigator.clipboard.writeText(v)}catch{}}
 function stageLabel(v){return String(v||'-').replaceAll('_',' ')}
+function friendlyFollowupError(value){
+ const raw=String(value||'');const lower=raw.toLowerCase();
+ if(lower.includes('bot was blocked by the user')||raw.includes('TELEGRAM_BOT_BLOCKED'))return 'Follow-up gagal — user telah block bot.';
+ if(lower.includes('user is deactivated')||raw.includes('TELEGRAM_USER_DEACTIVATED'))return 'Follow-up gagal — akaun Telegram user tidak aktif.';
+ if(lower.includes('chat not found')||raw.includes('TELEGRAM_CHAT_UNAVAILABLE'))return 'Follow-up gagal — private chat Telegram user tidak tersedia.';
+ return raw||'Follow-up gagal dihantar.';
+}
 let toastTimer=null;
 function showToast(message,type='ok'){
  const el=$('toast');if(!el)return;clearTimeout(toastTimer);el.textContent=message;el.className='toast '+type+' show';
@@ -120,12 +128,18 @@ async function followupAction(action){
   const resultText=action==='payment_followup_send'?(d.actionResult?.sent?'Bot dah follow up user ✅':'Follow-up tak dihantar · '+stageLabel(d.actionResult?.reason||'status checked')):action==='payment_followup_check'?('Status checked · '+stageLabel(d.actionResult?.stage||d.actionResult?.orderStatus||'pending')):'Follow-up stopped ✅';
   $('followupMsg').textContent=resultText;showToast(resultText,d.actionResult?.sent||action!=='payment_followup_send'?'ok':'bad');
   renderDetail(d);
- }catch(e){const message=e.message||String(e);$('followupMsg').textContent=message;showToast(message,'bad');load()}
+ }catch(e){const message=friendlyFollowupError(e.message||String(e));$('followupMsg').textContent=message;showToast(message,'bad');load()}
 }
 function renderDetail(d){
  const t=d.transaction;currentOrder=t.orderNumber;$('orderTitle').textContent=t.orderNumber;$('amount').textContent=money(t.amount);$('tier').textContent=t.tierLabel||'Supporter';$('status').textContent=t.status||'-';$('status').className='badge '+String(t.status||'').toLowerCase();
  $('orderId').textContent=t.orderNumber;$('transactionId').textContent=t.transactionId||'-';$('gatewayStatus').textContent=t.gatewayStatus||'-';$('statusDescription').textContent=t.statusDescription||'-';$('paymentStage').textContent=stageLabel(d.followup?.stage||t.paymentStage||t.status);$('createdAt').textContent=date(t.createdAt);$('paidAt').textContent=date(t.paidAt);
  $('displayName').textContent=t.displayName||'-';$('username').textContent=t.username?('@'+t.username):'-';$('userId').textContent=t.userId||'-';$('submissionState').textContent=t.submissionState||'-';
+ const tgCode=String(d.followup?.telegramErrorCode||'');const tgDelivery=String(d.followup?.telegramDeliveryStatus||'');
+ if(tgCode==='TELEGRAM_BOT_BLOCKED'){$('botStatusRow').hidden=false;$('botStatus').textContent='Bot Blocked';}
+ else if(tgCode==='TELEGRAM_USER_DEACTIVATED'){$('botStatusRow').hidden=false;$('botStatus').textContent='User Inactive';}
+ else if(tgCode==='TELEGRAM_CHAT_UNAVAILABLE'){$('botStatusRow').hidden=false;$('botStatus').textContent='Chat Unavailable';}
+ else if(tgDelivery==='SENT'){$('botStatusRow').hidden=false;$('botStatus').textContent='Reachable ✅';}
+ else{$('botStatusRow').hidden=true;}
  if(t.paymentIntentId){$('paymentIntentRow').hidden=false;$('paymentIntentId').textContent=t.paymentIntentId}else{$('paymentIntentRow').hidden=true}
  if(t.supportMessage){$('supportMessageWrap').hidden=false;$('supportMessage').textContent=t.supportMessage}else{$('supportMessageWrap').hidden=true}
  if(d.affiliate?.generated){

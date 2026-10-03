@@ -30,6 +30,8 @@ jobs:
         run: node scripts/payping-affiliate-admin-selftest.mjs
       - name: Check PayPing affiliate payout profiles
         run: node scripts/payping-affiliate-payout-selftest.mjs
+      - name: Check PayPing dashboard and transactions
+        run: node scripts/payping-dashboard-selftest.mjs
       - name: Check gallery upload 200MB boundary
         run: node scripts/gallery-upload-limit-selftest.mjs
       - name: Check Premium HQ gallery isolation

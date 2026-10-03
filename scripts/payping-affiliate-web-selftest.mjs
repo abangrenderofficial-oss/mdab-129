@@ -18,7 +18,7 @@ const must = (source, marker, label) => {
 must(api, 'resolvePushDeviceOwner', 'API device auth');
 must(api, "action === 'withdraw'", 'API withdrawal');
 must(api, 'getAffiliateActivity', 'API activity');
-must(api, 'Authorization', 'API authorization');
+must(api, 'headers?.authorization', 'API authorization');
 must(push, 'export async function resolvePushDeviceOwner', 'Device owner resolver');
 must(push, "disabled_at = ''", 'Active device guard');
 must(store, 'export async function getAffiliateActivity', 'Affiliate activity store');

@@ -1,0 +1,96 @@
+name: Vercel Takeover Audit
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  audit:
+    if: ${{ github.head_ref == 'migration/vercel-runtime' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      VERCEL_ORG_ID: team_EZwcZz6fQC2ze2GM45vAgQcv
+      VERCEL_PROJECT_ID: prj_cCV1JeReHnWfAHfi5PIPU0WKMspc
+      PREVIEW_BASE: https://mdab-129-git-migration-272d5f-abangrenderofficial-oss-projects.vercel.app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Vercel CLI credential
+        shell: bash
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -n "$VERCEL_TOKEN" ]; then
+            echo "VERCEL_TOKEN_PRESENT=1"
+          else
+            echo "VERCEL_TOKEN_PRESENT=0"
+            echo "No VERCEL_TOKEN GitHub secret is configured."
+            exit 2
+          fi
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull preview environment
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+
+      - name: Audit required environment names
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE=".vercel/.env.preview.local"
+          test -f "$FILE"
+          python - <<'PY'
+          from pathlib import Path
+          required = {
+            'TELEGRAM_BOT_TOKEN',
+            'TELEGRAM_WEBHOOK_SECRET',
+            'TURSO_DATABASE_URL',
+            'TURSO_AUTH_TOKEN',
+            'GITHUB_ACTIONS_TOKEN',
+            'BAYARCASH_API_TOKEN',
+            'BAYARCASH_API_SECRET_KEY',
+            'BAYARCASH_PORTAL_KEY',
+            'BOT_OWNER_ID',
+            'SETUP_SECRET',
+            'WEBPUSH_VAPID_PUBLIC_KEY',
+            'WEBPUSH_VAPID_PRIVATE_KEY',
+            'WEBPUSH_VAPID_SUBJECT',
+          }
+          text = Path('.vercel/.env.preview.local').read_text(errors='ignore')
+          present = set()
+          for line in text.splitlines():
+            line=line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+              continue
+            present.add(line.split('=',1)[0].strip())
+          missing=sorted(required-present)
+          print('VERCEL_ENV_REQUIRED_COUNT=', len(required))
+          print('VERCEL_ENV_PRESENT_REQUIRED_COUNT=', len(required)-len(missing))
+          print('VERCEL_ENV_MISSING=', ','.join(missing) if missing else 'NONE')
+          if missing:
+            raise SystemExit(3)
+          PY
+
+      - name: Authenticated health check
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          vercel curl "$PREVIEW_BASE/api/health" --token="$VERCEL_TOKEN" -sS > /tmp/vercel-health.json
+          cat /tmp/vercel-health.json
+          python - <<'PY'
+          import json
+          data=json.load(open('/tmp/vercel-health.json'))
+          print('VERCEL_HEALTH_RUNTIME=', data.get('runtime'))
+          print('VERCEL_HEALTH_MISSING=', data.get('missingRuntimeEnv'))
+          if data.get('runtime') != 'vercel':
+            raise SystemExit('unexpected runtime')
+          if data.get('missingRuntimeEnv'):
+            raise SystemExit('runtime env missing')
+          PY

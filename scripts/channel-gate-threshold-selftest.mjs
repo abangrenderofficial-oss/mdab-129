@@ -38,7 +38,7 @@ try {
     throw new Error(`Expected threshold 5, got ${CHANNEL_GATE_THRESHOLD}`);
   }
 
-  // Existing users restart from this rollout, even if an older gate had already been reached.
+  // Existing users from the old counter version restart under the current rollout.
   await recordUsage(legacyUserId);
   const legacyCount = await getChannelUseCount(legacyUserId);
   const legacyGated = await hasChannelGateRequired(legacyUserId);
@@ -47,7 +47,8 @@ try {
     throw new Error(`Legacy reset failed: count=${legacyCount}, gated=${legacyGated}, prompt=${legacyPromptSent}`);
   }
 
-  // Normal downloads, Status HQ accounting and Live Wallpaper must not trigger the channel gate.
+  // Normal downloads, Status HQ accounting and Live Wallpaper do not count
+  // toward this gate. Only a successful Premium+ HQ completion counts.
   const events = ['download', 'status_hq', 'live_wallpaper', 'download', 'status_hq'];
   for (const event of events) {
     await recordUsage(newUserId, event);
@@ -58,39 +59,47 @@ try {
     }
   }
 
-  // The first successful Premium + HQ completion activates the gate.
-  await markPremiumHqCompleted(newUserId);
-  const afterPremiumCount = await getChannelUseCount(newUserId);
-  const afterPremiumGated = await hasChannelGateRequired(newUserId);
-  if (afterPremiumCount !== 1 || !afterPremiumGated) {
-    throw new Error(`Premium completion did not trigger gate: count=${afterPremiumCount}, gated=${afterPremiumGated}`);
+  for (let use = 1; use <= 4; use += 1) {
+    const counted = await markPremiumHqCompleted(newUserId, `test-use-${use}`);
+    const count = await getChannelUseCount(newUserId);
+    const gated = await hasChannelGateRequired(newUserId);
+    if (!counted || count !== use || gated) {
+      throw new Error(`Gate triggered too early at Premium HQ use ${use}: counted=${counted}, count=${count}, gated=${gated}`);
+    }
   }
 
-  // Repeated completion notifications stay idempotent for the gate counter.
-  await markPremiumHqCompleted(newUserId);
-  const afterDuplicateCompletion = await getChannelUseCount(newUserId);
-  if (afterDuplicateCompletion !== 1) {
-    throw new Error(`Duplicate completion changed gate counter: count=${afterDuplicateCompletion}`);
+  const fifthCounted = await markPremiumHqCompleted(newUserId, 'test-use-5');
+  const fifthCount = await getChannelUseCount(newUserId);
+  const fifthGated = await hasChannelGateRequired(newUserId);
+  if (!fifthCounted || fifthCount !== 5 || !fifthGated) {
+    throw new Error(`Fifth Premium HQ did not activate gate: counted=${fifthCounted}, count=${fifthCount}, gated=${fifthGated}`);
+  }
+
+  // Retry of the same successful delivery must not become a sixth use.
+  const duplicateCounted = await markPremiumHqCompleted(newUserId, 'test-use-5');
+  const afterDuplicate = await getChannelUseCount(newUserId);
+  if (duplicateCounted || afterDuplicate !== 5) {
+    throw new Error(`Duplicate completion changed gate counter: counted=${duplicateCounted}, count=${afterDuplicate}`);
   }
 
   await recordUsage(newUserId);
   const afterPassiveUpdate = await getChannelUseCount(newUserId);
-  if (afterPassiveUpdate !== 1) {
+  if (afterPassiveUpdate !== 5) {
     throw new Error(`Passive webhook update changed count: ${afterPassiveUpdate}`);
   }
 
   const invalidAccepted = await recordUsage(newUserId, 'not-a-real-use');
   const afterInvalid = await getChannelUseCount(newUserId);
-  if (invalidAccepted || afterInvalid !== 1) {
+  if (invalidAccepted || afterInvalid !== 5) {
     throw new Error(`Invalid event changed count: accepted=${invalidAccepted}, count=${afterInvalid}`);
   }
 
   console.log('CHANNEL_GATE_THRESHOLD_SELFTEST_OK', JSON.stringify({
     threshold: CHANNEL_GATE_THRESHOLD,
-    existingUsersRestartFromZero: true,
-    normalFeaturesDoNotCount: true,
-    premiumHqSuccessesBeforeGate: 1,
+    firstFourPremiumHqUsesFree: true,
+    gateAfterSuccessfulUse: 5,
     duplicateCompletionIsIdempotent: true,
+    normalFeaturesDoNotCount: true,
     passiveUpdatesDoNotCount: true,
   }));
 } finally {

@@ -102,8 +102,8 @@ const PAGE = String.raw`<!doctype html>
 <nav><a href="/ar-payment/"><b>⌂</b><span>Home</span></a><a href="/ar-payment/transactions"><b>≡</b><span>Transactions</span></a><a href="/ar-payment/affiliate" class="active"><b>₿</b><span>Earn</span></a><a href="/ar-payment/settings"><b>⚙</b><span>Settings</span></a></nav>
 
 <script>
-const deviceKey='ar_payment_device_token_v1';
-const token=localStorage.getItem(deviceKey)||'';
+const authKey='payping_auth_session_v1';const deviceKey='ar_payment_device_token_v1';
+const token=localStorage.getItem(authKey)||localStorage.getItem(deviceKey)||'';
 const $=id=>document.getElementById(id);
 let state=null;
 let tab='commission';
@@ -178,11 +178,11 @@ async function probeAdmin(){
   }catch{}
 }
 async function load(){
-  if(!token){$('loading').hidden=true;$('connect').hidden=false;return}
+  if(!token){location.href='/ar-payment/login';return}
   try{
     const r=await fetch('/api/affiliate-web',{headers:auth()});
     const data=await r.json();
-    if(r.status===401){localStorage.removeItem(deviceKey);$('loading').hidden=true;$('connect').hidden=false;return}
+    if(r.status===401){localStorage.removeItem(authKey);location.href='/ar-payment/login';return}
     if(!r.ok||!data.ok)throw new Error(data.message||'Affiliate dashboard gagal dimuat.');
     state=data;$('loading').hidden=true;$('app').hidden=false;render();probeAdmin();
   }catch(e){$('loading').innerHTML='<div class="error">'+(e.message||String(e))+'</div>'}

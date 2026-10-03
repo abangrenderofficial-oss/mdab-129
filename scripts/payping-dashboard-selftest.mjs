@@ -48,8 +48,9 @@ assert(paid.length===1&&paid[0].transactionId==='TX-A-1','paid filter failed');
 const search=await listPayPingTransactions({userId:'900001',owner:true,search:'PP-B-1'});
 assert(search.length===1&&search[0].userId==='900002','owner search failed');
 
-const [api,home,page,server,router,vercel]=await Promise.all([
+const [api,identity,home,page,server,router,vercel]=await Promise.all([
   readFile('handlers/payping-data.js','utf8'),
+  readFile('src/payping/identity.js','utf8'),
   readFile('handlers/payping-home-pwa.js','utf8'),
   readFile('handlers/payping-transactions-pwa.js','utf8'),
   readFile('server.js','utf8'),
@@ -57,8 +58,10 @@ const [api,home,page,server,router,vercel]=await Promise.all([
   readFile('vercel.json','utf8'),
 ]);
 const must=(s,m,l)=>{if(!s.includes(m))throw new Error(`${l} missing ${m}`)};
-must(api,'resolvePushDeviceOwner','device auth');
-must(api,'BOT_OWNER_ID','owner scope');
+must(api,'resolvePayPingIdentity','unified auth');
+must(api,'auth.owner','owner scope');
+must(identity,'resolvePushDeviceOwner','legacy device fallback');
+must(identity,'BOT_OWNER_ID','owner id scope');
 must(home,'Today received','dashboard home');
 must(home,"fetch('/api/payping-data?view=dashboard'",'home API');
 must(page,"view:'transactions'",'transactions API');

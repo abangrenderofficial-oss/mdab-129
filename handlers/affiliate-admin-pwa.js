@@ -43,8 +43,8 @@ const PAGE = String.raw`<!doctype html>
   </div>
 </main>
 <script>
-const key='ar_payment_device_token_v1';
-const token=localStorage.getItem(key)||'';
+const key='payping_auth_session_v1';const legacyKey='ar_payment_device_token_v1';
+const token=localStorage.getItem(key)||localStorage.getItem(legacyKey)||'';
 const $=id=>document.getElementById(id);
 let state=null;
 const money=v=>'RM'+(Number(v||0)||0).toFixed(2);

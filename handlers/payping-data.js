@@ -1,19 +1,11 @@
 import { getPayPingAnalytics, getPayPingAnalyticsExport, getPayPingDashboard, getPayPingTransactionDetail, listPayPingTransactions } from '../src/payping/dashboard.js';
-import { resolvePushDeviceOwner } from '../src/support/webpush-payment.js';
+import { resolvePayPingIdentity } from '../src/payping/identity.js';
 
 function json(res,status,body){return res.status(status).json(body)}
-function bearer(req){
-  const raw=String(req?.headers?.authorization||'').trim();
-  const m=raw.match(/^Bearer\s+(.+)$/i);
-  return String(m?.[1]||req?.headers?.['x-payping-device-token']||'').trim();
-}
 async function identity(req){
-  const token=bearer(req);
-  if(!token)return null;
-  const userId=await resolvePushDeviceOwner(token);
-  if(!userId)return null;
-  const ownerId=String(process.env.BOT_OWNER_ID||'').trim();
-  return {userId,owner:Boolean(ownerId&&userId===ownerId)};
+  const auth=await resolvePayPingIdentity(req);
+  if(!auth||!auth.userId)return null;
+  return {userId:auth.userId,owner:auth.owner,role:auth.role,accountId:auth.accountId||null};
 }
 
 export default async function handler(req,res){

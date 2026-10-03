@@ -2,7 +2,7 @@ import {
   getAffiliateAdminDashboard,
   markAffiliateWithdrawal,
 } from '../src/affiliate/store.js';
-import { resolvePushDeviceOwner } from '../src/support/webpush-payment.js';
+import { resolvePayPingIdentity } from '../src/payping/identity.js';
 import { sendMessage } from '../src/telegram.js';
 
 function json(res, status, body) { return res.status(status).json(body); }
@@ -14,16 +14,10 @@ function bearerToken(req) {
 }
 
 async function ownerAuth(req) {
-  const token = bearerToken(req);
-  if (!token) return { ok: false, status: 401, reason: 'missing_device_token' };
-  const userId = await resolvePushDeviceOwner(token);
-  if (!userId) return { ok: false, status: 401, reason: 'invalid_device_token' };
-
-  const ownerId = String(process.env.BOT_OWNER_ID || '').trim();
-  if (!ownerId || userId !== ownerId) {
-    return { ok: false, status: 403, reason: 'owner_only' };
-  }
-  return { ok: true, userId };
+  const identity = await resolvePayPingIdentity(req);
+  if (!identity) return { ok: false, status: 401, reason: 'not_authenticated' };
+  if (!identity.owner) return { ok: false, status: 403, reason: 'owner_only' };
+  return { ok: true, userId: identity.userId, role: identity.role };
 }
 
 async function notifyAffiliateUser(result) {

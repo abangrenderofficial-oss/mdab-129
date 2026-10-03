@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { resolveInstagramWebAudio } from './instagram-web-audio.js';
+import { positiveIntEnv } from './env-number.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -210,7 +211,7 @@ async function recoverFromYtDlpPages(binary, url, info) {
 
     await execFileAsync(binary, args, {
       cwd: temp,
-      timeout: Math.max(60000, Number(process.env.DOWNLOADER_TIMEOUT_MS || 45000) * 2),
+      timeout: Math.max(60000, positiveIntEnv('DOWNLOADER_TIMEOUT_MS', 45000) * 2),
       maxBuffer: 24 * 1024 * 1024,
       env: { ...process.env, PATH: `${path.dirname(process.execPath)}:${process.env.PATH || ''}` },
     });
@@ -284,7 +285,7 @@ export async function resolveInstagramYtDlpAudio(url) {
     '--',
     url,
   ], {
-    timeout: Number(process.env.DOWNLOADER_TIMEOUT_MS || 45000),
+    timeout: positiveIntEnv('DOWNLOADER_TIMEOUT_MS', 45000),
     maxBuffer: 16 * 1024 * 1024,
     env: { ...process.env, PATH: `${path.dirname(process.execPath)}:${process.env.PATH || ''}` },
   });

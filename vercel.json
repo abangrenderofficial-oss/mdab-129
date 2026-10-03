@@ -100,6 +100,14 @@
       "destination": "/api/router?route=payping-transactions-page"
     },
     {
+      "source": "/ar-payment/transaction",
+      "destination": "/api/router?route=payping-transaction-detail-page"
+    },
+    {
+      "source": "/ar-payment/transaction/",
+      "destination": "/api/router?route=payping-transaction-detail-page"
+    },
+    {
       "source": "/api/payping-settings",
       "destination": "/api/router?route=payping-settings"
     },

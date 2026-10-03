@@ -1,4 +1,4 @@
-const PAGE = String.raw\`<!doctype html>
+const PAGE = String.raw`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -40,7 +40,7 @@ async function load(){
 async function revoke(id){if(!confirm('Disconnect this PayPing device?'))return;try{const r=await fetch('/api/payping-settings',{method:'POST',headers:headers(),body:JSON.stringify({action:'revoke_device',deviceId:id})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Disconnect failed.');setMsg('Device disconnected ✅');load()}catch(e){setMsg(e.message||String(e),'bad')}}
 $('disconnectCurrent').addEventListener('click',async()=>{if(!confirm('Disconnect current PayPing device? Notification dan dashboard access pada device ini akan berhenti sehingga /pushsetup dibuat semula.'))return;try{const r=await fetch('/api/payping-settings',{method:'POST',headers:headers(),body:JSON.stringify({action:'disconnect_current'})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Disconnect failed.');localStorage.removeItem(key);location.href='/ar-payment/'}catch(e){setMsg(e.message||String(e),'bad')}});
 load();
-</script></body></html>\`;
+</script></body></html>`;
 
 function send(res,type,body){res.statusCode=200;res.setHeader('Content-Type',type);res.setHeader('Cache-Control','no-store');res.end(body)}
 export default function payPingSettingsPage(req,res){

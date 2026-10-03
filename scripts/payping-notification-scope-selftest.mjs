@@ -33,7 +33,7 @@ must(push,"process.env.BOT_OWNER_ID",'owner push recipient');
 must(push,'referred_by_user_id','affiliate referrer push recipient');
 must(push,'record.telegram_user_id','payer push recipient');
 must(push,'Payment Receive, ${tierName}','notification title');
-must(push,"'From PayPing!'",'notification brand line');
+mustNot(push,"'From PayPing!'",'duplicate notification brand line');
 must(push,"successful 🎉' : 'unsuccessful 🥹'",'success and unsuccessful status');
 must(push,'/ar-payment/transaction?order=','transaction detail notification URL');
 must(push,'deliveryKey = `order:${order}:','status-specific push dedupe');

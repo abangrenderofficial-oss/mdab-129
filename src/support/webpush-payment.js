@@ -662,10 +662,7 @@ function notificationPayload({
 
   const payload = {
     title: `Payment Receive, ${tierName}`,
-    body: [
-      'From PayPing!',
-      `ID ${userId} - RM ${amount} - ${successful ? 'successful 🎉' : 'unsuccessful 🥹'}`,
-    ].join('\n'),
+    body: `ID ${userId} - RM ${amount} - ${successful ? 'successful 🎉' : 'unsuccessful 🥹'}`,
     tag: `payment-${cleanText(orderNumber, 100)}-${successful ? 'success' : 'unsuccessful'}`,
     url: `/ar-payment/transaction?order=${encodeURIComponent(String(orderNumber || ''))}`,
     orderNumber: String(orderNumber || ''),

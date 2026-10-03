@@ -34,6 +34,8 @@ jobs:
         run: node scripts/payping-dashboard-selftest.mjs
       - name: Check PayPing notifications and settings
         run: node scripts/payping-settings-selftest.mjs
+      - name: Check PayPing transaction detail
+        run: node scripts/payping-transaction-detail-selftest.mjs
       - name: Check gallery upload 200MB boundary
         run: node scripts/gallery-upload-limit-selftest.mjs
       - name: Check Premium HQ gallery isolation

@@ -11,6 +11,24 @@ main{max-width:680px;margin:auto;padding:22px 0}.top{display:flex;justify-conten
 .hero{padding:19px;background:linear-gradient(145deg,rgba(128,71,255,.25),rgba(28,21,55,.8));border:1px solid rgba(158,120,255,.22);border-radius:22px;margin-bottom:12px}.heroTop{display:flex;justify-content:space-between;gap:12px}.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:#bba8ff;font-weight:850}.amount{font-size:36px;font-weight:950;letter-spacing:-1px;margin:6px 0 3px}.badge{display:inline-block;padding:5px 8px;border-radius:999px;font-size:10px;font-weight:850;background:#292e38;color:#c9cfda}.badge.paid,.badge.sent,.badge.available{background:rgba(57,217,138,.13);color:#79e4ae}.badge.failed,.badge.rejected{background:rgba(255,80,80,.13);color:#ffa4a4}.badge.pending,.badge.creating,.badge.withdrawal_pending{background:rgba(255,190,60,.13);color:#ffd27c}
 .card{background:rgba(18,21,30,.89);border:1px solid rgba(255,255,255,.07);border-radius:19px;padding:16px;margin-bottom:12px}.cardTitle{font-weight:900;font-size:15px;margin-bottom:10px}.row{display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.055);font-size:12px}.row:last-child{border-bottom:0}.row span:first-child{color:#9098a8}.row strong{text-align:right;max-width:62%;word-break:break-word}.copy{cursor:pointer;color:#cbbfff}.timeline{display:flex;flex-direction:column;gap:8px}.event{padding:11px;background:#0b0e15;border:1px solid rgba(255,255,255,.055);border-radius:13px}.eventTitle{font-size:12px;font-weight:850}.meta{font-size:10px;color:#858d9c;margin-top:5px;line-height:1.5}.msgbox{padding:12px;background:#0b0e15;border-radius:13px;color:#c7ccd7;font-size:12px;line-height:1.55;white-space:pre-wrap}.empty,.loader{text-align:center;color:#8991a0;padding:28px}.error{padding:15px;border-radius:14px;background:rgba(255,70,70,.08);color:#ffc0c0}
 nav{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom));width:min(94%,620px);height:62px;background:rgba(17,19,28,.92);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.08);border-radius:19px;display:grid;grid-template-columns:repeat(4,1fr);padding:6px}nav a{text-decoration:none;color:#858c9c;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;font-weight:800;border-radius:13px;gap:3px}nav a.active{color:#fff;background:rgba(126,77,255,.17)}nav b{font-size:17px}
+
+/* PAYPING_MOBILE_REFERENCE_V1 */
+@media(max-width:619px){
+  :root{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI",sans-serif}
+  body{padding-top:calc(env(safe-area-inset-top,0px) + 18px)}
+  body::before{content:"";position:fixed;z-index:1000;left:0;right:0;top:0;height:calc(env(safe-area-inset-top,0px) + 18px);background:linear-gradient(180deg,rgba(39,16,79,.995),rgba(29,14,56,.985));border-bottom:1px solid rgba(255,255,255,.20);pointer-events:none}
+  main{padding-top:14px}
+  .title{font-size:24px;line-height:1.08}
+  .sub{font-size:13px;line-height:1.3}
+  nav{height:68px}
+  nav a{font-size:12px;gap:4px}
+  nav b{font-size:24px;line-height:1}
+}
+
+@media(max-width:619px){
+  .back{font-size:14px}.eyebrow{font-size:12px}.cardTitle{font-size:16px}.row{font-size:13px}
+  .eventTitle,.msgbox{font-size:13px}.meta{font-size:11px}.badge{font-size:10px}
+}
 </style></head>
 <body><main>
 <div class="top"><div class="brand"><div class="logo"><img src="/ar-payment/payping-icon-v4.svg"></div><div><div class="title">Transaction Detail</div><div id="orderTitle" class="sub">PayPing!</div></div></div><a class="back" href="/ar-payment/transactions">Back</a></div>

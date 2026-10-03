@@ -12,6 +12,23 @@ main{max-width:680px;margin:auto;padding:22px 0}.top{display:flex;align-items:ce
 .list{display:flex;flex-direction:column;gap:9px}.item{display:block;text-decoration:none;color:inherit;background:rgba(18,21,30,.9);border:1px solid rgba(255,255,255,.07);border-radius:17px;padding:14px}.line{display:flex;justify-content:space-between;gap:12px}.amount{font-size:18px;font-weight:900}.who{font-weight:800;font-size:14px}.meta{font-size:11px;color:#858d9e;margin-top:6px;line-height:1.55}.badge{display:inline-block;padding:4px 7px;border-radius:999px;font-size:10px;font-weight:850;background:#292e38;color:#c9cfda}.badge.paid{background:rgba(57,217,138,.14);color:#79e4ae}.badge.creating,.badge.pending,.badge.checkout{background:rgba(255,190,60,.13);color:#ffd27c}
 .empty,.loader{text-align:center;color:#8b92a1;padding:30px}.error{padding:16px;border-radius:15px;background:rgba(255,80,80,.08);color:#ffc0c0}
 nav{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom));width:min(92%,560px);height:62px;background:rgba(17,19,28,.92);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.08);border-radius:19px;display:grid;grid-template-columns:repeat(4,1fr);padding:6px}nav a{text-decoration:none;color:#858c9c;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:800;border-radius:13px;gap:3px}nav a.active{color:#fff;background:rgba(126,77,255,.17)}nav b{font-size:18px}
+
+/* PAYPING_MOBILE_REFERENCE_V1 */
+@media(max-width:619px){
+  :root{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI",sans-serif}
+  body{padding-top:calc(env(safe-area-inset-top,0px) + 18px)}
+  body::before{content:"";position:fixed;z-index:1000;left:0;right:0;top:0;height:calc(env(safe-area-inset-top,0px) + 18px);background:linear-gradient(180deg,rgba(39,16,79,.995),rgba(29,14,56,.985));border-bottom:1px solid rgba(255,255,255,.20);pointer-events:none}
+  main{padding-top:14px}
+  .title{font-size:24px;line-height:1.08}
+  .sub{font-size:13px;line-height:1.3}
+  nav{height:68px}
+  nav a{font-size:12px;gap:4px}
+  nav b{font-size:24px;line-height:1}
+}
+
+@media(max-width:619px){
+  .back{font-size:14px}.search,.select{font-size:14px}.amount{font-size:19px}.who{font-size:15px}.meta{font-size:12px}.badge{font-size:10px}
+}
 </style></head><body>
 <main>
 <div class="top"><div class="brand"><div class="logo"><img src="/ar-payment/payping-icon-v4.svg"></div><div><div class="title">Transactions</div><div id="scope" class="sub">PayPing!</div></div></div><a class="back" href="/ar-payment/">Home</a></div>

@@ -10,7 +10,7 @@
     "start": "node server.js",
     "postinstall": "node scripts/postinstall-runtime.mjs",
     "diag:tiktok": "node scripts/diag-tiktok-providers.mjs",
-    "check": "node scripts/check-feature-boundaries.mjs && node scripts/channel-security-selftest.mjs && node scripts/group-owner-only-selftest.mjs"
+    "check": "node scripts/check-feature-boundaries.mjs && node scripts/channel-security-selftest.mjs && node scripts/group-owner-only-selftest.mjs && node scripts/payping-mobile-ui-selftest.mjs"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",

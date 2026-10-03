@@ -15,7 +15,25 @@ const PAGE = String.raw`<!doctype html>
     .card{background:rgba(19,22,31,.88);border:1px solid rgba(255,255,255,.07);border-radius:20px;padding:16px;margin-bottom:13px}.card-title{font-weight:900;margin-bottom:11px}.list{display:flex;flex-direction:column;gap:9px}.item{padding:13px;background:#0b0e15;border:1px solid rgba(255,255,255,.06);border-radius:14px}.line{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.name{font-weight:850;font-size:14px}.amount{font-size:17px;font-weight:900}.meta{font-size:11px;color:#888f9e;margin-top:5px;line-height:1.5}.badge{display:inline-block;padding:3px 7px;border-radius:999px;font-size:10px;font-weight:850;background:#2a2f3a;color:#c9cfda}.badge.pending{background:rgba(255,191,65,.14);color:#ffd17d}.badge.paid{background:rgba(57,217,138,.14);color:#75e3a7}.badge.rejected{background:rgba(255,90,90,.14);color:#ffa0a0}
     .actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:11px}button{border:0;border-radius:11px;padding:11px 10px;color:#fff;font-weight:850;background:linear-gradient(135deg,#8b5cf6,#6d28d9)}button.reject{background:#34212a;color:#ffaaaa}button:disabled{opacity:.45}.empty{padding:18px;text-align:center;color:#7f8797;font-size:13px}.msg{font-size:12px;color:#aeb5c3;min-height:17px;margin-top:9px}.msg.bad{color:#ff9f9f}.msg.ok{color:#79e4ad}.error{padding:17px;border-radius:17px;background:rgba(255,70,70,.08);border:1px solid rgba(255,100,100,.18);color:#ffc1c1}.loader{text-align:center;padding:35px;color:#aab0bd}
     @media(min-width:620px){.grid{grid-template-columns:repeat(4,1fr)}}
-  </style>
+  
+/* PAYPING_MOBILE_REFERENCE_V1 */
+@media(max-width:619px){
+  :root{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI",sans-serif}
+  body{padding-top:calc(env(safe-area-inset-top,0px) + 18px)}
+  body::before{content:"";position:fixed;z-index:1000;left:0;right:0;top:0;height:calc(env(safe-area-inset-top,0px) + 18px);background:linear-gradient(180deg,rgba(39,16,79,.995),rgba(29,14,56,.985));border-bottom:1px solid rgba(255,255,255,.20);pointer-events:none}
+  main{padding-top:14px}
+  .title{font-size:24px;line-height:1.08}
+  .sub{font-size:13px;line-height:1.3}
+  nav{height:68px}
+  nav a{font-size:12px;gap:4px}
+  nav b{font-size:24px;line-height:1}
+}
+
+@media(max-width:619px){
+  .back{font-size:14px}.k{font-size:12px}.v{font-size:21px}.card-title{font-size:16px}.name{font-size:15px}
+  .meta{font-size:12px}.badge{font-size:10px}.empty,.msg{font-size:13px}
+}
+</style>
 </head>
 <body>
 <main>

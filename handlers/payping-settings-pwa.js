@@ -11,6 +11,24 @@ main{max-width:680px;margin:auto;padding:22px 0}.top{display:flex;justify-conten
 .card{background:rgba(18,21,30,.89);border:1px solid rgba(255,255,255,.07);border-radius:19px;padding:16px;margin-bottom:12px}.cardTitle{font-weight:900;font-size:15px;margin-bottom:11px}.profile{display:flex;align-items:center;gap:12px}.avatar{width:48px;height:48px;border-radius:16px;background:linear-gradient(135deg,#8b5cf6,#33d17a);display:grid;place-items:center;font-size:20px;font-weight:950}.name{font-size:16px;font-weight:900}.muted{font-size:11px;color:#8d95a5;line-height:1.5}.row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.055);font-size:13px}.row:last-child{border-bottom:0}.row span:first-child{color:#929aaa}.link{display:block;padding:12px 0;text-decoration:none;color:#d9d1ff;font-weight:800;border-bottom:1px solid rgba(255,255,255,.055)}.link:last-child{border-bottom:0}
 .device{padding:12px;background:#0b0e15;border:1px solid rgba(255,255,255,.055);border-radius:14px;margin-top:8px}.line{display:flex;justify-content:space-between;gap:10px;align-items:center}.deviceName{font-size:13px;font-weight:850}.badge{padding:4px 7px;border-radius:999px;background:#292e38;color:#c9cfda;font-size:9px;font-weight:850}.badge.current{background:rgba(57,217,138,.13);color:#79e4ae}.actions{margin-top:9px}.danger{border:0;border-radius:11px;padding:10px 12px;background:#342129;color:#ffabab;font-weight:850;font-size:12px}.danger.full{width:100%;margin-top:10px}.msg{font-size:12px;min-height:16px;margin-top:9px;color:#aeb5c3}.msg.bad{color:#ff9e9e}.loader{text-align:center;color:#8991a0;padding:28px}.error{padding:15px;border-radius:14px;background:rgba(255,70,70,.08);color:#ffc0c0}
 nav{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom));width:min(94%,620px);height:62px;background:rgba(17,19,28,.92);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.08);border-radius:19px;display:grid;grid-template-columns:repeat(4,1fr);padding:6px}nav a{text-decoration:none;color:#858c9c;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;font-weight:800;border-radius:13px;gap:3px}nav a.active{color:#fff;background:rgba(126,77,255,.17)}nav b{font-size:17px}
+
+/* PAYPING_MOBILE_REFERENCE_V1 */
+@media(max-width:619px){
+  :root{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI",sans-serif}
+  body{padding-top:calc(env(safe-area-inset-top,0px) + 18px)}
+  body::before{content:"";position:fixed;z-index:1000;left:0;right:0;top:0;height:calc(env(safe-area-inset-top,0px) + 18px);background:linear-gradient(180deg,rgba(39,16,79,.995),rgba(29,14,56,.985));border-bottom:1px solid rgba(255,255,255,.20);pointer-events:none}
+  main{padding-top:14px}
+  .title{font-size:24px;line-height:1.08}
+  .sub{font-size:13px;line-height:1.3}
+  nav{height:68px}
+  nav a{font-size:12px;gap:4px}
+  nav b{font-size:24px;line-height:1}
+}
+
+@media(max-width:619px){
+  .cardTitle{font-size:16px}.name{font-size:17px}.muted{font-size:12px}.row{font-size:14px}.link{font-size:14px}
+  .deviceName{font-size:14px}.badge{font-size:10px}.danger,.msg{font-size:13px}
+}
 </style></head>
 <body><main>
 <div class="top"><div class="brand"><div class="logo"><img src="/ar-payment/payping-icon-v4.svg"></div><div><div class="title">Settings</div><div class="sub">Account & devices</div></div></div></div>

@@ -12,6 +12,23 @@ main{max-width:680px;margin:auto;padding:22px 0}.top{display:flex;justify-conten
 button{border:0;border-radius:13px;padding:12px 14px;color:#fff;font-weight:850;background:linear-gradient(135deg,#9b6bff,#6d28d9)}button:disabled{opacity:.45}.full{width:100%;margin-top:11px}.msg{font-size:12px;color:#aeb5c3;min-height:17px;margin-top:9px}.msg.ok{color:#79e4ad}.msg.bad{color:#ff9d9d}
 .list{display:flex;flex-direction:column;gap:8px}.item{padding:12px;background:#0b0e15;border:1px solid rgba(255,255,255,.055);border-radius:14px}.line{display:flex;justify-content:space-between;gap:12px}.name{font-size:13px;font-weight:850}.meta{font-size:10px;color:#858d9c;margin-top:5px;line-height:1.5}.badge{display:inline-block;padding:4px 7px;border-radius:999px;font-size:9px;font-weight:850;background:#292e38;color:#c9cfda}.badge.sent{background:rgba(57,217,138,.13);color:#79e4ae}.badge.failed{background:rgba(255,80,80,.13);color:#ffa4a4}.empty,.loader{text-align:center;color:#8991a0;padding:26px}.error{padding:15px;border-radius:14px;background:rgba(255,70,70,.08);color:#ffc0c0}
 nav{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom));width:min(94%,620px);height:62px;background:rgba(17,19,28,.92);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.08);border-radius:19px;display:grid;grid-template-columns:repeat(4,1fr);padding:6px}nav a{text-decoration:none;color:#858c9c;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;font-weight:800;border-radius:13px;gap:3px}nav a.active{color:#fff;background:rgba(126,77,255,.17)}nav b{font-size:17px}
+
+/* PAYPING_MOBILE_REFERENCE_V1 */
+@media(max-width:619px){
+  :root{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI",sans-serif}
+  body{padding-top:calc(env(safe-area-inset-top,0px) + 18px)}
+  body::before{content:"";position:fixed;z-index:1000;left:0;right:0;top:0;height:calc(env(safe-area-inset-top,0px) + 18px);background:linear-gradient(180deg,rgba(39,16,79,.995),rgba(29,14,56,.985));border-bottom:1px solid rgba(255,255,255,.20);pointer-events:none}
+  main{padding-top:14px}
+  .title{font-size:24px;line-height:1.08}
+  .sub{font-size:13px;line-height:1.3}
+  nav{height:68px}
+  nav a{font-size:12px;gap:4px}
+  nav b{font-size:24px;line-height:1}
+}
+
+@media(max-width:619px){
+  .back{font-size:14px}.cardTitle{font-size:16px}.muted,.msg{font-size:13px}.name{font-size:14px}.meta{font-size:11px}.badge{font-size:10px}
+}
 </style></head>
 <body><main>
 <div class="top"><div class="brand"><div class="logo"><img src="/ar-payment/payping-icon-v4.svg"></div><div><div class="title">Notifications</div><div class="sub">Payment push status & history</div></div></div><a class="back" href="/ar-payment/">Home</a></div>

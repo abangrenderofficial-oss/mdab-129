@@ -30,7 +30,26 @@ const PAGE = String.raw`<!doctype html>
     .formgrid{display:grid;grid-template-columns:1fr;gap:9px}.field label{display:block;font-size:11px;color:#8d95a5;margin:0 0 6px}.pinput,.pselect{width:100%;background:#0b0e15;border:1px solid #2a303d;border-radius:12px;padding:12px;color:#fff;font-size:14px;outline:none}.pinput:focus,.pselect:focus{border-color:#8b5cf6}.payout-summary{font-size:12px;color:#9fa7b7;margin:8px 0 0}.save-payout{width:100%;margin-top:10px}
     nav{position:fixed;z-index:20;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom));width:min(92%,560px);height:62px;border:1px solid rgba(255,255,255,.08);background:rgba(18,20,29,.9);backdrop-filter:blur(18px);border-radius:19px;display:grid;grid-template-columns:repeat(4,1fr);padding:6px;box-shadow:0 18px 55px rgba(0,0,0,.4)}nav a{display:flex;flex-direction:column;align-items:center;justify-content:center;text-decoration:none;color:#7f8797;font-size:10px;font-weight:750;gap:3px;border-radius:14px}nav a.active{color:#fff;background:rgba(126,77,255,.18)}nav b{font-size:19px;line-height:1}
     @media(min-width:560px){.grid{grid-template-columns:repeat(4,1fr)}.stat{min-height:100px}.stat .v{font-size:19px}}
-  </style>
+  
+/* PAYPING_MOBILE_REFERENCE_V1 */
+@media(max-width:619px){
+  :root{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI",sans-serif}
+  body{padding-top:calc(env(safe-area-inset-top,0px) + 18px)}
+  body::before{content:"";position:fixed;z-index:1000;left:0;right:0;top:0;height:calc(env(safe-area-inset-top,0px) + 18px);background:linear-gradient(180deg,rgba(39,16,79,.995),rgba(29,14,56,.985));border-bottom:1px solid rgba(255,255,255,.20);pointer-events:none}
+  main{padding-top:14px}
+  .title{font-size:24px;line-height:1.08}
+  .sub{font-size:13px;line-height:1.3}
+  nav{height:68px}
+  nav a{font-size:12px;gap:4px}
+  nav b{font-size:24px;line-height:1}
+}
+
+@media(max-width:619px){
+  .back{font-size:14px}.eyebrow{font-size:12px}.hint{font-size:14px}.stat .k{font-size:12px}.card-title{font-size:16px}
+  .row{font-size:14px}.refbox{font-size:14px}.msg{font-size:13px}.item-title{font-size:14px}.meta{font-size:12px}
+  .field label{font-size:12px}.payout-summary{font-size:13px}
+}
+</style>
 </head>
 <body>
 <main>

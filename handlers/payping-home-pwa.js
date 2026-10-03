@@ -17,6 +17,26 @@ input.code{width:100%;background:#0c0f16;border:1px solid #292e3b;border-radius:
 .loader,.empty{text-align:center;color:#8991a0;padding:24px}.error{padding:15px;border-radius:14px;background:rgba(255,70,70,.08);color:#ffc0c0}
 nav{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom));width:min(92%,560px);height:62px;background:rgba(17,19,28,.92);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.08);border-radius:19px;display:grid;grid-template-columns:repeat(4,1fr);padding:6px}nav a{text-decoration:none;color:#858c9c;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:800;border-radius:13px;gap:3px}nav a.active{color:#fff;background:rgba(126,77,255,.17)}nav b{font-size:18px}
 @media(min-width:620px){.grid{grid-template-columns:repeat(4,1fr)}}
+
+/* PAYPING_MOBILE_REFERENCE_V1 */
+@media(max-width:619px){
+  :root{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI",sans-serif}
+  body{padding-top:calc(env(safe-area-inset-top,0px) + 18px)}
+  body::before{content:"";position:fixed;z-index:1000;left:0;right:0;top:0;height:calc(env(safe-area-inset-top,0px) + 18px);background:linear-gradient(180deg,rgba(39,16,79,.995),rgba(29,14,56,.985));border-bottom:1px solid rgba(255,255,255,.20);pointer-events:none}
+  main{padding-top:14px}
+  .title{font-size:24px;line-height:1.08}
+  .sub{font-size:13px;line-height:1.3}
+  nav{height:68px}
+  nav a{font-size:12px;gap:4px}
+  nav b{font-size:24px;line-height:1}
+}
+
+@media(max-width:619px){
+  .scope{font-size:12px}.eyebrow{font-size:12px}.muted{font-size:13px;line-height:1.45}
+  .stat .k{font-size:12px}.stat .v{font-size:21px}.cardTitle{font-size:16px}
+  .quick a{font-size:14px}.name{font-size:14px}.amount{font-size:15px}.meta{font-size:11px}.badge{font-size:10px}
+  .setupSteps,.msg{font-size:13px}
+}
 </style></head>
 <body><main>
 <div class="top"><div class="brand"><div class="logo"><img src="/ar-payment/payping-icon-v4.svg"></div><div><div class="title">PayPing!</div><div class="sub">Payment dashboard</div></div></div><div id="scope" class="scope">Not connected</div></div>

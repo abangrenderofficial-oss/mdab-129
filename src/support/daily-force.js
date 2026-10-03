@@ -269,15 +269,20 @@ export async function markDailyForceUsageSuccess(userId) {
     args: [environment, String(id), mode.cycleId, now],
   });
 
-  await db.execute({
+  const completed = await db.execute({
     sql: `UPDATE support_daily_force_usage
           SET used_once = 1,
               use_claimed = 0,
               success_count = COALESCE(success_count, 0) + 1,
               updated_at = ?
-          WHERE environment = ? AND telegram_user_id = ? AND cycle_id = ?`,
+          WHERE environment = ? AND telegram_user_id = ? AND cycle_id = ?
+            AND used_once = 0`,
     args: [now, environment, String(id), mode.cycleId],
   });
+
+  if (Number(completed.rowsAffected || 0) < 1) {
+    return false;
+  }
 
   const prompt = await db.execute({
     sql: `UPDATE support_daily_force_usage

@@ -59,11 +59,13 @@ must(daily,"'processing_first_use'",'processing gate reason');
 must(gated,'{ claimDaily: isPremiumHq }','Daily claim only for Premium HQ callback');
 must(gated,'premiumResult?.premiumHqCompleted','local Premium HQ completion');
 must(gated,'premiumResult?.premiumVideoDispatched','heavy Premium HQ dispatch hold');
-must(gated,"recordPremiumHqSuccess({ userId, chatId, label: 'premium hq callback' })",'shared Premium completion');
+must(gated,"label: 'premium hq callback'",'shared Premium completion');
+must(gated,'completionKey:','Premium completion dedupe key');
 assert(!gated.includes("markDailyForceUsageSuccess(userId)"),'gated generic flows must not directly mark Daily Force success');
 
 must(link,'if (statusMode) {','direct Status HQ Daily claim branch');
-must(link,"recordPremiumHqSuccess({ userId, chatId, label: 'premium hq status link' })",'status-link Premium completion');
+must(link,"label: 'premium hq status link'",'status-link Premium completion');
+must(link,'completionKey:','status-link completion dedupe key');
 assert(!link.includes('markDailyForceUsageSuccess'),'normal link queue must never directly mark Daily Force success');
 
 must(status,'premiumImageCompleted = true','photo Premium HQ completion');

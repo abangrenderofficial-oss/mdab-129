@@ -33,7 +33,15 @@ const exactCopy = [
   'Tapi sayang bot ni boleh mati bila2 masa 🥹, klau kita tak berjaya bayar kos sewa server.',
   'Jadi kalau awak suka bot ni, jom kita support nak? Setahun sekali pun boleh, terima kasih orang baik 🙇🏻✨',
 ];
-for(const line of exactCopy) must(support,line,'Daily Force exact support copy');
+for(const line of exactCopy) must(support,line,'Daily Force exact private support copy');
+
+const channelCopy = [
+  'Hi, korang!',
+  'Whatsapp korang sekarang dah PREMIUM! ☕️',
+  'Utk pengetahuan korang bot ni hak milik kita semua 🇲🇾.',
+  'Jadi kalau korang suka bot ni, jom kita support nak? Setahun sekali pun boleh, terima kasih orang baik 🙇🏻✨',
+];
+for(const line of channelCopy) must(support,line,'Daily Force exact channel support copy');
 
 must(support,'export function supportAmountKeyboard()','amount-only support keyboard');
 for(const amount of ['10','20','30','50','100']) {
@@ -68,7 +76,7 @@ must(promo,'const DEFAULT_CHANNEL_PROMO_HOUR = 13;','channel 13 hour');
 must(promo,'const DEFAULT_CHANNEL_PROMO_MINUTE = 20;','channel minute 20');
 must(promo,'const CHECK_INTERVAL_MS = 60 * 1000;','minute scheduler');
 must(promo,'channel-daily:','daily channel dedupe key');
-must(promo,'dailyForcePremiumSupportText()','channel uses Premium support copy');
+must(promo,'dailyForcePremiumChannelSupportText()','channel uses korang Premium support copy');
 
 must(monitor,"dailyState = 'PROCESSING_FIRST_USE'",'monitor processing state');
 must(audit,'PROCESSING FIRST USE','USER RECORD processing state');

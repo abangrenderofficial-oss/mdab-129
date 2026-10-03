@@ -13,6 +13,9 @@ import contentBridgeConnectHandler from '../handlers/content-bridge-connect.js';
 import contentBridgeVerifyHandler from '../handlers/content-bridge-verify.js';
 import paymentPushHandler from '../handlers/payment-push.js';
 import payPingDataHandler from '../handlers/payping-data.js';
+import payPingAuthHandler from '../handlers/payping-auth.js';
+import payPingLoginPage from '../handlers/payping-login-pwa.js';
+import payPingRegisterPage from '../handlers/payping-register-pwa.js';
 import payPingSettingsHandler from '../handlers/payping-settings.js';
 import payPingNotificationsPage from '../handlers/payping-notifications-pwa.js';
 import payPingSettingsPage from '../handlers/payping-settings-pwa.js';
@@ -46,6 +49,9 @@ const routes = new Map([
   ['content-bridge-verify', contentBridgeVerifyHandler],
   ['payment-push', paymentPushHandler],
   ['payping-data', payPingDataHandler],
+  ['payping-auth', payPingAuthHandler],
+  ['payping-login-page', payPingLoginPage],
+  ['payping-register-page', payPingRegisterPage],
   ['payping-settings', payPingSettingsHandler],
   ['payping-notifications-page', payPingNotificationsPage],
   ['payping-settings-page', payPingSettingsPage],

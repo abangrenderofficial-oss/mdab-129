@@ -60,6 +60,7 @@ a,button,.btn,.quick a,.tab,.back,.link,.item,.tx{touch-action:manipulation}
 <div id="loading" class="loader">Loading account…</div>
 <div id="app" hidden>
 <section class="card"><div class="profile"><div id="avatar" class="avatar">P</div><div><div id="name" class="name">PayPing Owner</div><div id="username" class="muted"></div></div></div><div class="row"><span>Telegram ID</span><strong id="userId">-</strong></div><div class="row"><span>Role</span><strong id="role">Owner</strong></div><div class="row"><span>Environment</span><strong id="env">production</strong></div></section>
+<section class="card"><div class="cardTitle">PayPing Account</div><div id="accountState" class="muted">Checking account…</div><div id="accountMeta" class="row" hidden><span>Email</span><strong id="accountEmail">-</strong></div><div id="accountRoleRow" class="row" hidden><span>App Role</span><strong id="accountRole">-</strong></div><a id="accountLogin" class="link" href="/ar-payment/login" hidden>Login →</a><a id="accountRegister" class="link" href="/ar-payment/register" hidden>Create Account →</a><button id="accountLogout" class="danger full" hidden>Logout PayPing Account</button></section>
 <section class="card"><div class="cardTitle">Merchant Tools</div><a id="analyticsLink" class="link" href="/ar-payment/analytics" hidden>Analytics / Reports →</a><a class="link" href="/ar-payment/notifications">Notification Status & History →</a></section>
 <section class="card"><div class="cardTitle">Devices & Sessions</div><div id="devices"></div><button id="disconnectCurrent" class="danger full">Disconnect This Device</button><div id="msg" class="msg"></div></section>
 <section class="card"><div class="cardTitle">About PayPing!</div><div class="row"><span>Payment provider</span><strong>Bayarcash</strong></div><div class="row"><span>Database</span><strong>Turso</strong></div><div class="row"><span>Heavy worker</span><strong>GitHub Actions</strong></div></section>
@@ -71,6 +72,21 @@ const key='ar_payment_device_token_v1';const token=localStorage.getItem(key)||''
 const headers=()=>({Authorization:'Bearer '+token,'Content-Type':'application/json'});const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const date=v=>{if(!v)return '-';const d=new Date(v);return Number.isNaN(d.getTime())?'-':new Intl.DateTimeFormat('en-MY',{day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit'}).format(d)};
 function setMsg(t,c=''){$('msg').textContent=t||'';$('msg').className='msg '+c}
+async function loadAccount(){
+ try{
+  const h=token?{'X-PayPing-Device-Token':token}:{};
+  const r=await fetch('/api/payping-auth',{headers:h});const d=await r.json();
+  if(!r.ok||!d.ok){
+    $('accountState').textContent='Belum login dengan PayPing account.';
+    $('accountLogin').hidden=false;$('accountRegister').hidden=false;return;
+  }
+  $('accountState').textContent=d.account.telegramUserId?'Account linked dengan Telegram ✅':'Account aktif · Telegram belum linked';
+  $('accountEmail').textContent=d.account.email||'-';$('accountRole').textContent=String(d.role||'user').toUpperCase();
+  $('accountMeta').hidden=false;$('accountRoleRow').hidden=false;$('accountLogout').hidden=false;
+ }catch{
+  $('accountState').textContent='Account status unavailable.';
+ }
+}
 async function load(){
  if(!token){$('loading').innerHTML='<div class="error">Device belum connected. Setup notification dari Home dulu.</div>';return}
  try{const r=await fetch('/api/payping-settings?view=account',{headers:headers()});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Account unavailable.');
@@ -82,7 +98,8 @@ async function load(){
 }
 async function revoke(id){if(!confirm('Disconnect this PayPing device?'))return;try{const r=await fetch('/api/payping-settings',{method:'POST',headers:headers(),body:JSON.stringify({action:'revoke_device',deviceId:id})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Disconnect failed.');setMsg('Device disconnected ✅');load()}catch(e){setMsg(e.message||String(e),'bad')}}
 $('disconnectCurrent').addEventListener('click',async()=>{if(!confirm('Disconnect current PayPing device? Notification dan dashboard access pada device ini akan berhenti sehingga /pushsetup dibuat semula.'))return;try{const r=await fetch('/api/payping-settings',{method:'POST',headers:headers(),body:JSON.stringify({action:'disconnect_current'})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Disconnect failed.');localStorage.removeItem(key);location.href='/ar-payment/'}catch(e){setMsg(e.message||String(e),'bad')}});
-load();
+$('accountLogout').addEventListener('click',async()=>{try{const r=await fetch('/api/payping-auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'logout'})});if(!r.ok)throw new Error('Logout gagal.');location.reload()}catch(e){setMsg(e.message||String(e),'bad')}});
+loadAccount();load();
 </script></body></html>`;
 
 function send(res,type,body){res.statusCode=200;res.setHeader('Content-Type',type);res.setHeader('Cache-Control','no-store');res.end(body)}

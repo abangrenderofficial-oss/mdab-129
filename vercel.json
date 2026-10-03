@@ -88,6 +88,26 @@
       "destination": "/api/router?route=affiliate-admin-page"
     },
     {
+      "source": "/api/payping-auth",
+      "destination": "/api/router?route=payping-auth"
+    },
+    {
+      "source": "/ar-payment/login",
+      "destination": "/api/router?route=payping-login-page"
+    },
+    {
+      "source": "/ar-payment/login/",
+      "destination": "/api/router?route=payping-login-page"
+    },
+    {
+      "source": "/ar-payment/register",
+      "destination": "/api/router?route=payping-register-page"
+    },
+    {
+      "source": "/ar-payment/register/",
+      "destination": "/api/router?route=payping-register-page"
+    },
+    {
       "source": "/api/payping-data",
       "destination": "/api/router?route=payping-data"
     },

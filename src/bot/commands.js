@@ -39,6 +39,8 @@ export function commandMenuText() {
     '/menu — Senarai command user',
     '/status <link> — Buat Status HQ dari link',
     '/support — ❤️ Support perkembangan bot',
+    '/affiliate — 💰 Referral link & affiliate wallet',
+    '/withdraw — Request affiliate payout',
     '/luahrasa — Luah rasa / share cerita',
     '/reset — Reset sesi sendiri jika bot tersangkut',
   ].join('\n');
@@ -80,6 +82,8 @@ export function adminCommandMenuText() {
     '/connectquote — Sambung group filter quote & luah rasa',
     '/connectpaymentdetail — Sambung group notification payment support',
     '/pushsetup — Setup AR Payment push notification iPhone',
+    '/affiliatepaid <request> — Tandakan affiliate payout paid',
+    '/affiliatereject <request> — Batalkan affiliate withdrawal',
     '/totaluser — Statistik penggunaan bot',
     '/checkmember — Diagnostic membership channel',
     '/hqlab — HQ Lab owner-only',

@@ -329,6 +329,93 @@ export async function getAffiliateActivity({ userId, username = '', limit = 30 }
   };
 }
 
+export async function getAffiliateAdminDashboard({ limit = 50 } = {}) {
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const now = new Date().toISOString();
+  await releaseMaturedCommissions(db, environment, now);
+
+  const safeLimit = Math.max(1, Math.min(200, Number(limit || 50)));
+
+  const [profileStats, commissionStats, withdrawalStats, withdrawals] = await Promise.all([
+    db.execute({
+      sql: `SELECT
+              COUNT(*) AS affiliates,
+              SUM(CASE WHEN referred_by_user_id IS NOT NULL THEN 1 ELSE 0 END) AS referred_users
+            FROM affiliate_profiles
+            WHERE environment = ?`,
+      args: [environment],
+    }),
+    db.execute({
+      sql: `SELECT
+              COUNT(*) AS commission_count,
+              COALESCE(SUM(commission_cents), 0) AS total_cents,
+              COALESCE(SUM(CASE WHEN status = 'PENDING' THEN commission_cents ELSE 0 END), 0) AS pending_cents,
+              COALESCE(SUM(CASE WHEN status = 'AVAILABLE' THEN commission_cents ELSE 0 END), 0) AS available_cents,
+              COALESCE(SUM(CASE WHEN status = 'WITHDRAWAL_PENDING' THEN commission_cents ELSE 0 END), 0) AS withdrawing_cents,
+              COALESCE(SUM(CASE WHEN status = 'PAID' THEN commission_cents ELSE 0 END), 0) AS paid_cents
+            FROM affiliate_commissions
+            WHERE environment = ?`,
+      args: [environment],
+    }),
+    db.execute({
+      sql: `SELECT
+              COUNT(*) AS withdrawal_count,
+              COALESCE(SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END), 0) AS pending_count,
+              COALESCE(SUM(CASE WHEN status = 'PENDING' THEN amount_cents ELSE 0 END), 0) AS pending_cents,
+              COALESCE(SUM(CASE WHEN status = 'PAID' THEN amount_cents ELSE 0 END), 0) AS paid_cents
+            FROM affiliate_withdrawals
+            WHERE environment = ?`,
+      args: [environment],
+    }),
+    db.execute({
+      sql: `SELECT w.request_id, w.telegram_user_id, w.amount_cents, w.status,
+                   w.created_at, w.updated_at, w.paid_at,
+                   COALESCE(p.telegram_username, '') AS telegram_username
+            FROM affiliate_withdrawals w
+            LEFT JOIN affiliate_profiles p
+              ON p.environment = w.environment
+             AND p.telegram_user_id = w.telegram_user_id
+            WHERE w.environment = ?
+            ORDER BY CASE WHEN w.status = 'PENDING' THEN 0 ELSE 1 END,
+                     w.created_at DESC
+            LIMIT ?`,
+      args: [environment, safeLimit],
+    }),
+  ]);
+
+  const profileRow = profileStats.rows?.[0] || {};
+  const commissionRow = commissionStats.rows?.[0] || {};
+  const withdrawalRow = withdrawalStats.rows?.[0] || {};
+
+  return {
+    summary: {
+      affiliates: Number(profileRow.affiliates || 0),
+      referredUsers: Number(profileRow.referred_users || 0),
+      commissionCount: Number(commissionRow.commission_count || 0),
+      totalCommission: money(commissionRow.total_cents),
+      pendingCommission: money(commissionRow.pending_cents),
+      availableCommission: money(commissionRow.available_cents),
+      withdrawingCommission: money(commissionRow.withdrawing_cents),
+      paidCommission: money(commissionRow.paid_cents),
+      withdrawalCount: Number(withdrawalRow.withdrawal_count || 0),
+      pendingWithdrawalCount: Number(withdrawalRow.pending_count || 0),
+      pendingWithdrawalAmount: money(withdrawalRow.pending_cents),
+      paidWithdrawalAmount: money(withdrawalRow.paid_cents),
+    },
+    withdrawals: (withdrawals.rows || []).map((row) => ({
+      requestId: String(row.request_id || ''),
+      userId: String(row.telegram_user_id || ''),
+      username: String(row.telegram_username || ''),
+      amount: money(row.amount_cents),
+      status: String(row.status || ''),
+      createdAt: String(row.created_at || ''),
+      updatedAt: String(row.updated_at || ''),
+      paidAt: row.paid_at ? String(row.paid_at) : null,
+    })),
+  };
+}
+
 export async function markAffiliateWithdrawal(requestId, decision) {
   const id = String(requestId || '').trim().toUpperCase();
   const target = String(decision || '').trim().toUpperCase();

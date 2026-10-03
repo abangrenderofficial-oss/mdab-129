@@ -76,6 +76,18 @@
       "destination": "/api/router?route=affiliate-pwa-page"
     },
     {
+      "source": "/api/affiliate-admin",
+      "destination": "/api/router?route=affiliate-admin"
+    },
+    {
+      "source": "/ar-payment/affiliate/admin",
+      "destination": "/api/router?route=affiliate-admin-page"
+    },
+    {
+      "source": "/ar-payment/affiliate/admin/",
+      "destination": "/api/router?route=affiliate-admin-page"
+    },
+    {
       "source": "/api/heavy-limit",
       "destination": "/api/router?route=heavy-limit"
     },

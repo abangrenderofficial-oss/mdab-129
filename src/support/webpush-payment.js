@@ -648,12 +648,19 @@ async function telegramDisplayName(userId, username = '') {
   return fallbackUsername ? `@${fallbackUsername}` : '-';
 }
 
-function notificationPayload({ userId, amount, tierLabel, orderNumber, successful }) {
+function notificationPayload({
+  userId,
+  amount,
+  tierLabel,
+  orderNumber,
+  successful,
+  actionable = false,
+}) {
   const tierName = cleanText(tierLabel, 100)
     .replace(/^[^A-Za-z0-9]+/, '')
     .trim() || 'Supporter';
 
-  return {
+  const payload = {
     title: `Payment Receive, ${tierName}`,
     body: [
       'From PayPing!',
@@ -661,7 +668,17 @@ function notificationPayload({ userId, amount, tierLabel, orderNumber, successfu
     ].join('\n'),
     tag: `payment-${cleanText(orderNumber, 100)}-${successful ? 'success' : 'unsuccessful'}`,
     url: `/ar-payment/transaction?order=${encodeURIComponent(String(orderNumber || ''))}`,
+    orderNumber: String(orderNumber || ''),
+    actionable: Boolean(actionable && !successful),
   };
+
+  if (payload.actionable) {
+    payload.actions = [
+      { action: 'follow_up', title: 'Follow Up ✅' },
+      { action: 'dont_follow_up', title: 'Don’t Follow Up ❌' },
+    ];
+  }
+  return payload;
 }
 
 async function notificationRecipients(record = {}) {
@@ -697,19 +714,26 @@ export async function notifyWebPushSupportPayment(orderNumber) {
   const amount = (Number(record.amount_cents || 0) / 100).toFixed(2);
   const tierLabel = cleanText(record.tier_label, 100) || fallbackTier(record.amount_cents);
   const successful = status === 'PAID' && Boolean(record.paid_at);
-  const payload = notificationPayload({
-    userId,
-    amount,
-    tierLabel,
-    orderNumber: order,
-    successful,
-  });
+  const ownerId = String(process.env.BOT_OWNER_ID || '').trim();
+  const referrerId = String(record.referrer_user_id || '').trim();
 
   const deliveryKey = `order:${order}:${successful ? 'PAID' : status}`;
   let sent = 0;
   let failed = 0;
   for (const target of targets) {
     if (!(await claimDelivery(deliveryKey, target.endpointHash))) continue;
+    const actionable = !successful && (
+      String(target.ownerUserId || '') === ownerId
+      || (referrerId && String(target.ownerUserId || '') === referrerId)
+    );
+    const payload = notificationPayload({
+      userId,
+      amount,
+      tierLabel,
+      orderNumber: order,
+      successful,
+      actionable,
+    });
     try {
       await sendPayload(target, payload);
       await markDelivery(deliveryKey, target.endpointHash, 'SENT');

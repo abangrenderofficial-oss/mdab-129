@@ -114,6 +114,18 @@ const MANIFEST = JSON.stringify({
 const SERVICE_WORKER = String.raw`
 self.skipWaiting();
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
+
+async function openPayPingTarget(target) {
+  const list = await clients.matchAll({type:'window',includeUncontrolled:true});
+  for (const client of list) {
+    if ('focus' in client) {
+      await client.navigate(target);
+      return client.focus();
+    }
+  }
+  return clients.openWindow(target);
+}
+
 self.addEventListener('push', event => {
   let data = {}; try { data = event.data ? event.data.json() : {}; } catch {}
   const title = data.title || 'PayPing!';
@@ -121,18 +133,87 @@ self.addEventListener('push', event => {
     icon: '/ar-payment/payping-icon-v4.svg',
     badge: '/ar-payment/payping-icon-v4.svg',
     tag: data.tag || 'ar-payment',
-    data: { url: data.url || '/ar-payment/' }
+    data: {
+      url: data.url || '/ar-payment/',
+      orderNumber: String(data.orderNumber || ''),
+      actionable: Boolean(data.actionable),
+    }
   };
   if (typeof data.body === 'string' && data.body.length) options.body = data.body;
+
+  const maxActions = Number(self.Notification?.maxActions || 0);
+  if (data.actionable && Array.isArray(data.actions) && data.actions.length && maxActions > 0) {
+    options.actions = data.actions.slice(0, maxActions);
+  }
+
   event.waitUntil(self.registration.showNotification(title, options));
 });
+
 self.addEventListener('notificationclick', event => {
-  event.notification.close();
-  const target = event.notification?.data?.url || '/ar-payment/';
-  event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(list => {
-    for (const client of list) { if ('focus' in client) { client.navigate(target); return client.focus(); } }
-    return clients.openWindow(target);
-  }));
+  const action = String(event.action || '');
+  const note = event.notification;
+  const data = note?.data || {};
+  const target = data.url || '/ar-payment/';
+  const orderNumber = String(data.orderNumber || '');
+
+  if (action === 'dont_follow_up') {
+    note.close();
+    return;
+  }
+
+  if (action === 'follow_up' && orderNumber) {
+    note.close();
+    event.waitUntil((async () => {
+      try {
+        const response = await fetch('/api/payping-data', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            action: 'payment_followup_send',
+            order: orderNumber,
+          }),
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (response.ok && result?.ok && result?.actionResult?.sent) {
+          await self.registration.showNotification('Done!', {
+            body: 'Bot sudah follow up 🎉',
+            icon: '/ar-payment/payping-icon-v4.svg',
+            badge: '/ar-payment/payping-icon-v4.svg',
+            tag: note.tag || ('payment-' + orderNumber),
+            data: { url: target, orderNumber, actionable: false },
+          });
+          return;
+        }
+
+        if (response.status === 401) {
+          await openPayPingTarget('/ar-payment/login');
+          return;
+        }
+
+        const message = result?.error === 'PAYMENT_FOLLOWUP_COOLDOWN'
+          ? 'Follow-up kedua belum boleh dihantar lagi.'
+          : result?.error === 'PAYMENT_FOLLOWUP_LIMIT'
+            ? 'Follow-up untuk payment ini dah maksimum 2 kali.'
+            : (result?.message || 'Follow-up tak berjaya dihantar.');
+
+        await self.registration.showNotification('PayPing!', {
+          body: message,
+          icon: '/ar-payment/payping-icon-v4.svg',
+          badge: '/ar-payment/payping-icon-v4.svg',
+          tag: note.tag || ('payment-' + orderNumber),
+          data: { url: target, orderNumber, actionable: false },
+        });
+      } catch {
+        await openPayPingTarget(target);
+      }
+    })());
+    return;
+  }
+
+  note.close();
+  event.waitUntil(openPayPingTarget(target));
 });
 `;
 

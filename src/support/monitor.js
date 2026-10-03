@@ -128,9 +128,30 @@ async function monitorProfile(userId) {
     args: [currentSupportEnvironment(), String(userId)],
   });
   const row = result.rows?.[0] || {};
+  let username = String(row.telegram_username || '');
+  let displayName = String(row.display_name || '');
+
+  if (!username || !displayName) {
+    const fallback = await db.execute({
+      sql: `SELECT o.telegram_username,
+                   COALESCE(s.display_name, '') AS display_name
+            FROM support_orders o
+            LEFT JOIN support_submissions s
+              ON s.environment = o.environment
+             AND s.order_number = o.order_number
+            WHERE o.environment = ? AND o.telegram_user_id = ?
+            ORDER BY COALESCE(o.paid_at, o.updated_at, o.created_at) DESC
+            LIMIT 1`,
+      args: [currentSupportEnvironment(), String(userId)],
+    });
+    const supportRow = fallback.rows?.[0] || {};
+    if (!username) username = String(supportRow.telegram_username || '');
+    if (!displayName) displayName = String(supportRow.display_name || '');
+  }
+
   return {
-    username: String(row.telegram_username || ''),
-    displayName: String(row.display_name || ''),
+    username,
+    displayName,
     seenCount: Number(row.seen_count || 0),
     firstSeenAt: String(row.first_seen_at || ''),
     lastSeenAt: String(row.last_seen_at || ''),

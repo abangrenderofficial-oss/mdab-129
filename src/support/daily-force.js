@@ -4,6 +4,7 @@ import { refreshSupportMonitorMessage } from './monitor-publisher.js';
 import { supportMenuKeyboard } from '../features/support.js';
 import { getActiveSupporterTitle } from './community-store.js';
 import { currentSupportEnvironment, getSupportDb } from './store.js';
+import { malaysiaSupportSchedule } from './daily-force-schedule.js';
 
 const DAILY_FORCE_COPY = 'Minta support dulu utk guna bot ❤️';
 let schemaPromise = null;
@@ -80,6 +81,17 @@ export async function isDailyForceSupportEnabled() {
   return (await modeState()).enabled;
 }
 
+export async function getDailyForceRuntimeState(date = new Date()) {
+  const mode = await modeState();
+  const schedule = malaysiaSupportSchedule(date);
+  return {
+    ...mode,
+    ...schedule,
+    active: mode.enabled && schedule.dailyForceWindowActive,
+    pausedForFriday: mode.enabled && schedule.isFriday,
+  };
+}
+
 async function setDailyForceSupportEnabled(enabled, adminUserId = '') {
   await ensureSchema();
   const db = await getSupportDb();
@@ -147,6 +159,16 @@ async function accessContext(userId) {
   const mode = await modeState();
   if (!mode.enabled) return { gated: false, ...mode };
 
+  const schedule = malaysiaSupportSchedule();
+  if (!schedule.dailyForceWindowActive) {
+    return {
+      gated: false,
+      ...mode,
+      ...schedule,
+      pausedForFriday: true,
+    };
+  }
+
   const supporter = await getActiveSupporterTitle(userId);
   if (supporter) return { gated: false, ...mode, supporter };
 
@@ -165,6 +187,7 @@ export async function claimDailyForceUsageAttempt(userId) {
 
   const mode = await modeState();
   if (!mode.enabled) return false;
+  if (!malaysiaSupportSchedule().dailyForceWindowActive) return false;
   if (await getActiveSupporterTitle(id)) return false;
 
   await ensureSchema();
@@ -219,6 +242,7 @@ export async function markDailyForceUsageSuccess(userId) {
 
   const mode = await modeState();
   if (!mode.enabled) return false;
+  if (!malaysiaSupportSchedule().dailyForceWindowActive) return false;
   if (await getActiveSupporterTitle(id)) return false;
 
   const db = await getSupportDb();
@@ -321,12 +345,22 @@ export async function handleDailyForceSupportCommand(message = {}) {
   await sendMessage(
     access.chatId,
     alreadyEnabled
-      ? '🔒 /forcesupportdaily memang dah aktif. User yang dah guna free 1x kekal locked setiap hari sampai support.'
+      ? [
+          '🔒 /forcesupportdaily memang dah aktif.',
+          'Jadual: Sabtu sampai Khamis (Malaysia time).',
+          'Jumaat Daily Force auto-pause dan Friday Support System ambil alih.',
+          'Ia kekal ON sampai kau guna /stopforcesupportdaily.',
+          `Cycle: ${saved.cycleId}`,
+        ].join('\n')
       : [
           '🔒 /forcesupportdaily aktif.',
+          'Jadual: Sabtu sampai Khamis (Malaysia time).',
           'Non-supporter dapat 1 successful use dahulu.',
           'Selepas penggunaan pertama berjaya, bot terus minta support dengan pilihan amount.',
-          'Cubaan seterusnya — termasuk hari ke-2, ke-3 dan seterusnya — kekal locked sampai support.',
+          'Cubaan seterusnya kekal locked sampai support.',
+          'Jumaat Daily Force auto-pause; /forcesupport, /donatesupport atau /normalsupport akan handle.',
+          'Sabtu ia sambung semula secara automatik.',
+          'Ia kekal ON sampai kau guna /stopforcesupportdaily.',
           `Cycle: ${saved.cycleId}`,
         ].join('\n'),
   );
@@ -346,7 +380,7 @@ export async function handleStopDailyForceSupportCommand(message = {}) {
   await setDailyForceSupportEnabled(false, access.userId);
   await sendMessage(
     access.chatId,
-    '⏹ /forcesupportdaily dihentikan. Aktifkan semula /forcesupportdaily bila nak mula cycle baru.',
+    '⏹ /forcesupportdaily dihentikan sepenuhnya. Sabtu–Khamis tak akan berjalan lagi sehingga kau aktifkan semula /forcesupportdaily.',
   );
   return true;
 }

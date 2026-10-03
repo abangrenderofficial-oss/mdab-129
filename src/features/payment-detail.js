@@ -80,6 +80,7 @@ function monitorDailyLabel(user = {}) {
   const daily = user.dailyForce || {};
   if (user.support?.active) return 'EXEMPT';
   if (daily.state === 'PAUSED_FRIDAY') return `PAUSED FRIDAY · cycle ${daily.cycleId} · Friday Support System handle`;
+  if (daily.state === 'PROCESSING_FIRST_USE') return `PROCESSING FIRST USE · cycle ${daily.cycleId}`;
   if (daily.state === 'LOCKED') {
     return `LOCKED · cycle ${daily.cycleId} · success ${daily.successCount}${daily.anomaly ? ' ⚠️' : ''}`;
   }

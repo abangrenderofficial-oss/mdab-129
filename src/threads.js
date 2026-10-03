@@ -1,3 +1,4 @@
+import { positiveIntEnv } from './env-number.js';
 const GOOGLEBOT_UA = 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
 const THREADS_REFERER = 'https://www.threads.com/';
 const MEDIA_KEYS = new Set(['video_versions', 'video_dash_manifest', 'image_versions2', 'carousel_media']);
@@ -170,7 +171,7 @@ export async function parseThreadsPost(url) {
         'Accept-Language': 'en-US,en;q=0.9',
         'User-Agent': GOOGLEBOT_UA,
       },
-      signal: AbortSignal.timeout(Number(process.env.DOWNLOADER_TIMEOUT_MS || 25000)),
+      signal: AbortSignal.timeout(positiveIntEnv('DOWNLOADER_TIMEOUT_MS', 25000)),
     });
   } catch (error) {
     const err = new Error(`Threads request failed: ${error?.message || error}`);

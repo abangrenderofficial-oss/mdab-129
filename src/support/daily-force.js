@@ -108,6 +108,71 @@ async function modeState() {
   };
 }
 
+export async function repairDailyForceCurrentCycleUsers(rawUserIds = process.env.DAILY_FORCE_REPAIR_USER_IDS || '') {
+  const ids = [...new Set(
+    String(rawUserIds || '')
+      .split(',')
+      .map((value) => Number(String(value || '').trim()))
+      .filter((id) => Number.isSafeInteger(id) && id > 0),
+  )];
+  if (!ids.length) return { attempted: 0, repaired: 0, skippedSupporters: 0 };
+
+  const mode = await modeState();
+  if (!mode.enabled) {
+    return { attempted: ids.length, repaired: 0, skippedSupporters: 0, reason: 'daily_force_disabled' };
+  }
+
+  await ensureSchema();
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  let repaired = 0;
+  let skippedSupporters = 0;
+
+  for (const id of ids) {
+    if (isResetAdmin(id)) continue;
+    if (await getActiveSupporterTitle(id)) {
+      skippedSupporters += 1;
+      continue;
+    }
+
+    const now = new Date().toISOString();
+    await db.execute({
+      sql: `INSERT OR IGNORE INTO support_daily_force_usage (
+              environment, telegram_user_id, cycle_id,
+              used_once, use_claimed, prompt_sent, success_count, updated_at
+            ) VALUES (?, ?, ?, 1, 0, 0, 1, ?)`,
+      args: [environment, String(id), mode.cycleId, now],
+    });
+
+    const result = await db.execute({
+      sql: `UPDATE support_daily_force_usage
+            SET used_once = 1,
+                use_claimed = 0,
+                success_count = CASE
+                  WHEN COALESCE(success_count, 0) < 1 THEN 1
+                  ELSE success_count
+                END,
+                updated_at = ?
+            WHERE environment = ? AND telegram_user_id = ? AND cycle_id = ?`,
+      args: [now, environment, String(id), mode.cycleId],
+    });
+    if (Number(result.rowsAffected || 0) > 0) repaired += 1;
+  }
+
+  if (repaired > 0) {
+    await refreshSupportMonitorMessage().catch((error) => {
+      console.warn('[support-monitor] refresh after Daily Force repair failed:', error?.message);
+    });
+  }
+
+  return {
+    attempted: ids.length,
+    repaired,
+    skippedSupporters,
+    cycleId: mode.cycleId,
+  };
+}
+
 export async function isDailyForceSupportEnabled() {
   return (await modeState()).enabled;
 }

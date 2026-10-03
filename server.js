@@ -40,7 +40,7 @@ import {
 import { startSupportPromotionScheduler } from './src/support/promotion.js';
 import { deliverApprovedBacklog, isContentBridgeConfigured } from './src/support/content-bridge.js';
 import { refreshSupportMonitorMessage } from './src/support/monitor-publisher.js';
-import { getDailyForceRuntimeState } from './src/support/daily-force.js';
+import { getDailyForceRuntimeState, repairDailyForceCurrentCycleUsers } from './src/support/daily-force.js';
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
@@ -208,7 +208,7 @@ server.listen(port, '0.0.0.0', () => {
   startSupportPromotionScheduler();
 
   void getDailyForceRuntimeState()
-    .then((state) => {
+    .then(async (state) => {
       console.log('[daily-force] startup policy initialized', {
         enabled: state.enabled,
         active: state.active,
@@ -216,6 +216,11 @@ server.listen(port, '0.0.0.0', () => {
         policyVersion: state.policyVersion,
         weekday: state.weekday,
       });
+
+      if (String(process.env.DAILY_FORCE_REPAIR_USER_IDS || '').trim()) {
+        const repair = await repairDailyForceCurrentCycleUsers();
+        console.log('[daily-force] one-time repair applied', repair);
+      }
     })
     .catch((error) => {
       console.warn('[daily-force] startup policy initialization failed:', error?.message);

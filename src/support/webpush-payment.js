@@ -142,7 +142,7 @@ export async function createPushSetupCode(ownerUserId) {
   return { code, expiresAt: expiresAt.toISOString() };
 }
 
-export async function registerPushSubscription(code, subscription) {
+async function persistPushSubscription(ownerUserId, subscription) {
   if (!configureVapid()) {
     const error = new Error('Web Push belum configured.');
     error.code = 'WEBPUSH_NOT_CONFIGURED';
@@ -151,6 +151,66 @@ export async function registerPushSubscription(code, subscription) {
 
   const normalized = validSubscription(subscription);
   if (!normalized) {
+    const error = new Error('Push subscription tidak sah.');
+    error.code = 'INVALID_PUSH_SUBSCRIPTION';
+    throw error;
+  }
+
+  const userId = String(ownerUserId || '').trim();
+  if (!/^\d+$/.test(userId) || Number(userId) <= 0) {
+    const error = new Error('Telegram account belum linked dengan PayPing.');
+    error.code = 'PAYPING_TELEGRAM_LINK_REQUIRED';
+    throw error;
+  }
+
+  await ensureWebPushSchema();
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const now = new Date().toISOString();
+  const token = randomBytes(32).toString('base64url');
+  const eHash = endpointHash(normalized.endpoint);
+
+  await db.execute({
+    sql: `INSERT INTO support_push_subscriptions (
+            environment, endpoint_hash, endpoint, p256dh, auth,
+            device_token_hash, owner_user_id, created_at, updated_at, disabled_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '')
+          ON CONFLICT(environment, endpoint_hash) DO UPDATE SET
+            endpoint = excluded.endpoint,
+            p256dh = excluded.p256dh,
+            auth = excluded.auth,
+            device_token_hash = excluded.device_token_hash,
+            owner_user_id = excluded.owner_user_id,
+            updated_at = excluded.updated_at,
+            disabled_at = ''`,
+    args: [
+      environment,
+      eHash,
+      normalized.endpoint,
+      normalized.keys.p256dh,
+      normalized.keys.auth,
+      deviceTokenHash(token),
+      userId,
+      now,
+      now,
+    ],
+  });
+
+  return { deviceToken: token };
+}
+
+export async function registerPushSubscriptionForUser(ownerUserId, subscription) {
+  return persistPushSubscription(ownerUserId, subscription);
+}
+
+export async function registerPushSubscription(code, subscription) {
+  if (!configureVapid()) {
+    const error = new Error('Web Push belum configured.');
+    error.code = 'WEBPUSH_NOT_CONFIGURED';
+    throw error;
+  }
+
+  if (!validSubscription(subscription)) {
     const error = new Error('Push subscription tidak sah.');
     error.code = 'INVALID_PUSH_SUBSCRIPTION';
     throw error;
@@ -195,35 +255,7 @@ export async function registerPushSubscription(code, subscription) {
     throw error;
   }
 
-  const token = randomBytes(32).toString('base64url');
-  const eHash = endpointHash(normalized.endpoint);
-  await db.execute({
-    sql: `INSERT INTO support_push_subscriptions (
-            environment, endpoint_hash, endpoint, p256dh, auth,
-            device_token_hash, owner_user_id, created_at, updated_at, disabled_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '')
-          ON CONFLICT(environment, endpoint_hash) DO UPDATE SET
-            endpoint = excluded.endpoint,
-            p256dh = excluded.p256dh,
-            auth = excluded.auth,
-            device_token_hash = excluded.device_token_hash,
-            owner_user_id = excluded.owner_user_id,
-            updated_at = excluded.updated_at,
-            disabled_at = ''`,
-    args: [
-      environment,
-      eHash,
-      normalized.endpoint,
-      normalized.keys.p256dh,
-      normalized.keys.auth,
-      deviceTokenHash(token),
-      String(row.owner_user_id || ''),
-      now,
-      now,
-    ],
-  });
-
-  return { deviceToken: token };
+  return persistPushSubscription(String(row.owner_user_id || ''), subscription);
 }
 
 async function activeSubscriptions() {

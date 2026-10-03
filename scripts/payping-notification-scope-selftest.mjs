@@ -35,6 +35,8 @@ must(push,'record.telegram_user_id','payer push recipient');
 must(push,'Payment Receive, ${tierName}','notification title');
 mustNot(push,"'From PayPing!'",'duplicate notification brand line');
 must(push,"successful 🎉' : 'unsuccessful 🥹'",'success and unsuccessful status');
+must(push,'successful 🎉','successful spelling');
+mustNot(push,'Successfull 🎉','success typo');
 must(push,'/ar-payment/transaction?order=','transaction detail notification URL');
 must(push,'deliveryKey = `order:${order}:','status-specific push dedupe');
 must(push,"{ action: 'follow_up', title: 'Follow Up ✅' }",'follow-up notification action');

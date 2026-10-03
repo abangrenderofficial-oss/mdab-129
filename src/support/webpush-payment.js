@@ -778,7 +778,7 @@ export async function sendWebPushTest(deviceToken) {
 
   const payload = {
     title: `Payment Received, ${testTier.tier}`,
-    body: `ID ${testUserId} - RM ${testTier.amount} - Successfull 🎉`,
+    body: `ID ${testUserId} - RM ${testTier.amount} - successful 🎉`,
     tag: `test-${Date.now()}-${testUserId}`,
     url: '/ar-payment',
   };

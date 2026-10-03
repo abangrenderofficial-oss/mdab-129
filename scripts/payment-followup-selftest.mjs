@@ -99,7 +99,8 @@ must(followupModule,'Terima kasih orang baik ❤️','fallback thank-you copy');
 must(followupModule,'💳 Bayar ${followupAmountLabel(row)}','amount payment button');
 must(followupModule,'Dah Bayar / Semak','review button');
 must(followupModule,'Tak Jadi','cancel button');
-must(followupModule,"keepStoppedAfterManual",'manual follow-up after user cancel');
+must(followupModule,"keepPassiveAfterManual",'manual follow-up stays passive after cancel');
+must(followupModule,"manualCancelledFollowup",'manual follow-up for cancelled order');
 must(paypingData,"action==='payment_followup_send'",'owner followup action');
 must(paypingData,"action==='payment_followup_check'",'owner reconcile action');
 must(paypingData,"action==='payment_followup_stop'",'owner stop action');
@@ -107,6 +108,9 @@ must(detailPage,'Pending Payment Follow-up','owner UI card');
 must(detailPage,'Follow Up Now','owner send button');
 must(detailPage,'Check Status','owner check button');
 must(detailPage,'Stop Follow-up','owner stop button');
+must(detailPage,"Bot dah follow up user ✅",'follow-up success toast');
+must(detailPage,"class=\"toast\"",'top toast UI');
+must(detailPage,"['PAID','FAILED','EXPIRED','INTENT_FAILED','AMOUNT_MISMATCH']", 'cancelled follow-up remains enabled');
 must(promotion,'startPaymentFollowupScheduler','scheduler startup');
 
 console.log('PAYMENT_FOLLOWUP_SELFTEST_OK',JSON.stringify({

@@ -380,7 +380,22 @@ export async function sendPaymentFollowup(orderNumber, { manual = false } = {}) 
     return { sent: false, reason: state.toLowerCase(), followup: await getPaymentFollowupInfo(orderNumber) };
   }
 
-  const checked = await reconcilePaymentFollowup(orderNumber);
+  const currentStatus = String(row.status || '').toUpperCase();
+  const manualCancelledFollowup = manual && ['CANCELLED','CANCELLED_BY_USER'].includes(currentStatus);
+  const checked = manualCancelledFollowup
+    ? {
+        paid: false,
+        resolved: false,
+        orderStatus: currentStatus,
+        stage: classifyPaymentStage({
+          orderStatus: row.status,
+          gatewayTransactionId: row.gateway_transaction_id,
+          gatewayStatus: row.last_gateway_status,
+          followupState: row.followup_state,
+        }),
+        manualCancelledFollowup: true,
+      }
+    : await reconcilePaymentFollowup(orderNumber);
   if (checked.resolved || checked.paid) {
     return { sent: false, reason: checked.orderStatus || 'resolved', reconciliation: checked, followup: await getPaymentFollowupInfo(orderNumber) };
   }
@@ -396,11 +411,12 @@ export async function sendPaymentFollowup(orderNumber, { manual = false } = {}) 
   const sent = await sendMessage(row.telegram_user_id, followupText(row), {
     reply_markup: followupKeyboard(row),
   });
-  const keepStoppedAfterManual = manual
-    && String(row.followup_state || '').toUpperCase() === 'STOPPED'
-    && String(row.stopped_reason || '').toUpperCase() === 'USER_CANCELLED';
+  const keepPassiveAfterManual = manual && (
+    ['STOPPED','RESOLVED'].includes(String(row.followup_state || '').toUpperCase())
+    || ['CANCELLED','CANCELLED_BY_USER'].includes(String(row.status || '').toUpperCase())
+  );
   await recordFollowupSent(orderNumber, sent?.message_id || '', {
-    reactivate: !keepStoppedAfterManual,
+    reactivate: !keepPassiveAfterManual,
   });
   return {
     sent: true,
@@ -516,9 +532,9 @@ export async function getPaymentFollowupInfo(orderNumber) {
     reviewAt: row.review_at ? String(row.review_at) : null,
     stoppedAt: row.stopped_at ? String(row.stopped_at) : null,
     stoppedReason: String(row.stopped_reason || ''),
-    canFollowUp: !FINAL_ORDER_STATUSES.has(String(row.status || '').toUpperCase())
-      && !['REVIEW','RESOLVED'].includes(state)
-      && Boolean(row.payment_url),
+    canFollowUp: Boolean(row.payment_url)
+      && !['PAID','FAILED','EXPIRED','INTENT_FAILED','AMOUNT_MISMATCH'].includes(String(row.status || '').toUpperCase())
+      && state !== 'REVIEW',
     paymentUrlAvailable: Boolean(row.payment_url),
   };
 }

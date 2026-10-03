@@ -1,4 +1,5 @@
 import healthHandler from '../handlers/health.js';
+import payPingHomePage from '../handlers/payping-home-pwa.js';
 import telegramHandler from '../handlers/telegram.js';
 import setupHandler from '../handlers/setup.js';
 import setupWebhookHandler from '../handlers/setup-webhook.js';
@@ -11,6 +12,8 @@ import premiumHqSuccessHandler from '../handlers/premium-hq-success.js';
 import contentBridgeConnectHandler from '../handlers/content-bridge-connect.js';
 import contentBridgeVerifyHandler from '../handlers/content-bridge-verify.js';
 import paymentPushHandler from '../handlers/payment-push.js';
+import payPingDataHandler from '../handlers/payping-data.js';
+import payPingTransactionsPage from '../handlers/payping-transactions-pwa.js';
 import affiliateWebHandler from '../handlers/affiliate-web.js';
 import affiliateAdminHandler from '../handlers/affiliate-admin.js';
 import affiliateAdminPageHandler from '../handlers/affiliate-admin-pwa.js';
@@ -37,12 +40,14 @@ const routes = new Map([
   ['content-bridge-connect', contentBridgeConnectHandler],
   ['content-bridge-verify', contentBridgeVerifyHandler],
   ['payment-push', paymentPushHandler],
+  ['payping-data', payPingDataHandler],
+  ['payping-transactions-page', payPingTransactionsPage],
   ['affiliate-web', affiliateWebHandler],
   ['affiliate-admin', affiliateAdminHandler],
   ['affiliate-admin-page', affiliateAdminPageHandler],
   ['affiliate-pwa-page', affiliatePwaPageHandler],
   ['heavy-limit', heavyLimitHandler],
-  ['payment-pwa-page', paymentPwaPageHandler],
+  ['payment-pwa-page', payPingHomePage],
   ['payment-pwa-manifest', paymentPwaManifestHandler],
   ['payment-pwa-sw', paymentPwaServiceWorkerHandler],
   ['payment-pwa-icon', paymentPwaIconHandler],

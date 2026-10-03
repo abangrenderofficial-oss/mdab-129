@@ -46,7 +46,7 @@ function rowToSubmission(row) {
   };
 }
 
-async function ensureSubmissionSchema() {
+export async function ensureSubmissionSchema() {
   if (!submissionSchemaPromise) {
     submissionSchemaPromise = (async () => {
       const db = await getSupportDb();

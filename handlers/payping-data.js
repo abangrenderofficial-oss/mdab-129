@@ -1,4 +1,4 @@
-import { getPayPingDashboard, listPayPingTransactions } from '../src/payping/dashboard.js';
+import { getPayPingDashboard, getPayPingTransactionDetail, listPayPingTransactions } from '../src/payping/dashboard.js';
 import { resolvePushDeviceOwner } from '../src/support/webpush-payment.js';
 
 function json(res,status,body){return res.status(status).json(body)}
@@ -25,6 +25,14 @@ export default async function handler(req,res){
   if(!auth)return json(res,401,{ok:false,error:'PAYPING_DEVICE_NOT_AUTHENTICATED'});
   try{
     const view=String(req.query?.view||'dashboard').trim().toLowerCase();
+    if(view==='transaction'){
+      const detail=await getPayPingTransactionDetail({
+        ...auth,
+        orderNumber:req.query?.order||'',
+      });
+      if(!detail)return json(res,404,{ok:false,error:'TRANSACTION_NOT_FOUND'});
+      return json(res,200,{ok:true,...auth,...detail});
+    }
     if(view==='transactions'){
       const transactions=await listPayPingTransactions({
         ...auth,

@@ -53,7 +53,7 @@ function configureVapid() {
   return true;
 }
 
-async function ensureSchema() {
+export async function ensureWebPushSchema() {
   if (!schemaPromise) {
     schemaPromise = (async () => {
       const db = await getSupportDb();
@@ -116,7 +116,7 @@ export async function createPushSetupCode(ownerUserId) {
     throw error;
   }
 
-  await ensureSchema();
+  await ensureWebPushSchema();
   const db = await getSupportDb();
   const environment = currentSupportEnvironment();
   const userId = String(ownerUserId || '').trim();
@@ -163,7 +163,7 @@ export async function registerPushSubscription(code, subscription) {
     throw error;
   }
 
-  await ensureSchema();
+  await ensureWebPushSchema();
   const db = await getSupportDb();
   const environment = currentSupportEnvironment();
   const now = new Date().toISOString();
@@ -227,7 +227,7 @@ export async function registerPushSubscription(code, subscription) {
 }
 
 async function activeSubscriptions() {
-  await ensureSchema();
+  await ensureWebPushSchema();
   const db = await getSupportDb();
   const result = await db.execute({
     sql: `SELECT endpoint_hash, endpoint, p256dh, auth
@@ -249,7 +249,7 @@ async function activeSubscriptions() {
 }
 
 async function subscriptionByDeviceToken(deviceToken) {
-  await ensureSchema();
+  await ensureWebPushSchema();
   const db = await getSupportDb();
   const result = await db.execute({
     sql: `SELECT endpoint_hash, endpoint, p256dh, auth
@@ -276,7 +276,7 @@ export async function resolvePushDeviceOwner(deviceToken) {
   const token = String(deviceToken || '').trim();
   if (!token) return null;
 
-  await ensureSchema();
+  await ensureWebPushSchema();
   const db = await getSupportDb();
   const result = await db.execute({
     sql: `SELECT owner_user_id
@@ -293,7 +293,7 @@ export async function getPushDeviceContext(deviceToken) {
   const token = String(deviceToken || '').trim();
   if (!token) return null;
 
-  await ensureSchema();
+  await ensureWebPushSchema();
   const db = await getSupportDb();
   const environment = currentSupportEnvironment();
   const tokenHash = deviceTokenHash(token);
@@ -383,7 +383,7 @@ export async function disconnectPushDevice(deviceToken) {
     throw error;
   }
 
-  await ensureSchema();
+  await ensureWebPushSchema();
   const db = await getSupportDb();
   const now = new Date().toISOString();
   const result = await db.execute({
@@ -470,7 +470,7 @@ async function sendPayload(target, payload, ttl = 86400) {
 }
 
 async function claimDelivery(deliveryKey, eHash) {
-  await ensureSchema();
+  await ensureWebPushSchema();
   const db = await getSupportDb();
   const environment = currentSupportEnvironment();
   const now = new Date().toISOString();

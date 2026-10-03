@@ -15,7 +15,7 @@ main{max-width:680px;margin:auto;padding:22px 0}.top{display:flex;align-items:ce
 .setupHead{display:flex;justify-content:space-between;align-items:center;gap:10px}.dot{width:9px;height:9px;border-radius:50%;background:#737786;display:inline-block;margin-right:7px}.dot.ok{background:#39d98a;box-shadow:0 0 0 4px rgba(57,217,138,.1)}.setupBody{margin-top:12px}.setupBody[hidden]{display:none}.setupSteps{font-size:12px;color:#aab0bd;line-height:1.55;padding-left:18px}
 input.code{width:100%;background:#0c0f16;border:1px solid #292e3b;border-radius:13px;padding:13px;color:#fff;font-size:18px;letter-spacing:4px;text-align:center;margin-top:8px}.btn{width:100%;border:0;border-radius:13px;padding:13px;color:#fff;font-weight:850;margin-top:9px;background:linear-gradient(135deg,#9b6bff,#6d28d9)}.btn.secondary{background:#202532}.btn:disabled{opacity:.45}.msg{font-size:12px;color:#abb2c0;margin-top:9px;min-height:16px}
 .loader,.empty{text-align:center;color:#8991a0;padding:24px}.error{padding:15px;border-radius:14px;background:rgba(255,70,70,.08);color:#ffc0c0}
-nav{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom));width:min(92%,560px);height:62px;background:rgba(17,19,28,.92);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.08);border-radius:19px;display:grid;grid-template-columns:repeat(3,1fr);padding:6px}nav a{text-decoration:none;color:#858c9c;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:800;border-radius:13px;gap:3px}nav a.active{color:#fff;background:rgba(126,77,255,.17)}nav b{font-size:18px}
+nav{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom));width:min(92%,560px);height:62px;background:rgba(17,19,28,.92);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.08);border-radius:19px;display:grid;grid-template-columns:repeat(4,1fr);padding:6px}nav a{text-decoration:none;color:#858c9c;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:800;border-radius:13px;gap:3px}nav a.active{color:#fff;background:rgba(126,77,255,.17)}nav b{font-size:18px}
 @media(min-width:620px){.grid{grid-template-columns:repeat(4,1fr)}}
 </style></head>
 <body><main>
@@ -30,7 +30,7 @@ nav{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(sa
 <div class="stat"><div class="k">Pending</div><div id="pendingCount" class="v">0</div></div>
 <div class="stat"><div class="k">All Transactions</div><div id="totalCount" class="v">0</div></div>
 </section>
-<section class="card"><div class="cardTitle">Quick Actions</div><div class="quick"><a class="primary" href="/ar-payment/transactions">Transactions</a><a href="/ar-payment/affiliate">Affiliate / Earn</a></div></section>
+<section class="card"><div class="cardTitle">Quick Actions</div><div class="quick"><a class="primary" href="/ar-payment/transactions">Transactions</a><a href="/ar-payment/affiliate">Affiliate / Earn</a><a href="/ar-payment/notifications">Notifications</a><a href="/ar-payment/settings">Settings / Account</a></div></section>
 <section class="card"><div class="line"><div class="cardTitle">Recent Payments</div><a href="/ar-payment/transactions" style="font-size:11px;color:#bfaeff;text-decoration:none">View all</a></div><div id="recent" class="list"></div></section>
 </div>
 
@@ -43,7 +43,7 @@ nav{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(sa
 </div>
 </section>
 </main>
-<nav><a class="active" href="/ar-payment/"><b>⌂</b>Home</a><a href="/ar-payment/transactions"><b>≡</b>Transactions</a><a href="/ar-payment/affiliate"><b>₿</b>Earn</a></nav>
+<nav><a class="active" href="/ar-payment/"><b>⌂</b>Home</a><a href="/ar-payment/transactions"><b>≡</b>Transactions</a><a href="/ar-payment/affiliate"><b>₿</b>Earn</a><a href="/ar-payment/settings"><b>⚙</b>Settings</a></nav>
 <script>
 const $=id=>document.getElementById(id);const deviceKey='ar_payment_device_token_v1';const token=()=>localStorage.getItem(deviceKey)||'';
 const money=v=>'RM'+(Number(v||0)||0).toFixed(2);const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));

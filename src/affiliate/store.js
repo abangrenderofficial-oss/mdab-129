@@ -444,12 +444,6 @@ export async function getAffiliateActivity({ userId, username = '', limit = 30 }
       createdAt: String(row.created_at || ''),
       updatedAt: String(row.updated_at || ''),
       paidAt: row.paid_at ? String(row.paid_at) : null,
-      payout: row.payout_method ? {
-        configured: true,
-        method: String(row.payout_method || ''),
-        displayHint: String(row.payout_display_hint || ''),
-        details: decryptPayoutDetails(row.payout_details_ciphertext),
-      } : { configured: false },
     })),
   };
 }
@@ -612,6 +606,12 @@ export async function getAffiliateAdminDashboard({ limit = 50 } = {}) {
       createdAt: String(row.created_at || ''),
       updatedAt: String(row.updated_at || ''),
       paidAt: row.paid_at ? String(row.paid_at) : null,
+      payout: row.payout_method ? {
+        configured: true,
+        method: String(row.payout_method || ''),
+        displayHint: String(row.payout_display_hint || ''),
+        details: decryptPayoutDetails(row.payout_details_ciphertext),
+      } : { configured: false },
     })),
   };
 }

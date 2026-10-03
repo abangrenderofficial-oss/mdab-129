@@ -23,8 +23,8 @@ for (const page of pages) {
   must(source, 'top:calc(env(safe-area-inset-top,0px) + 18px);height:1px;background:rgba(255,255,255,.06)', page);
   must(source, 'position:fixed;top:calc(env(safe-area-inset-top,0px) + 19px)', page);
   must(source, 'overflow-y:auto;-webkit-overflow-scrolling:touch', page);
-  must(source, 'padding-right:calc(18px + env(safe-area-inset-right))', page);
-  must(source, 'padding-left:calc(18px + env(safe-area-inset-left))', page);
+  must(source, 'left:calc(18px + env(safe-area-inset-left))', page);
+  must(source, 'right:calc(18px + env(safe-area-inset-right))', page);
   must(source, '.title{font-size:24px;line-height:1.08}', page);
 }
 

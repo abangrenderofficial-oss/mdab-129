@@ -105,8 +105,8 @@ async function validateSupportMonitorAccess(message = {}) {
     return { ok: false, chatId, userId };
   }
 
-  if (!isResetAdmin(userId) && !(await isGroupAdmin(chatId, userId))) {
-    await sendMessage(chatId, '❌ Hanya admin boleh buka Support Monitor.').catch(() => {});
+  if (!isResetAdmin(userId)) {
+    await sendMessage(chatId, '❌ Hanya owner bot boleh buka Support Monitor.').catch(() => {});
     return { ok: false, chatId, userId };
   }
 

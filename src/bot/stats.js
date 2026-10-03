@@ -296,8 +296,8 @@ export async function handleTotalUserCommand(message, context = {}) {
     return;
   }
 
-  if (!(await isGroupAdmin(chatId, userId))) {
-    await sendMessage(chatId, '❌ Hanya admin group boleh guna /totaluser.');
+  if (String(process.env.BOT_OWNER_ID || '').trim() !== String(userId || '')) {
+    await sendMessage(chatId, '❌ Hanya owner bot boleh guna /totaluser.');
     return;
   }
 

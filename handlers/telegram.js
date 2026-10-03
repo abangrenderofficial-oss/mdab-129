@@ -1,5 +1,5 @@
 import { detectPlatform, extractFirstUrl } from '../src/platform.js';
-import { sendMessage } from '../src/telegram.js';
+import { sendMessage, telegram } from '../src/telegram.js';
 import { beginUpdate, captureJobFence, isResetAdmin, resetGlobalFence, resetUserFence } from '../src/recovery.js';
 import { adminCommandMenuText, commandMenuText, startText } from '../src/bot/commands.js';
 import { handleConnectCommand, processAuditDelete, setMirrorWebhook } from '../src/bot/audit.js';
@@ -71,6 +71,51 @@ function commandFromMessage(message) {
 function startPayload(message) {
   const parts = String(message?.text || '').trim().split(/\s+/);
   return parts[0]?.toLowerCase().startsWith('/start') ? String(parts[1] || '').trim().toLowerCase() : '';
+}
+
+function isGroupChat(chatType = '') {
+  return chatType === 'group' || chatType === 'supergroup';
+}
+
+function looksLikeGroupBotUse(message = {}) {
+  const text = String(message?.text || message?.caption || '').trim();
+  const command = commandFromMessage(message);
+  if (command.startsWith('/')) return true;
+  if (extractFirstUrl(text)) return true;
+  return Boolean(
+    message?.video
+    || message?.photo
+    || message?.document
+    || message?.audio
+    || message?.voice
+    || message?.animation,
+  );
+}
+
+async function rejectNonOwnerGroupMessage(message = {}) {
+  if (!isGroupChat(message?.chat?.type)) return false;
+  const userId = message?.from?.id;
+  if (!userId || isResetAdmin(userId)) return false;
+  if (!looksLikeGroupBotUse(message)) return false;
+
+  await sendMessage(
+    message.chat.id,
+    '❌ Bot ini tidak boleh digunakan dalam group. Sila guna private chat bot.',
+  ).catch(() => {});
+  return true;
+}
+
+async function rejectNonOwnerGroupCallback(callbackQuery = {}) {
+  if (!isGroupChat(callbackQuery?.message?.chat?.type)) return false;
+  const userId = callbackQuery?.from?.id;
+  if (!userId || isResetAdmin(userId)) return false;
+
+  await telegram('answerCallbackQuery', {
+    callback_query_id: callbackQuery.id,
+    text: 'Hanya owner bot boleh guna fungsi bot dalam group.',
+    show_alert: true,
+  }).catch(() => {});
+  return true;
 }
 
 async function processMessage(message, context) {
@@ -175,6 +220,13 @@ export default async function handler(req, res) {
     if (actorChatType === 'private' && actor?.id) {
       await recordUsage(actor.id);
       await trackSupportMonitorActor(actor, actorChatType);
+    }
+
+    if (message && await rejectNonOwnerGroupMessage(message)) {
+      return json(res, 200, { ok: true, ignored: 'group_owner_only' });
+    }
+    if (callbackQuery && await rejectNonOwnerGroupCallback(callbackQuery)) {
+      return json(res, 200, { ok: true, ignored: 'group_owner_only' });
     }
 
     const command = commandFromMessage(message);

@@ -189,10 +189,19 @@ export async function processAuditDelete(callbackQuery) {
   const chatType = callbackQuery?.message?.chat?.type;
   if (!chatId || !messageId) return true;
 
+  if (['group', 'supergroup'].includes(chatType) && !isResetAdmin(userId)) {
+    await telegram('answerCallbackQuery', {
+      callback_query_id: callbackQuery.id,
+      text: 'Hanya owner bot boleh delete rekod ini.',
+      show_alert: false,
+    }).catch(() => {});
+    return true;
+  }
+
   if (['group', 'supergroup'].includes(chatType) && !(await isGroupAdmin(chatId, userId))) {
     await telegram('answerCallbackQuery', {
       callback_query_id: callbackQuery.id,
-      text: 'Hanya admin group boleh delete rekod ini.',
+      text: 'Owner bot mesti juga menjadi admin group ini.',
       show_alert: false,
     }).catch(() => {});
     return true;

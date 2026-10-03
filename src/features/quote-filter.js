@@ -91,8 +91,13 @@ export async function processQuoteFilterCallback(callbackQuery = {}) {
     return true;
   }
 
+  if (!isResetAdmin(userId)) {
+    await answerCallback(callbackQuery, 'Hanya owner bot boleh Approve / Reject.', true);
+    return true;
+  }
+
   if (!(await isGroupAdmin(chatId, userId))) {
-    await answerCallback(callbackQuery, 'Hanya admin group boleh Approve / Reject.', true);
+    await answerCallback(callbackQuery, 'Owner bot mesti juga menjadi admin group ini.', true);
     return true;
   }
 

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { sendMessage, sendSupportPromotionToChannel, telegram } from '../telegram.js';
-import { dailyForcePremiumSupportText, supportCampaignText, supportMenuKeyboard } from '../features/support.js';
+import { dailyForcePremiumChannelSupportText, supportCampaignText, supportMenuKeyboard } from '../features/support.js';
 import { FRIDAY_SUPPORT_MODE_OFF, getFridaySupportMode } from './friday-access.js';
 
 const STATS_FILE = String(process.env.STATS_FILE_PATH || '/data/bot-stats.json');
@@ -185,7 +185,7 @@ async function sendPrivatePromotion(userId) {
 async function sendChannelPromotion() {
   const username = await botUsername();
   const url = username ? `https://t.me/${username}?start=support` : '';
-  await sendSupportPromotionToChannel(channelUsername(), dailyForcePremiumSupportText(), {
+  await sendSupportPromotionToChannel(channelUsername(), dailyForcePremiumChannelSupportText(), {
     ...(url ? {
       reply_markup: {
         inline_keyboard: [[{ text: '❤️ Support Bot', url }]],

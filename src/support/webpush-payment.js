@@ -272,6 +272,23 @@ async function subscriptionByDeviceToken(deviceToken) {
   };
 }
 
+export async function resolvePushDeviceOwner(deviceToken) {
+  const token = String(deviceToken || '').trim();
+  if (!token) return null;
+
+  await ensureSchema();
+  const db = await getSupportDb();
+  const result = await db.execute({
+    sql: `SELECT owner_user_id
+          FROM support_push_subscriptions
+          WHERE environment = ? AND device_token_hash = ? AND disabled_at = ''
+          LIMIT 1`,
+    args: [currentSupportEnvironment(), deviceTokenHash(token)],
+  });
+  const userId = String(result.rows?.[0]?.owner_user_id || '').trim();
+  return /^\d+$/.test(userId) && Number(userId) > 0 ? userId : null;
+}
+
 async function disableSubscription(eHash) {
   const db = await getSupportDb();
   const now = new Date().toISOString();

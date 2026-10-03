@@ -108,6 +108,14 @@
       "destination": "/api/router?route=payping-transaction-detail-page"
     },
     {
+      "source": "/ar-payment/analytics",
+      "destination": "/api/router?route=payping-analytics-page"
+    },
+    {
+      "source": "/ar-payment/analytics/",
+      "destination": "/api/router?route=payping-analytics-page"
+    },
+    {
       "source": "/api/payping-settings",
       "destination": "/api/router?route=payping-settings"
     },

@@ -39,9 +39,10 @@ assert(sample.includes('⚠️ @badcase'),'anomaly user missing');
 assert(sample.includes('Daily Force: ON · Cycle 9'),'cycle status missing');
 assert(sample.length < 4000,'auto monitor message exceeds Telegram text limit');
 
-const [publisher,monitor,router,daily,bayarcash,paymentDetail,server]=await Promise.all([
+const [publisher,monitor,hooks,router,daily,bayarcash,paymentDetail,server]=await Promise.all([
   readFile('src/support/monitor-publisher.js','utf8'),
   readFile('src/support/monitor.js','utf8'),
+  readFile('src/support/monitor-hooks.js','utf8'),
   readFile('handlers/telegram.js','utf8'),
   readFile('src/support/daily-force.js','utf8'),
   readFile('handlers/bayarcash.js','utf8'),
@@ -55,8 +56,10 @@ must(publisher,"telegram('editMessageText'","edit same Telegram message");
 must(publisher,"mode: 'created'","create monitor fallback");
 must(publisher,"reason: 'unchanged'","unchanged dedupe");
 must(monitor,'return { recorded: true, changed, isNew: !previous }','meaningful user change signal');
-must(router,'if (monitorSeen?.changed)','user-change auto refresh');
-must(router,"refreshSupportMonitorMessage({ force: true })",'Daily Force mode refresh');
+must(hooks,'if (monitorSeen?.changed)','user-change auto refresh');
+must(hooks,"refreshSupportMonitorMessage({ force: true })",'Daily Force mode refresh');
+must(router,'trackSupportMonitorActor(actor, actorChatType)','thin-router monitor tracking');
+must(router,"refreshSupportMonitorForMode('ON')",'thin-router Daily Force refresh');
 must(daily,'refresh after Daily Force success failed','usage-success refresh');
 must(bayarcash,'refresh after paid support failed','payment-success refresh');
 must(paymentDetail,'initial auto monitor failed','connect-time refresh');

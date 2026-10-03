@@ -88,7 +88,7 @@ must(page,'Monthly Revenue','monthly analytics UI');
 must(page,'Top Supporters','top supporters UI');
 must(page,'Support Tier Breakdown','tier breakdown UI');
 must(page,'Export CSV','CSV export UI');
-must(page,"if(/^[=+\\-@]/.test(s))", 'CSV formula injection guard');
+must(page,"if(/^[=+@-]/.test(s))", 'CSV formula injection guard');
 must(home,'analyticsQuick','owner home analytics link');
 must(settings,'analyticsLink','owner settings analytics link');
 must(server,"['/ar-payment/analytics', payPingAnalyticsPage]",'Node analytics route');

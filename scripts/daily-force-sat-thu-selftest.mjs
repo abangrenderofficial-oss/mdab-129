@@ -39,7 +39,7 @@ must(monitor,"dailyState = 'PAUSED_FRIDAY'",'monitor Friday state');
 must(publisher,'Daily Force: ON · PAUSED FRIDAY','auto monitor Friday heading');
 must(audit,'Daily Force: PAUSED FRIDAY','USER RECORD Friday status');
 must(paymentDetail,'PAUSED FRIDAY','Payment Detail Friday status');
-must(menu,'Persistent Sabtu–Khamis','admin menu schedule');
+must(menu,'persistent Sabtu–Khamis','admin menu schedule');
 
 console.log('DAILY_FORCE_SAT_THU_SELFTEST_OK',JSON.stringify({
   thursday:malaysiaSupportSchedule(thu),

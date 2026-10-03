@@ -119,12 +119,24 @@ export async function ensureSupportSchema() {
           paid_at TEXT,
           PRIMARY KEY (environment, request_id)
         )`,
+        `CREATE TABLE IF NOT EXISTS payping_daily_stats (
+          environment TEXT NOT NULL,
+          local_date TEXT NOT NULL,
+          scope_type TEXT NOT NULL,
+          scope_user_id TEXT NOT NULL,
+          received_cents INTEGER NOT NULL DEFAULT 0,
+          successful_count INTEGER NOT NULL DEFAULT 0,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (environment, local_date, scope_type, scope_user_id)
+        )`,
         'CREATE INDEX IF NOT EXISTS idx_affiliate_profiles_referrer ON affiliate_profiles(environment, referred_by_user_id)',
         'CREATE INDEX IF NOT EXISTS idx_affiliate_commissions_referrer ON affiliate_commissions(environment, referrer_user_id, status)',
         'CREATE INDEX IF NOT EXISTS idx_affiliate_commissions_referred ON affiliate_commissions(environment, referred_user_id)',
         'CREATE INDEX IF NOT EXISTS idx_affiliate_withdrawals_user ON affiliate_withdrawals(environment, telegram_user_id, status)',
         'CREATE INDEX IF NOT EXISTS idx_support_orders_user ON support_orders(environment, telegram_user_id)',
         'CREATE INDEX IF NOT EXISTS idx_support_orders_status ON support_orders(environment, status)',
+        'CREATE INDEX IF NOT EXISTS idx_support_orders_paid_at ON support_orders(environment, status, paid_at)',
+        'CREATE INDEX IF NOT EXISTS idx_support_orders_user_paid_at ON support_orders(environment, telegram_user_id, status, paid_at)',
         'CREATE INDEX IF NOT EXISTS idx_support_transactions_order ON support_transactions(environment, order_number)',
       ], 'write');
       return true;

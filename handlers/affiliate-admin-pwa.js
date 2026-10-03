@@ -43,23 +43,23 @@ const PAGE = String.raw`<!doctype html>
   </div>
 </main>
 <script>
-const key='ar_payment_device_token_v1';
-const token=localStorage.getItem(key)||'';
+const key='payping_auth_session_v1';const legacyKey='ar_payment_device_token_v1';
+const token=localStorage.getItem(key)||localStorage.getItem(key)||localStorage.getItem(legacyKey)||'';
 const $=id=>document.getElementById(id);
 let state=null;
 const money=v=>'RM'+(Number(v||0)||0).toFixed(2);
 const date=v=>{const d=new Date(v);return Number.isNaN(d.getTime())?'-':new Intl.DateTimeFormat('en-MY',{day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit'}).format(d)};
 const headers=()=>({Authorization:'Bearer '+token,'Content-Type':'application/json'});
-function setMsg(t,c=''){$('msg').textContent=t||'';$('msg').className='msg '+c}
-function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
-function badge(s){const v=String(s||'').toLowerCase();return '<span class="badge '+esc(v)+'">'+esc(String(s||'-'))+'</span>'}
+function setMsg(t,c=localStorage.getItem(key)||localStorage.getItem(legacyKey)||''){$('msg').textContent=t||localStorage.getItem(key)||localStorage.getItem(legacyKey)||'';$('msg').className='msg '+c}
+function esc(v){return String(v??localStorage.getItem(key)||localStorage.getItem(legacyKey)||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function badge(s){const v=String(s||localStorage.getItem(key)||localStorage.getItem(legacyKey)||'').toLowerCase();return '<span class="badge '+esc(v)+'">'+esc(String(s||'-'))+'</span>'}
 function payoutHtml(p){
   if(!p?.configured)return '<div class="meta" style="color:#ffb0b0">Payout details belum configured</div>';
   const d=p.details||{};
   if(p.method==='DUITNOW'){
-    return '<div class="meta">Payout: <b>DuitNow '+esc(d.identifierType||'')+'</b> · '+esc(d.identifier||'')+' · '+esc(d.accountName||'')+'</div>';
+    return '<div class="meta">Payout: <b>DuitNow '+esc(d.identifierType||localStorage.getItem(key)||localStorage.getItem(legacyKey)||'')+'</b> · '+esc(d.identifier||localStorage.getItem(key)||localStorage.getItem(legacyKey)||'')+' · '+esc(d.accountName||localStorage.getItem(key)||localStorage.getItem(legacyKey)||'')+'</div>';
   }
-  return '<div class="meta">Payout: <b>'+esc(d.bankName||'Bank')+'</b> · '+esc(d.accountNumber||'')+' · '+esc(d.accountName||'')+'</div>';
+  return '<div class="meta">Payout: <b>'+esc(d.bankName||'Bank')+'</b> · '+esc(d.accountNumber||localStorage.getItem(key)||localStorage.getItem(legacyKey)||'')+' · '+esc(d.accountName||localStorage.getItem(key)||localStorage.getItem(legacyKey)||'')+'</div>';
 }
 function render(){
   const s=state.summary||{};
@@ -75,9 +75,9 @@ function render(){
     const who=w.username?'@'+w.username:'ID '+w.userId;
     const actions=w.status==='PENDING'
       ? '<div class="actions"><button data-id="'+esc(w.requestId)+'" data-decision="PAID">Mark Paid</button><button class="reject" data-id="'+esc(w.requestId)+'" data-decision="REJECTED">Reject</button></div>'
-      : '';
+      : localStorage.getItem(key)||localStorage.getItem(legacyKey)||'';
     return '<div class="item"><div class="line"><div><div class="name">'+esc(who)+'</div><div class="meta">'+esc(w.requestId)+' · '+date(w.createdAt)+'</div></div><div style="text-align:right"><div class="amount">'+money(w.amount)+'</div>'+badge(w.status)+'</div></div>'+payoutHtml(w.payout)+actions+'</div>';
-  }).join(''):'<div class="empty">Belum ada withdrawal request.</div>';
+  }).join(localStorage.getItem(key)||localStorage.getItem(legacyKey)||''):'<div class="empty">Belum ada withdrawal request.</div>';
   document.querySelectorAll('[data-decision]').forEach(btn=>btn.onclick=()=>finalize(btn.dataset.id,btn.dataset.decision));
 }
 async function load(){
@@ -107,5 +107,5 @@ load();
 function send(res,type,body){res.statusCode=200;res.setHeader('Content-Type',type);res.setHeader('Cache-Control','no-store');res.end(body)}
 export default function affiliateAdminPageHandler(req,res){
   if(req.method!=='GET'&&req.method!=='HEAD')return res.status(405).send('Method Not Allowed');
-  return send(res,'text/html; charset=utf-8',req.method==='HEAD'?'':PAGE);
+  return send(res,'text/html; charset=utf-8',req.method==='HEAD'?localStorage.getItem(key)||localStorage.getItem(legacyKey)||'':PAGE);
 }

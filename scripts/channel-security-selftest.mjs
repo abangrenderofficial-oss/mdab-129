@@ -48,7 +48,7 @@ const [
   text('src/bot/audit.js'),
   text('src/features/quote-filter.js'),
   text('src/support/quote-filter.js'),
-  text('api/telegram.js'),
+  text('handlers/telegram.js'),
   text('src/bot/commands.js'),
   text('src/features/channel-reset.js'),
   text('src/bot/channel-policy.js'),
@@ -75,6 +75,7 @@ requireContains(channelPolicy, "purpose <> 'SUPPORT_PROMOTION'", 'channel reset 
 const productionFiles = [
   ...(await jsFilesUnder('src')),
   ...(await jsFilesUnder('api')),
+  ...(await jsFilesUnder('handlers')),
   path.join(repoRoot, 'server.js'),
 ];
 for (const file of productionFiles) {

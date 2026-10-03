@@ -44,6 +44,8 @@ jobs:
         run: node scripts/auto-support-monitor-selftest.mjs
       - name: Check Sat-Thu Daily Force schedule
         run: node scripts/daily-force-sat-thu-selftest.mjs
+      - name: Check Daily Force Premium HQ policy
+        run: node scripts/daily-force-premium-hq-selftest.mjs
       - name: Check gallery upload 200MB boundary
         run: node scripts/gallery-upload-limit-selftest.mjs
       - name: Check Premium HQ gallery isolation

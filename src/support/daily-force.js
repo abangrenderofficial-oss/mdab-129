@@ -1,12 +1,13 @@
 import { isResetAdmin } from '../recovery.js';
 import { sendMessage, telegram } from '../telegram.js';
 import { refreshSupportMonitorMessage } from './monitor-publisher.js';
-import { supportMenuKeyboard } from '../features/support.js';
+import { dailyForcePremiumSupportText, supportAmountKeyboard } from '../features/support.js';
 import { getActiveSupporterTitle } from './community-store.js';
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { malaysiaSupportSchedule } from './daily-force-schedule.js';
 
-const DAILY_FORCE_COPY = 'Minta support dulu utk guna bot ❤️';
+const DAILY_FORCE_COPY = 'Please support bot utk teruskan guna ❤️';
+const DAILY_FORCE_PROCESSING_COPY = '⏳ Premium+ HQ sedang diproses. Tunggu sampai siap dulu ya.';
 let schemaPromise = null;
 
 async function ensureSchema() {
@@ -19,6 +20,7 @@ async function ensureSchema() {
           enabled INTEGER NOT NULL DEFAULT 0,
           cycle_id INTEGER NOT NULL DEFAULT 1,
           updated_by TEXT NOT NULL DEFAULT '',
+          policy_version INTEGER NOT NULL DEFAULT 2,
           updated_at TEXT NOT NULL
         )`,
         `CREATE TABLE IF NOT EXISTS support_daily_force_usage (
@@ -42,6 +44,14 @@ async function ensureSchema() {
         );
       }
 
+      const refreshedModeColumns = await db.execute('PRAGMA table_info(support_daily_force_mode)');
+      const hasPolicyVersion = (refreshedModeColumns.rows || []).some((row) => String(row.name || '') === 'policy_version');
+      if (!hasPolicyVersion) {
+        await db.execute(
+          'ALTER TABLE support_daily_force_mode ADD COLUMN policy_version INTEGER NOT NULL DEFAULT 1',
+        );
+      }
+
       const usageColumns = await db.execute('PRAGMA table_info(support_daily_force_usage)');
       const hasSuccessCount = (usageColumns.rows || []).some((row) => String(row.name || '') === 'success_count');
       if (!hasSuccessCount) {
@@ -51,6 +61,37 @@ async function ensureSchema() {
         await db.execute(
           'UPDATE support_daily_force_usage SET success_count = 1 WHERE used_once = 1 AND success_count = 0',
         );
+      }
+
+      const environment = currentSupportEnvironment();
+      const policy = await db.execute({
+        sql: `SELECT cycle_id, policy_version
+              FROM support_daily_force_mode
+              WHERE environment = ?
+              LIMIT 1`,
+        args: [environment],
+      });
+      const policyRow = policy.rows?.[0];
+      if (policyRow && Number(policyRow.policy_version || 1) < 2) {
+        const cycleId = Math.max(1, Number(policyRow.cycle_id || 1));
+        const now = new Date().toISOString();
+        await db.execute({
+          sql: `UPDATE support_daily_force_usage
+                SET used_once = 0,
+                    use_claimed = 0,
+                    prompt_sent = 0,
+                    success_count = 0,
+                    updated_at = ?
+                WHERE environment = ? AND cycle_id = ?`,
+          args: [now, environment, cycleId],
+        });
+        await db.execute({
+          sql: `UPDATE support_daily_force_mode
+                SET policy_version = 2, updated_at = ?
+                WHERE environment = ?`,
+          args: [now, environment],
+        });
+        console.log('[daily-force] migrated current cycle to Premium+ HQ success policy', { cycleId });
       }
       return true;
     })().catch((error) => {
@@ -65,7 +106,7 @@ async function modeState() {
   await ensureSchema();
   const db = await getSupportDb();
   const result = await db.execute({
-    sql: `SELECT enabled, cycle_id
+    sql: `SELECT enabled, cycle_id, policy_version
           FROM support_daily_force_mode
           WHERE environment = ?
           LIMIT 1`,
@@ -74,6 +115,7 @@ async function modeState() {
   return {
     enabled: Number(result.rows?.[0]?.enabled || 0) === 1,
     cycleId: Math.max(1, Number(result.rows?.[0]?.cycle_id || 1)),
+    policyVersion: Math.max(1, Number(result.rows?.[0]?.policy_version || 2)),
   };
 }
 
@@ -102,12 +144,13 @@ async function setDailyForceSupportEnabled(enabled, adminUserId = '') {
 
   await db.execute({
     sql: `INSERT INTO support_daily_force_mode (
-            environment, enabled, cycle_id, updated_by, updated_at
-          ) VALUES (?, ?, ?, ?, ?)
+            environment, enabled, cycle_id, updated_by, policy_version, updated_at
+          ) VALUES (?, ?, ?, ?, 2, ?)
           ON CONFLICT(environment) DO UPDATE SET
             enabled = excluded.enabled,
             cycle_id = excluded.cycle_id,
             updated_by = excluded.updated_by,
+            policy_version = 2,
             updated_at = excluded.updated_at`,
     args: [
       environment,
@@ -150,7 +193,15 @@ async function sendDailyForceLock(chatId) {
   await sendMessage(
     chatId,
     DAILY_FORCE_COPY,
-    { reply_markup: supportMenuKeyboard() },
+    { reply_markup: supportAmountKeyboard() },
+  );
+}
+
+async function sendDailyForceFirstSuccessPrompt(chatId) {
+  await sendMessage(
+    chatId,
+    dailyForcePremiumSupportText(),
+    { reply_markup: supportAmountKeyboard() },
   );
 }
 
@@ -175,6 +226,9 @@ async function accessContext(userId) {
   const state = await usageState(userId, mode.cycleId);
   return {
     gated: state.usedOnce || state.useClaimed,
+    gateReason: state.usedOnce
+      ? 'support_required'
+      : (state.useClaimed ? 'processing_first_use' : ''),
     ...mode,
     supporter: null,
     state,
@@ -257,15 +311,20 @@ export async function markDailyForceUsageSuccess(userId) {
     args: [environment, String(id), mode.cycleId, now],
   });
 
-  await db.execute({
+  const completed = await db.execute({
     sql: `UPDATE support_daily_force_usage
           SET used_once = 1,
               use_claimed = 0,
               success_count = COALESCE(success_count, 0) + 1,
               updated_at = ?
-          WHERE environment = ? AND telegram_user_id = ? AND cycle_id = ?`,
+          WHERE environment = ? AND telegram_user_id = ? AND cycle_id = ?
+            AND used_once = 0`,
     args: [now, environment, String(id), mode.cycleId],
   });
+
+  if (Number(completed.rowsAffected || 0) < 1) {
+    return false;
+  }
 
   const prompt = await db.execute({
     sql: `UPDATE support_daily_force_usage
@@ -276,7 +335,7 @@ export async function markDailyForceUsageSuccess(userId) {
   });
 
   if (Number(prompt.rowsAffected || 0) > 0) {
-    await sendDailyForceLock(id).catch((error) => {
+    await sendDailyForceFirstSuccessPrompt(id).catch((error) => {
       console.warn('[daily-force] first-use support prompt failed:', error?.message);
     });
   }
@@ -296,6 +355,11 @@ export async function enforceDailyForceSupportForMessage(message = {}) {
   const context = await accessContext(userId);
   if (!context.gated) return false;
 
+  if (context.gateReason === 'processing_first_use') {
+    await sendMessage(chatId, DAILY_FORCE_PROCESSING_COPY).catch(() => {});
+    return true;
+  }
+
   await sendDailyForceLock(chatId).catch(() => {});
   return true;
 }
@@ -309,12 +373,18 @@ export async function enforceDailyForceSupportForCallback(callbackQuery = {}) {
   const context = await accessContext(userId);
   if (!context.gated) return false;
 
+  const copy = context.gateReason === 'processing_first_use'
+    ? DAILY_FORCE_PROCESSING_COPY
+    : DAILY_FORCE_COPY;
   await telegram('answerCallbackQuery', {
     callback_query_id: callbackQuery?.id,
-    text: DAILY_FORCE_COPY,
+    text: copy,
     show_alert: true,
   }).catch(() => {});
-  await sendDailyForceLock(chatId).catch(() => {});
+
+  if (context.gateReason !== 'processing_first_use') {
+    await sendDailyForceLock(chatId).catch(() => {});
+  }
   return true;
 }
 
@@ -355,8 +425,8 @@ export async function handleDailyForceSupportCommand(message = {}) {
       : [
           '🔒 /forcesupportdaily aktif.',
           'Jadual: Sabtu sampai Khamis (Malaysia time).',
-          'Non-supporter dapat 1 successful use dahulu.',
-          'Selepas penggunaan pertama berjaya, bot terus minta support dengan pilihan amount.',
+          'Non-supporter dapat 1 successful Premium+ HQ dahulu.',
+          'Selepas Premium+ HQ pertama berjaya diproses, bot terus minta support dengan pilihan RM10/RM20/RM30/RM50/RM100.',
           'Cubaan seterusnya kekal locked sampai support.',
           'Jumaat Daily Force auto-pause; /forcesupport, /donatesupport atau /normalsupport akan handle.',
           'Sabtu ia sambung semula secara automatik.',

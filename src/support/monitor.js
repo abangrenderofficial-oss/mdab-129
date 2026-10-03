@@ -211,7 +211,8 @@ export async function getSupportMonitorUserStatus(userId) {
   let dailyState = 'OFF';
   if (supporter) dailyState = 'EXEMPT_SUPPORTER';
   else if (daily.enabled && daily.pausedForFriday) dailyState = 'PAUSED_FRIDAY';
-  else if (daily.enabled && daily.windowActive && (daily.usedOnce || daily.useClaimed)) dailyState = 'LOCKED';
+  else if (daily.enabled && daily.windowActive && daily.usedOnce) dailyState = 'LOCKED';
+  else if (daily.enabled && daily.windowActive && daily.useClaimed) dailyState = 'PROCESSING_FIRST_USE';
   else if (daily.enabled && daily.windowActive) dailyState = 'FREE_USE_AVAILABLE';
 
   return {

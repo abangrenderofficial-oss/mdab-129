@@ -1,7 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-import { markPremiumHqCompleted, recordUsage } from '../src/bot/stats.js';
-import { maybePromptChannelAfterSuccess } from '../src/features/channel-gate.js';
+import { recordPremiumHqSuccess } from '../src/support/premium-hq-completion.js';
 
 function json(res, status, body) {
   return res.status(status).json(body);
@@ -43,13 +42,17 @@ export default async function handler(req, res) {
     return json(res, 401, { ok: false, error: 'invalid_signature' });
   }
 
-  await recordUsage(userId, 'status_hq');
-  await markPremiumHqCompleted(userId);
-  const prompted = await maybePromptChannelAfterSuccess(chatId, userId);
+  const completion = await recordPremiumHqSuccess({
+    userId,
+    chatId,
+    label: 'premium hq heavy worker',
+  });
 
   return json(res, 200, {
     ok: true,
     premium_hq_completed: true,
-    channel_prompted: Boolean(prompted),
+    daily_force_marked: Boolean(completion?.dailyMarked),
+    friday_marked: Boolean(completion?.fridayMarked),
+    channel_prompted: Boolean(completion?.channelPrompted),
   });
 }

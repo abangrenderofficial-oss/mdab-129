@@ -1,13 +1,15 @@
 import { readFile } from 'node:fs/promises';
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { sendMessage, sendSupportPromotionToChannel, telegram } from '../telegram.js';
-import { supportCampaignText, supportMenuKeyboard } from '../features/support.js';
+import { dailyForcePremiumSupportText, supportCampaignText, supportMenuKeyboard } from '../features/support.js';
 import { FRIDAY_SUPPORT_MODE_OFF, getFridaySupportMode } from './friday-access.js';
 
 const STATS_FILE = String(process.env.STATS_FILE_PATH || '/data/bot-stats.json');
 const MALAYSIA_TIMEZONE = 'Asia/Kuala_Lumpur';
-const CHECK_INTERVAL_MS = 15 * 60 * 1000;
+const CHECK_INTERVAL_MS = 60 * 1000;
 const DEFAULT_PROMO_HOUR = 10;
+const DEFAULT_CHANNEL_PROMO_HOUR = 13;
+const DEFAULT_CHANNEL_PROMO_MINUTE = 20;
 const PRIVATE_SEND_DELAY_MS = 55;
 
 let schedulerTimer = null;
@@ -32,6 +34,25 @@ function promoHour() {
   return value;
 }
 
+function channelPromoHour() {
+  const value = Number(process.env.SUPPORT_CHANNEL_PROMO_HOUR_MY ?? DEFAULT_CHANNEL_PROMO_HOUR);
+  if (!Number.isInteger(value) || value < 0 || value > 23) return DEFAULT_CHANNEL_PROMO_HOUR;
+  return value;
+}
+
+function channelPromoMinute() {
+  const value = Number(process.env.SUPPORT_CHANNEL_PROMO_MINUTE_MY ?? DEFAULT_CHANNEL_PROMO_MINUTE);
+  if (!Number.isInteger(value) || value < 0 || value > 59) return DEFAULT_CHANNEL_PROMO_MINUTE;
+  return value;
+}
+
+function channelTimeReached(parts = {}) {
+  const hour = Number(parts.hour || 0);
+  const minute = Number(parts.minute || 0);
+  return hour > channelPromoHour()
+    || (hour === channelPromoHour() && minute >= channelPromoMinute());
+}
+
 function malaysiaParts(date = new Date()) {
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: MALAYSIA_TIMEZONE,
@@ -40,6 +61,7 @@ function malaysiaParts(date = new Date()) {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
+    minute: '2-digit',
     hourCycle: 'h23',
   });
   const parts = Object.fromEntries(formatter.formatToParts(date).map((part) => [part.type, part.value]));
@@ -49,7 +71,19 @@ function malaysiaParts(date = new Date()) {
     month: parts.month,
     day: parts.day,
     hour: Number(parts.hour || 0),
+    minute: Number(parts.minute || 0),
     dateKey: `${parts.year}-${parts.month}-${parts.day}`,
+  };
+}
+
+export function supportChannelScheduleState(date = new Date()) {
+  const parts = malaysiaParts(date);
+  return {
+    ...parts,
+    due: channelTimeReached(parts),
+    scheduledHour: channelPromoHour(),
+    scheduledMinute: channelPromoMinute(),
+    timezone: MALAYSIA_TIMEZONE,
   };
 }
 
@@ -151,7 +185,7 @@ async function sendPrivatePromotion(userId) {
 async function sendChannelPromotion() {
   const username = await botUsername();
   const url = username ? `https://t.me/${username}?start=support` : '';
-  await sendSupportPromotionToChannel(channelUsername(), supportCampaignText(), {
+  await sendSupportPromotionToChannel(channelUsername(), dailyForcePremiumSupportText(), {
     ...(url ? {
       reply_markup: {
         inline_keyboard: [[{ text: '❤️ Support Bot', url }]],
@@ -160,9 +194,9 @@ async function sendChannelPromotion() {
   });
 }
 
-async function deliverChannelFriday(dateKey) {
+async function deliverChannelDaily(dateKey) {
   const target = channelUsername();
-  const periodKey = `friday:${dateKey}`;
+  const periodKey = `channel-daily:${dateKey}`;
   if (await alreadySent('CHANNEL', target, periodKey)) return false;
   try {
     await sendChannelPromotion();
@@ -209,18 +243,34 @@ export async function runSupportPromotionCycle({ force = false } = {}) {
   if (cycleRunning) return { skipped: true, reason: 'already_running' };
   cycleRunning = true;
   try {
+    const parts = malaysiaParts();
     const mode = await getFridaySupportMode();
-    if (mode === FRIDAY_SUPPORT_MODE_OFF) {
-      return { skipped: true, reason: 'support_mode_off' };
+
+    let channelSent = false;
+    if (force || channelTimeReached(parts)) {
+      channelSent = await deliverChannelDaily(parts.dateKey);
     }
 
-    const parts = malaysiaParts();
-    if (!force && parts.weekday !== 'Fri') return { skipped: true, reason: 'not_friday', parts, mode };
-    if (!force && parts.hour < promoHour()) return { skipped: true, reason: 'too_early', parts, mode };
+    let privateResult = {
+      skipped: true,
+      reason: mode === FRIDAY_SUPPORT_MODE_OFF
+        ? 'support_mode_off'
+        : (parts.weekday !== 'Fri' ? 'not_friday' : 'too_early'),
+    };
 
-    const channelSent = await deliverChannelFriday(parts.dateKey);
-    const privateResult = await deliverPrivateFriday(parts);
-    return { skipped: false, channelSent, privateResult, parts, mode };
+    const privateReady = mode !== FRIDAY_SUPPORT_MODE_OFF
+      && (force || (parts.weekday === 'Fri' && parts.hour >= promoHour()));
+    if (privateReady) {
+      privateResult = await deliverPrivateFriday(parts);
+    }
+
+    return {
+      skipped: !channelSent && Boolean(privateResult?.skipped),
+      channelSent,
+      privateResult,
+      parts,
+      mode,
+    };
   } finally {
     cycleRunning = false;
   }
@@ -240,7 +290,8 @@ export function startSupportPromotionScheduler() {
   schedulerTimer.unref?.();
   console.log('[support-promo] scheduler started', {
     timezone: MALAYSIA_TIMEZONE,
-    fridayHour: promoHour(),
+    fridayPrivateHour: promoHour(),
+    channelDailyTime: `${String(channelPromoHour()).padStart(2, '0')}:${String(channelPromoMinute()).padStart(2, '0')}`,
     channel: channelUsername(),
     privateAudience: 'all-tracked-users',
   });

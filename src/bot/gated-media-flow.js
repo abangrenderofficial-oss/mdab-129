@@ -6,8 +6,8 @@ import { processStatusButton } from '../features/status-hq.js';
 import { processLiveWallpaperButton } from '../features/live-wallpaper.js';
 import { isGalleryVideoTooLarge, processUploadedPhoto, processUploadedVideo } from '../features/uploaded-media.js';
 import { TT_SLIDE_SPLIT, TT_SLIDE_VIDEO, processTikTokSlideshowChoice } from '../features/tiktok-slideshow.js';
-import { markPremiumHqCompleted, recordUsage } from './stats.js';
-import { maybePromptChannelAfterSuccess } from '../features/channel-gate.js';
+import { recordUsage } from './stats.js';
+import { recordPremiumHqSuccess } from '../support/premium-hq-completion.js';
 import {
   claimFridayUsageAttempt,
   enforceFridaySupportForCallback,
@@ -19,7 +19,6 @@ import {
   claimDailyForceUsageAttempt,
   enforceDailyForceSupportForCallback,
   enforceDailyForceSupportForMessage,
-  markDailyForceUsageSuccess,
   releaseDailyForceUsageAttempt,
 } from '../support/daily-force.js';
 
@@ -29,23 +28,13 @@ async function markFridaySuccess(userId, label) {
   });
 }
 
-async function recordPremiumHqSuccess(userId, chatId) {
-  await recordUsage(userId, 'status_hq');
-  await markPremiumHqCompleted(userId);
-  await markFridaySuccess(userId, 'premium hq');
-  await markDailyForceUsageSuccess(userId).catch((error) => {
-    console.warn('[daily-force] premium hq mark failed:', error?.message);
-  });
-  await maybePromptChannelAfterSuccess(chatId, userId);
-}
-
 export async function processHqLabBeforeMedia(message, context = {}) {
   if (await handleHqLabCommand(message, context)) return true;
   if (await processHqLabMessage(message, context)) return true;
   return false;
 }
 
-async function claimBoth(userId, messageOrCallback, isCallback = false) {
+async function claimBoth(userId, messageOrCallback, isCallback = false, { claimDaily = false } = {}) {
   const fridayClaimed = await claimFridayUsageAttempt(userId);
   if (!fridayClaimed) {
     const blocked = isCallback
@@ -54,14 +43,17 @@ async function claimBoth(userId, messageOrCallback, isCallback = false) {
     if (blocked) return { blocked: true, fridayClaimed: false, dailyClaimed: false };
   }
 
-  const dailyClaimed = await claimDailyForceUsageAttempt(userId);
-  if (!dailyClaimed) {
-    const blocked = isCallback
-      ? await enforceDailyForceSupportForCallback(messageOrCallback)
-      : await enforceDailyForceSupportForMessage(messageOrCallback);
-    if (blocked) {
-      if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
-      return { blocked: true, fridayClaimed, dailyClaimed: false };
+  let dailyClaimed = false;
+  if (claimDaily) {
+    dailyClaimed = await claimDailyForceUsageAttempt(userId);
+    if (!dailyClaimed) {
+      const blocked = isCallback
+        ? await enforceDailyForceSupportForCallback(messageOrCallback)
+        : await enforceDailyForceSupportForMessage(messageOrCallback);
+      if (blocked) {
+        if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+        return { blocked: true, fridayClaimed, dailyClaimed: false };
+      }
     }
   }
 
@@ -89,7 +81,7 @@ export async function processGalleryUploadWithSupport(message, context = {}) {
     return true;
   }
 
-  const claims = await claimBoth(userId, message, false);
+  const claims = await claimBoth(userId, message, false, { claimDaily: false });
   if (claims.blocked) return true;
 
   try {
@@ -99,7 +91,6 @@ export async function processGalleryUploadWithSupport(message, context = {}) {
 
     if (completed) {
       if (claims.fridayClaimed) await markFridaySuccess(userId, isPhoto ? 'gallery photo' : 'gallery video');
-      if (claims.dailyClaimed) await markDailyForceUsageSuccess(userId);
     } else {
       await releaseClaims(userId, claims.fridayClaimed, claims.dailyClaimed);
     }
@@ -125,22 +116,25 @@ export async function processMediaCallbackWithSupport(callbackQuery, context = {
     || action === TT_SLIDE_VIDEO;
   if (!isUsageCallback) return false;
 
-  const claims = await claimBoth(userId, callbackQuery, true);
+  const isPremiumHq = action.startsWith(MEDIA_STATUS_HQ);
+  const claims = await claimBoth(userId, callbackQuery, true, { claimDaily: isPremiumHq });
   if (claims.blocked) return true;
 
   if (await processStatusAndroidButton(callbackQuery, context)) {
     if (action.startsWith(MEDIA_STATUS_HQ_ANDROID)) {
       await recordUsage(userId, 'status_hq');
       await markFridaySuccess(userId, 'android status');
-      await markDailyForceUsageSuccess(userId).catch(() => {});
     }
     return true;
   }
 
   const premiumResult = await processStatusButton(callbackQuery, context);
   if (premiumResult) {
-    if (action.startsWith(MEDIA_STATUS_HQ) && premiumResult?.premiumVideoCompleted) {
-      await recordPremiumHqSuccess(userId, chatId);
+    if (isPremiumHq && premiumResult?.premiumHqCompleted) {
+      await recordPremiumHqSuccess({ userId, chatId, label: 'premium hq callback' });
+    } else if (isPremiumHq && premiumResult?.premiumVideoDispatched) {
+      // Keep the Friday/Daily claims until the heavy worker completion callback
+      // confirms the Premium+ HQ media was actually delivered.
     } else {
       await releaseClaims(userId, claims.fridayClaimed, claims.dailyClaimed);
     }
@@ -151,7 +145,6 @@ export async function processMediaCallbackWithSupport(callbackQuery, context = {
     if (action.startsWith(MEDIA_LIVE_WALLPAPER)) {
       await recordUsage(userId, 'live_wallpaper');
       await markFridaySuccess(userId, 'live wallpaper');
-      await markDailyForceUsageSuccess(userId).catch(() => {});
     }
     return true;
   }
@@ -159,7 +152,6 @@ export async function processMediaCallbackWithSupport(callbackQuery, context = {
   if (await processTikTokSlideshowChoice(callbackQuery, context)) {
     await recordUsage(userId, 'download');
     await markFridaySuccess(userId, 'slideshow');
-    await markDailyForceUsageSuccess(userId).catch(() => {});
     return true;
   }
 

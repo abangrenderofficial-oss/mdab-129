@@ -14,6 +14,8 @@ import premiumHqSuccessHandler from './handlers/premium-hq-success.js';
 import contentBridgeConnectHandler from './handlers/content-bridge-connect.js';
 import contentBridgeVerifyHandler from './handlers/content-bridge-verify.js';
 import paymentPushHandler from './handlers/payment-push.js';
+import payPingDataHandler from './handlers/payping-data.js';
+import payPingTransactionsPage from './handlers/payping-transactions-pwa.js';
 import affiliateWebHandler from './handlers/affiliate-web.js';
 import affiliateAdminHandler from './handlers/affiliate-admin.js';
 import affiliateAdminPageHandler from './handlers/affiliate-admin-pwa.js';
@@ -48,6 +50,9 @@ const routes = new Map([
   ['/api/content-bridge/connect', contentBridgeConnectHandler],
   ['/api/content-bridge/verify', contentBridgeVerifyHandler],
   ['/api/payment-push', paymentPushHandler],
+  ['/api/payping-data', payPingDataHandler],
+  ['/ar-payment/transactions', payPingTransactionsPage],
+  ['/ar-payment/transactions/', payPingTransactionsPage],
   ['/api/affiliate-web', affiliateWebHandler],
   ['/api/affiliate-admin', affiliateAdminHandler],
   ['/ar-payment/affiliate/admin', affiliateAdminPageHandler],

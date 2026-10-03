@@ -43,6 +43,9 @@ function dailyForceAuditLine(status) {
   if (daily.state === 'PAUSED_FRIDAY') {
     return `⏸ Daily Force: PAUSED FRIDAY · Cycle ${daily.cycleId} · Friday Support System handle`;
   }
+  if (daily.state === 'PROCESSING_FIRST_USE') {
+    return `⏳ Daily Force: PROCESSING FIRST USE · Cycle ${daily.cycleId}`;
+  }
   if (daily.state === 'LOCKED') {
     const anomaly = daily.anomaly ? ' ⚠️ ANOMALY' : '';
     return `🔒 Daily Force: LOCKED · Cycle ${daily.cycleId} · Success ${daily.successCount}${anomaly}`;

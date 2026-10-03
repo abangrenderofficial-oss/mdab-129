@@ -1,4 +1,4 @@
-const PAGE = String.raw\`<!doctype html>
+const PAGE = String.raw`<!doctype html>
 <html lang="ms">
 <head>
   <meta charset="utf-8">
@@ -93,7 +93,7 @@ async function finalize(id,decision){
 load();
 </script>
 </body>
-</html>\`;
+</html>`;
 
 function send(res,type,body){res.statusCode=200;res.setHeader('Content-Type',type);res.setHeader('Cache-Control','no-store');res.end(body)}
 export default function affiliateAdminPageHandler(req,res){

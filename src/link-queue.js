@@ -1,11 +1,11 @@
 import { enqueueUserHeavyJob } from './bot/user-job-queue.js';
 import { isJobFenceActive } from './recovery.js';
 import { sendMessage } from './telegram.js';
-import { markPremiumHqCompleted, recordUsage } from './bot/stats.js';
+import { recordUsage } from './bot/stats.js';
 import { processStandardDownload } from './features/downloader.js';
 import { processStatusFromLink } from './features/status-hq.js';
 import { sendTikTokSlideshowChoice } from './features/tiktok-slideshow.js';
-import { maybePromptChannelAfterSuccess } from './features/channel-gate.js';
+import { recordPremiumHqSuccess } from './support/premium-hq-completion.js';
 import {
   claimFridayUsageAttempt,
   enforceFridaySupportForMessage,
@@ -15,7 +15,6 @@ import {
 import {
   claimDailyForceUsageAttempt,
   enforceDailyForceSupportForMessage,
-  markDailyForceUsageSuccess,
   releaseDailyForceUsageAttempt,
 } from './support/daily-force.js';
 
@@ -32,16 +31,6 @@ async function markFridaySuccess(userId, label) {
   });
 }
 
-async function recordPremiumHqSuccess(userId, chatId) {
-  await recordUsage(userId, 'status_hq');
-  await markPremiumHqCompleted(userId);
-  await markFridaySuccess(userId, 'status link');
-  await markDailyForceUsageSuccess(userId).catch((error) => {
-    console.warn('[daily-force] status link mark failed:', error?.message);
-  });
-  await maybePromptChannelAfterSuccess(chatId, userId);
-}
-
 async function runLinkJob({ message, context, url, platform, statusMode, fridayClaimed = false, dailyClaimed = false }) {
   const chatId = message?.chat?.id;
   const userId = message?.from?.id;
@@ -54,7 +43,7 @@ async function runLinkJob({ message, context, url, platform, statusMode, fridayC
     if (statusMode) {
       const completed = await processStatusFromLink(chatId, url, platform, context.fence);
       if (completed) {
-        await recordPremiumHqSuccess(userId, chatId);
+        await recordPremiumHqSuccess({ userId, chatId, label: 'premium hq status link' });
       } else {
         if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
         if (dailyClaimed) await releaseDailyForceUsageAttempt(userId).catch(() => {});
@@ -70,9 +59,6 @@ async function runLinkJob({ message, context, url, platform, statusMode, fridayC
     } else if (hasDownloadableMedia(result)) {
       await recordUsage(userId, 'download');
       await markFridaySuccess(userId, 'download');
-      await markDailyForceUsageSuccess(userId).catch((error) => {
-        console.warn('[daily-force] download mark failed:', error?.message);
-      });
     } else {
       if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
       if (dailyClaimed) await releaseDailyForceUsageAttempt(userId).catch(() => {});
@@ -95,10 +81,13 @@ export async function scheduleLinkJob({ message, context = {}, url, platform, st
   const fridayClaimed = await claimFridayUsageAttempt(userId);
   if (!fridayClaimed && await enforceFridaySupportForMessage(message)) return true;
 
-  const dailyClaimed = await claimDailyForceUsageAttempt(userId);
-  if (!dailyClaimed && await enforceDailyForceSupportForMessage(message)) {
-    if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
-    return true;
+  let dailyClaimed = false;
+  if (statusMode) {
+    dailyClaimed = await claimDailyForceUsageAttempt(userId);
+    if (!dailyClaimed && await enforceDailyForceSupportForMessage(message)) {
+      if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
+      return true;
+    }
   }
 
   const queued = enqueueUserHeavyJob(

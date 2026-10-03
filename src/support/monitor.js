@@ -1,7 +1,6 @@
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { getActiveSupporterTitle } from './community-store.js';
 import { ensureSubmissionSchema } from './submissions.js';
-import { ensureSubmissionSchema } from './submissions.js';
 
 let schemaPromise = null;
 
@@ -18,7 +17,6 @@ async function ensureSchema() {
   await ensureSubmissionSchema();
   if (!schemaPromise) {
     schemaPromise = (async () => {
-      await ensureSubmissionSchema();
       const db = await getSupportDb();
       await db.batch([
         `CREATE TABLE IF NOT EXISTS support_user_monitor (

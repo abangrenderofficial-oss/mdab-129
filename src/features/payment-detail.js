@@ -79,6 +79,7 @@ function monitorIdentity(user = {}) {
 function monitorDailyLabel(user = {}) {
   const daily = user.dailyForce || {};
   if (user.support?.active) return 'EXEMPT';
+  if (daily.state === 'PAUSED_FRIDAY') return `PAUSED FRIDAY · cycle ${daily.cycleId} · Friday Support System handle`;
   if (daily.state === 'LOCKED') {
     return `LOCKED · cycle ${daily.cycleId} · success ${daily.successCount}${daily.anomaly ? ' ⚠️' : ''}`;
   }
@@ -145,7 +146,11 @@ export async function handleSupportMonitorCommand(message = {}) {
       `🔒 Locked Daily Force: ${report.locked.length}`,
       `⚠️ Cycle anomaly (>1 success): ${report.anomalies.length}`,
       report.dailyForceEnabled
-        ? `Daily Force: ON · Cycle ${report.cycleId}`
+        ? (
+            report.dailyForcePausedForFriday
+              ? `Daily Force: ON · PAUSED FRIDAY · Cycle ${report.cycleId}`
+              : `Daily Force: ON · Sabtu–Khamis · Cycle ${report.cycleId}`
+          )
         : 'Daily Force: OFF',
       '',
       'Semak seorang user: /supportcheck <TelegramID>',

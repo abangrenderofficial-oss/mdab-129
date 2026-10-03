@@ -42,6 +42,8 @@ jobs:
         run: node scripts/support-monitor-selftest.mjs
       - name: Check auto Support Monitor message
         run: node scripts/auto-support-monitor-selftest.mjs
+      - name: Check Sat-Thu Daily Force schedule
+        run: node scripts/daily-force-sat-thu-selftest.mjs
       - name: Check gallery upload 200MB boundary
         run: node scripts/gallery-upload-limit-selftest.mjs
       - name: Check Premium HQ gallery isolation

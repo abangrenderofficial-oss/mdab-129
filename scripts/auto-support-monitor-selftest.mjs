@@ -36,7 +36,7 @@ assert(sample.includes('✅ ACTIVE SUPPORTERS'),'supported section missing');
 assert(sample.includes('@supporter'),'supported user missing');
 assert(sample.includes('🔒 @locked'),'locked user missing');
 assert(sample.includes('⚠️ @badcase'),'anomaly user missing');
-assert(sample.includes('Daily Force: ON · Cycle 9'),'cycle status missing');
+assert(sample.includes('Daily Force: ON · Sabtu–Khamis · Cycle 9'),'cycle status missing');
 assert(sample.length < 4000,'auto monitor message exceeds Telegram text limit');
 
 const [publisher,monitor,hooks,router,daily,bayarcash,paymentDetail,server]=await Promise.all([

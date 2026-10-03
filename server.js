@@ -2,6 +2,7 @@ import http from 'node:http';
 import { URL } from 'node:url';
 
 import healthHandler from './handlers/health.js';
+import payPingHomePage from './handlers/payping-home-pwa.js';
 import telegramHandler from './handlers/telegram.js';
 import setupHandler from './handlers/setup.js';
 import setupWebhookHandler from './handlers/setup-webhook.js';
@@ -59,8 +60,8 @@ const routes = new Map([
   ['/ar-payment/affiliate/admin/', affiliateAdminPageHandler],
   ['/ar-payment/affiliate', affiliatePwaPageHandler],
   ['/ar-payment/affiliate/', affiliatePwaPageHandler],
-  ['/ar-payment', paymentPwaPageHandler],
-  ['/ar-payment/', paymentPwaPageHandler],
+  ['/ar-payment', payPingHomePage],
+  ['/ar-payment/', payPingHomePage],
   ['/ar-payment/manifest.webmanifest', paymentPwaManifestHandler],
   ['/ar-payment/payping.webmanifest', paymentPwaManifestHandler],
   ['/ar-payment/payping-v4.webmanifest', paymentPwaManifestHandler],

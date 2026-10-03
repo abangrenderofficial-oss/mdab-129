@@ -61,6 +61,9 @@ function unsupportedLine(user = {}) {
   if (daily.state === 'PAUSED_FRIDAY') {
     return `⏸ ${identity(user)} · ID ${user.userId} · FRIDAY MODE`;
   }
+  if (daily.state === 'PROCESSING_FIRST_USE') {
+    return `⏳ ${identity(user)} · ID ${user.userId} · PROCESSING FIRST USE · cycle ${daily.cycleId}`;
+  }
   if (daily.state === 'FREE_USE_AVAILABLE') {
     return `❌ ${identity(user)} · ID ${user.userId} · FREE 1x available · cycle ${daily.cycleId}`;
   }

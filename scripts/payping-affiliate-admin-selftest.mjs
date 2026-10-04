@@ -13,8 +13,8 @@ const [api, page, detailPage, store, server, router, vercel, affiliatePage] = aw
 
 const must=(src,marker,label)=>{if(!src.includes(marker))throw new Error(`${label} missing: ${marker}`)};
 
-must(api,'resolvePushDeviceOwner','owner device auth');
-must(api,'BOT_OWNER_ID','owner id guard');
+must(api,'resolvePayPingIdentity','PayPing owner auth');
+must(api,'identity.owner','owner role guard');
 must(api,"action === 'finalize_withdrawal'",'admin finalize action');
 must(api,"['PAID', 'REJECTED']",'payout decisions');
 must(api,'markAffiliateWithdrawal','shared payout ledger');

@@ -389,6 +389,8 @@ function followupText(row, recipient = '') {
     `Awak ada checkout ${amount} tapi belum confirmkan? Kalau awak suka guna bot ni and masih nak sama2 bantu bot kita semua kekal hidup 🥹🇲🇾`,
     '',
     'Awak boleh continue pembayaran.Terima kasih orang baik! ❤️✨',
+    '',
+    'Kalau ada masalah pembayaran pm @abangrenderofficial',
   ].join('\n');
 }
 

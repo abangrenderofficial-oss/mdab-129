@@ -9,6 +9,7 @@ const pages = [
   'handlers/payping-analytics-pwa.js',
   'handlers/affiliate-pwa.js',
   'handlers/affiliate-admin-pwa.js',
+  'handlers/affiliate-admin-detail-pwa.js',
 ];
 
 function must(source, needle, label) {
@@ -33,7 +34,7 @@ for (const page of pages) {
   must(source, '.title{font-size:24px;line-height:1.08}', page);
 }
 
-for (const page of pages.filter((p) => !p.endsWith('affiliate-admin-pwa.js'))) {
+for (const page of pages.filter((p) => !p.endsWith('affiliate-admin-pwa.js') && !p.endsWith('affiliate-admin-detail-pwa.js'))) {
   const source = await readFile(page, 'utf8');
   must(source, 'nav{z-index:1002;left:0;transform:none;bottom:0;width:100%', page);
   must(source, 'background:#07070d;border:0;border-radius:0;backdrop-filter:none;box-shadow:none', page);

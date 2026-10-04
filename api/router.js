@@ -25,6 +25,7 @@ import payPingAnalyticsPage from '../handlers/payping-analytics-pwa.js';
 import affiliateWebHandler from '../handlers/affiliate-web.js';
 import affiliateAdminHandler from '../handlers/affiliate-admin.js';
 import affiliateAdminPageHandler from '../handlers/affiliate-admin-pwa.js';
+import affiliateAdminDetailPageHandler from '../handlers/affiliate-admin-detail-pwa.js';
 import affiliatePwaPageHandler from '../handlers/affiliate-pwa.js';
 import heavyLimitHandler from '../handlers/heavy-limit.js';
 import {
@@ -61,6 +62,7 @@ const routes = new Map([
   ['affiliate-web', affiliateWebHandler],
   ['affiliate-admin', affiliateAdminHandler],
   ['affiliate-admin-page', affiliateAdminPageHandler],
+  ['affiliate-admin-detail-page', affiliateAdminDetailPageHandler],
   ['affiliate-pwa-page', affiliatePwaPageHandler],
   ['heavy-limit', heavyLimitHandler],
   ['payment-pwa-page', payPingHomePage],

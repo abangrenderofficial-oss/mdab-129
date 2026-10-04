@@ -1,5 +1,6 @@
 import {
   getAffiliateAdminDashboard,
+  getAffiliateAdminDetail,
   markAffiliateWithdrawal,
 } from '../src/affiliate/store.js';
 import { resolvePayPingIdentity } from '../src/payping/auth.js';
@@ -34,6 +35,14 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
+      const affiliateUserId = String(req.query?.affiliate || '').trim();
+      const requestId = String(req.query?.request || '').trim().toUpperCase();
+      if (affiliateUserId) {
+        return json(res, 200, {
+          ok: true,
+          detail: await getAffiliateAdminDetail({ userId: affiliateUserId, requestId }),
+        });
+      }
       return json(res, 200, { ok: true, ...(await getAffiliateAdminDashboard({ limit: 100 })) });
     }
 
@@ -53,6 +62,14 @@ export default async function handler(req, res) {
       }
 
       const result = await markAffiliateWithdrawal(requestId, decision);
+      if (!result.updated && result.reason === 'audit_mismatch') {
+        return json(res, 409, {
+          ok: false,
+          error: 'PAYOUT_AUDIT_MISMATCH',
+          message: 'Payout amount gagal reconciliation. Mark Paid dikunci.',
+          result,
+        });
+      }
       await notifyAffiliateUser(result);
       return json(res, 200, {
         ok: true,

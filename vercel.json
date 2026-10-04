@@ -88,6 +88,14 @@
       "destination": "/api/router?route=affiliate-admin-page"
     },
     {
+      "source": "/ar-payment/affiliate/admin/detail",
+      "destination": "/api/router?route=affiliate-admin-detail-page"
+    },
+    {
+      "source": "/ar-payment/affiliate/admin/detail/",
+      "destination": "/api/router?route=affiliate-admin-detail-page"
+    },
+    {
       "source": "/api/payping-auth",
       "destination": "/api/router?route=payping-auth"
     },

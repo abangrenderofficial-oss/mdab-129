@@ -43,6 +43,10 @@ must(push,"{ action: 'follow_up', title: 'Follow Up ✅' }",'follow-up notificat
 must(push,"{ action: 'dont_follow_up', title: 'Don’t Follow Up ❌' }",'dismiss notification action');
 must(push,"String(target.ownerUserId || '') === ownerId",'owner actionable notification');
 must(push,"String(target.ownerUserId || '') === referrerId",'affiliate actionable notification');
+must(push,"COALESCE(r.telegram_username, '') AS referrer_username",'affiliate source username lookup');
+must(push,"Affiliate: ${sourceLine}",'owner affiliate source notification label');
+must(push,"affiliateSource: isOwnerRecipient ? affiliateSource : ''",'affiliate source visible to owner only');
+must(push,"`@${referrerUsername}` : `ID ${referrerId}`",'affiliate source username/id fallback');
 
 must(callback,'unsuccessful callback notification failed','callback unsuccessful notification');
 must(supportReturn,'return unsuccessful notification failed','return unsuccessful notification');

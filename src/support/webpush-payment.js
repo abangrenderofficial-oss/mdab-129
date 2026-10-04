@@ -615,7 +615,8 @@ async function paymentRecord(orderNumber) {
                  o.status,
                  o.paid_at,
                  COALESCE(s.tier_label, '') AS tier_label,
-                 COALESCE(p.referred_by_user_id, '') AS referrer_user_id
+                 COALESCE(p.referred_by_user_id, '') AS referrer_user_id,
+                 COALESCE(r.telegram_username, '') AS referrer_username
           FROM support_orders o
           LEFT JOIN support_submissions s
             ON s.environment = o.environment
@@ -623,6 +624,9 @@ async function paymentRecord(orderNumber) {
           LEFT JOIN affiliate_profiles p
             ON p.environment = o.environment
            AND p.telegram_user_id = o.telegram_user_id
+          LEFT JOIN affiliate_profiles r
+            ON r.environment = p.environment
+           AND r.telegram_user_id = p.referred_by_user_id
           WHERE o.environment = ?
             AND o.order_number = ?
           LIMIT 1`,
@@ -655,14 +659,16 @@ function notificationPayload({
   orderNumber,
   successful,
   actionable = false,
+  affiliateSource = '',
 }) {
   const tierName = cleanText(tierLabel, 100)
     .replace(/^[^A-Za-z0-9]+/, '')
     .trim() || 'Supporter';
 
+  const sourceLine = cleanText(affiliateSource, 100);
   const payload = {
     title: `Payment Receive, ${tierName}`,
-    body: `ID ${userId} - RM ${amount} - ${successful ? 'successful 🎉' : 'unsuccessful 🥹'}`,
+    body: `ID ${userId} - RM ${amount} - ${successful ? 'successful 🎉' : 'unsuccessful 🥹'}${sourceLine ? `\nAffiliate: ${sourceLine}` : ''}`,
     tag: `payment-${cleanText(orderNumber, 100)}-${successful ? 'success' : 'unsuccessful'}`,
     url: `/ar-payment/transaction?order=${encodeURIComponent(String(orderNumber || ''))}`,
     orderNumber: String(orderNumber || ''),
@@ -713,6 +719,10 @@ export async function notifyWebPushSupportPayment(orderNumber) {
   const successful = status === 'PAID' && Boolean(record.paid_at);
   const ownerId = String(process.env.BOT_OWNER_ID || '').trim();
   const referrerId = String(record.referrer_user_id || '').trim();
+  const referrerUsername = cleanText(record.referrer_username, 64).replace(/^@+/, '');
+  const affiliateSource = referrerId
+    ? (referrerUsername ? `@${referrerUsername}` : `ID ${referrerId}`)
+    : '';
 
   const deliveryKey = `order:${order}:${successful ? 'PAID' : status}`;
   let sent = 0;
@@ -723,6 +733,7 @@ export async function notifyWebPushSupportPayment(orderNumber) {
       String(target.ownerUserId || '') === ownerId
       || (referrerId && String(target.ownerUserId || '') === referrerId)
     );
+    const isOwnerRecipient = Boolean(ownerId && String(target.ownerUserId || '') === ownerId);
     const payload = notificationPayload({
       userId,
       amount,
@@ -730,6 +741,7 @@ export async function notifyWebPushSupportPayment(orderNumber) {
       orderNumber: order,
       successful,
       actionable,
+      affiliateSource: isOwnerRecipient ? affiliateSource : '',
     });
     try {
       await sendPayload(target, payload);

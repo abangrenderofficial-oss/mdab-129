@@ -327,7 +327,9 @@ export async function reconcilePaymentFollowup(orderNumber) {
 
   const fresh = await orderContext(orderNumber);
   const orderStatus = String(fresh?.status || row.status || '');
-  if (!status?.paid && orderNumber) {
+  const terminalUnsuccessful = FINAL_ORDER_STATUSES.has(orderStatus.toUpperCase())
+    && orderStatus.toUpperCase() !== 'PAID';
+  if (!status?.paid && terminalUnsuccessful && orderNumber) {
     await notifyWebPushSupportPayment(orderNumber).catch((error) => {
       console.warn('[payment-followup] unsuccessful push notification failed:', error?.message);
     });

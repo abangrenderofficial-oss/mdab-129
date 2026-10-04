@@ -6,6 +6,13 @@ import { telegram } from '../telegram.js';
 
 const MALAYSIA_TIMEZONE = 'Asia/Kuala_Lumpur';
 const SETUP_CODE_TTL_MS = 10 * 60 * 1000;
+const UNSUCCESSFUL_PAYMENT_STATUSES = new Set([
+  'FAILED',
+  'CANCELLED',
+  'EXPIRED',
+  'INTENT_FAILED',
+  'AMOUNT_MISMATCH',
+]);
 let schemaPromise = null;
 let vapidConfigured = false;
 
@@ -713,6 +720,17 @@ export async function notifyWebPushSupportPayment(orderNumber) {
   const status = String(record.status || '').trim().toUpperCase();
   if (!status || status === 'CREATING') return { sent: 0, reason: 'not_ready' };
 
+  const successful = status === 'PAID' && Boolean(record.paid_at);
+  if (!successful && !UNSUCCESSFUL_PAYMENT_STATUSES.has(status)) {
+    return {
+      sent: 0,
+      failed: 0,
+      successful: false,
+      status,
+      reason: 'non_terminal_payment_status',
+    };
+  }
+
   const recipientIds = await notificationRecipients(record);
   const targets = await activeSubscriptionsForUsers(recipientIds);
   if (!targets.length) return { sent: 0, reason: 'no_scoped_subscribers', recipients: recipientIds };
@@ -720,7 +738,6 @@ export async function notifyWebPushSupportPayment(orderNumber) {
   const userId = String(record.telegram_user_id || '');
   const amount = (Number(record.amount_cents || 0) / 100).toFixed(2);
   const tierLabel = cleanText(record.tier_label, 100) || fallbackTier(record.amount_cents);
-  const successful = status === 'PAID' && Boolean(record.paid_at);
   const ownerId = String(process.env.BOT_OWNER_ID || '').trim();
   const referrerId = String(record.referrer_user_id || '').trim();
   const referrerUsername = cleanText(record.referrer_username, 64).replace(/^@+/, '');

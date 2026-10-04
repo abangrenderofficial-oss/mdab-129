@@ -119,6 +119,8 @@ must(followupModule,'Dah Bayar / Semak','review button');
 must(followupModule,'Tak Jadi','cancel button');
 must(followupModule,"keepPassiveAfterManual",'manual follow-up stays passive after cancel');
 must(followupModule,"manualUnsuccessfulFollowup",'manual follow-up for unsuccessful order');
+must(followupModule,'terminalUnsuccessful','pending reconciliation must not send unsuccessful push');
+must(followupModule,"orderStatus.toUpperCase() !== 'PAID'",'only terminal non-paid reconciliation may push unsuccessful');
 must(followupModule,'AFFILIATE_FOLLOWUP_COOLDOWN_MS = 8 * 60 * 60 * 1000','affiliate 8 hour cooldown');
 must(followupModule,'AFFILIATE_MAX_FOLLOWUPS = 2','affiliate two follow-up limit');
 must(followupModule,'support_affiliate_followups','affiliate follow-up tracking');

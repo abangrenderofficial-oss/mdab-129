@@ -616,7 +616,8 @@ async function paymentRecord(orderNumber) {
                  o.paid_at,
                  COALESCE(s.tier_label, '') AS tier_label,
                  COALESCE(p.referred_by_user_id, '') AS referrer_user_id,
-                 COALESCE(r.telegram_username, '') AS referrer_username
+                 COALESCE(r.telegram_username, '') AS referrer_username,
+                 COALESCE(a.email, '') AS referrer_email
           FROM support_orders o
           LEFT JOIN support_submissions s
             ON s.environment = o.environment
@@ -627,6 +628,9 @@ async function paymentRecord(orderNumber) {
           LEFT JOIN affiliate_profiles r
             ON r.environment = p.environment
            AND r.telegram_user_id = p.referred_by_user_id
+          LEFT JOIN payping_accounts a
+            ON a.telegram_user_id = p.referred_by_user_id
+           AND a.status = 'active'
           WHERE o.environment = ?
             AND o.order_number = ?
           LIMIT 1`,
@@ -668,7 +672,7 @@ function notificationPayload({
   const sourceLine = cleanText(affiliateSource, 100);
   const payload = {
     title: `Payment Receive, ${tierName}`,
-    body: `ID ${userId} - RM ${amount} - ${successful ? 'successful 🎉' : 'unsuccessful 🥹'}${sourceLine ? `\nAffiliate: ${sourceLine}` : ''}`,
+    body: `ID ${userId} - RM ${amount} - ${successful ? 'successful 🎉' : 'unsuccessful 🥹'}${sourceLine ? `\nvia ${sourceLine} 🫱🏻‍🫲🏼` : ''}`,
     tag: `payment-${cleanText(orderNumber, 100)}-${successful ? 'success' : 'unsuccessful'}`,
     url: `/ar-payment/transaction?order=${encodeURIComponent(String(orderNumber || ''))}`,
     orderNumber: String(orderNumber || ''),
@@ -720,8 +724,10 @@ export async function notifyWebPushSupportPayment(orderNumber) {
   const ownerId = String(process.env.BOT_OWNER_ID || '').trim();
   const referrerId = String(record.referrer_user_id || '').trim();
   const referrerUsername = cleanText(record.referrer_username, 64).replace(/^@+/, '');
+  const referrerEmail = cleanText(record.referrer_email, 160).toLowerCase();
+  const referrerEmailName = cleanText(referrerEmail.split('@')[0], 80);
   const affiliateSource = referrerId
-    ? (referrerUsername ? `@${referrerUsername}` : `ID ${referrerId}`)
+    ? (referrerUsername ? `@${referrerUsername}` : referrerEmailName)
     : '';
 
   const deliveryKey = `order:${order}:${successful ? 'PAID' : status}`;

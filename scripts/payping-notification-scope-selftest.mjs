@@ -44,9 +44,12 @@ must(push,"{ action: 'dont_follow_up', title: 'Don’t Follow Up ❌' }",'dismis
 must(push,"String(target.ownerUserId || '') === ownerId",'owner actionable notification');
 must(push,"String(target.ownerUserId || '') === referrerId",'affiliate actionable notification');
 must(push,"COALESCE(r.telegram_username, '') AS referrer_username",'affiliate source username lookup');
-must(push,"Affiliate: ${sourceLine}",'owner affiliate source notification label');
+must(push,"COALESCE(a.email, '') AS referrer_email",'affiliate source email fallback lookup');
+must(push,"LEFT JOIN payping_accounts a",'affiliate account lookup');
+must(push,"\\nvia ${sourceLine} 🫱🏻‍🫲🏼",'owner affiliate source notification line');
 must(push,"affiliateSource: isOwnerRecipient ? affiliateSource : ''",'affiliate source visible to owner only');
-must(push,"`@${referrerUsername}` : `ID ${referrerId}`",'affiliate source username/id fallback');
+must(push,"referrerEmail.split('@')[0]",'affiliate email local-part fallback');
+must(push,"`@${referrerUsername}` : referrerEmailName",'affiliate username/email fallback');
 
 must(callback,'unsuccessful callback notification failed','callback unsuccessful notification');
 must(supportReturn,'return unsuccessful notification failed','return unsuccessful notification');

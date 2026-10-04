@@ -40,6 +40,9 @@ function rowToSubmission(row) {
     state: String(row.state || ''),
     paymentUrl: String(row.payment_url || ''),
     paymentIntentId: String(row.payment_intent_id || ''),
+    checkoutOpenCount: Number(row.checkout_open_count || 0),
+    checkoutFirstOpenedAt: row.checkout_first_opened_at ? String(row.checkout_first_opened_at) : null,
+    checkoutLastOpenedAt: row.checkout_last_opened_at ? String(row.checkout_last_opened_at) : null,
     createdAt: String(row.created_at || ''),
     updatedAt: String(row.updated_at || ''),
     announcedAt: row.announced_at ? String(row.announced_at) : null,
@@ -64,6 +67,9 @@ export async function ensureSubmissionSchema() {
           state TEXT NOT NULL,
           payment_url TEXT NOT NULL DEFAULT '',
           payment_intent_id TEXT NOT NULL DEFAULT '',
+          checkout_open_count INTEGER NOT NULL DEFAULT 0,
+          checkout_first_opened_at TEXT,
+          checkout_last_opened_at TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           announced_at TEXT,
@@ -71,6 +77,16 @@ export async function ensureSubmissionSchema() {
         )`,
         'CREATE INDEX IF NOT EXISTS idx_support_submissions_user_state ON support_submissions(environment, telegram_user_id, state, updated_at)',
       ], 'write');
+
+      for (const statement of [
+        `ALTER TABLE support_submissions ADD COLUMN checkout_open_count INTEGER NOT NULL DEFAULT 0`,
+        `ALTER TABLE support_submissions ADD COLUMN checkout_first_opened_at TEXT`,
+        `ALTER TABLE support_submissions ADD COLUMN checkout_last_opened_at TEXT`,
+      ]) {
+        await db.execute(statement).catch((error) => {
+          if (!/duplicate column|already exists/i.test(String(error?.message || ''))) throw error;
+        });
+      }
       return true;
     })().catch((error) => {
       submissionSchemaPromise = null;
@@ -84,7 +100,9 @@ async function selectSubmission(db, environment, orderNumber) {
   const result = await db.execute({
     sql: `SELECT environment, order_number, telegram_user_id, telegram_username,
                  amount_cents, tier_key, tier_label, support_message, display_name,
-                 state, payment_url, payment_intent_id, created_at, updated_at, announced_at
+                 state, payment_url, payment_intent_id,
+                 checkout_open_count, checkout_first_opened_at, checkout_last_opened_at,
+                 created_at, updated_at, announced_at
           FROM support_submissions
           WHERE environment = ? AND order_number = ?
           LIMIT 1`,
@@ -150,7 +168,9 @@ export async function getActiveSupportSubmission(userId) {
   const result = await db.execute({
     sql: `SELECT environment, order_number, telegram_user_id, telegram_username,
                  amount_cents, tier_key, tier_label, support_message, display_name,
-                 state, payment_url, payment_intent_id, created_at, updated_at, announced_at
+                 state, payment_url, payment_intent_id,
+                 checkout_open_count, checkout_first_opened_at, checkout_last_opened_at,
+                 created_at, updated_at, announced_at
           FROM support_submissions
           WHERE environment = ? AND telegram_user_id = ?
             AND state IN ('AWAITING_MESSAGE', 'AWAITING_NAME', 'REVIEW')
@@ -176,7 +196,9 @@ export async function getRejectedSupportSubmission(userId) {
   const result = await db.execute({
     sql: `SELECT environment, order_number, telegram_user_id, telegram_username,
                  amount_cents, tier_key, tier_label, support_message, display_name,
-                 state, payment_url, payment_intent_id, created_at, updated_at, announced_at
+                 state, payment_url, payment_intent_id,
+                 checkout_open_count, checkout_first_opened_at, checkout_last_opened_at,
+                 created_at, updated_at, announced_at
           FROM support_submissions
           WHERE environment = ? AND telegram_user_id = ?
             AND state = 'REJECTED'
@@ -425,6 +447,23 @@ export async function markSupportSubmissionCheckout(orderNumber, paymentUrl = ''
       environment,
       String(orderNumber || ''),
     ],
+  });
+  return selectSubmission(db, environment, orderNumber);
+}
+
+export async function markSupportCheckoutOpened(orderNumber) {
+  await ensureSubmissionSchema();
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const now = new Date().toISOString();
+  await db.execute({
+    sql: `UPDATE support_submissions
+          SET checkout_open_count = COALESCE(checkout_open_count, 0) + 1,
+              checkout_first_opened_at = COALESCE(checkout_first_opened_at, ?),
+              checkout_last_opened_at = ?
+          WHERE environment = ? AND order_number = ?
+            AND payment_url <> ''`,
+    args: [now, now, environment, String(orderNumber || '')],
   });
   return selectSubmission(db, environment, orderNumber);
 }

@@ -48,6 +48,10 @@
       "destination": "/api/router?route=support-return"
     },
     {
+      "source": "/api/support-checkout",
+      "destination": "/api/router?route=support-checkout"
+    },
+    {
       "source": "/api/premium-hq-success",
       "destination": "/api/router?route=premium-hq-success"
     },

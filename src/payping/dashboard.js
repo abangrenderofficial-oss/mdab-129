@@ -303,6 +303,9 @@ export async function getPayPingTransactionDetail({
                  COALESCE(s.display_name, '') AS display_name,
                  COALESCE(s.state, '') AS submission_state,
                  COALESCE(s.announced_at, '') AS announced_at,
+                 COALESCE(s.checkout_open_count, 0) AS checkout_open_count,
+                 COALESCE(s.checkout_first_opened_at, '') AS checkout_first_opened_at,
+                 COALESCE(s.checkout_last_opened_at, '') AS checkout_last_opened_at,
                  COALESCE(f.state, '') AS followup_state
           FROM support_orders o
           LEFT JOIN support_submissions s
@@ -385,6 +388,10 @@ export async function getPayPingTransactionDetail({
       tierKey: String(row.tier_key || ''),
       supportMessage: String(row.support_message || ''),
       submissionState: String(row.submission_state || ''),
+      checkoutOpened: Number(row.checkout_open_count || 0) > 0,
+      checkoutOpenCount: Number(row.checkout_open_count || 0),
+      checkoutFirstOpenedAt: row.checkout_first_opened_at ? String(row.checkout_first_opened_at) : null,
+      checkoutLastOpenedAt: row.checkout_last_opened_at ? String(row.checkout_last_opened_at) : null,
       announcedAt: row.announced_at ? String(row.announced_at) : null,
     },
     callbacks,

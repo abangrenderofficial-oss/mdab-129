@@ -69,6 +69,9 @@ a,button,.btn,.quick a,.tab,.back,.link,.item,.tx{touch-action:manipulation}
 <div class="row"><span>Status Description</span><strong id="statusDescription">-</strong></div>
 <div class="row"><span>Payment Stage</span><strong id="paymentStage">-</strong></div>
 <div id="paymentIntentRow" class="row" hidden><span>Payment Intent ID</span><strong id="paymentIntentId" class="copy">-</strong></div>
+<div class="row"><span>Checkout Opened</span><strong id="checkoutOpened">No</strong></div>
+<div id="checkoutOpenCountRow" class="row" hidden><span>Open Count</span><strong id="checkoutOpenCount">0</strong></div>
+<div id="checkoutLastOpenedRow" class="row" hidden><span>Last Opened</span><strong id="checkoutLastOpened">-</strong></div>
 <div class="row"><span>Created</span><strong id="createdAt">-</strong></div>
 <div class="row"><span>Paid</span><strong id="paidAt">-</strong></div>
 </section>
@@ -134,7 +137,12 @@ async function followupAction(action){
 }
 function renderDetail(d){
  const t=d.transaction;currentOrder=t.orderNumber;$('orderTitle').textContent=t.orderNumber;$('amount').textContent=money(t.amount);$('tier').textContent=t.tierLabel||'Supporter';$('status').textContent=t.status||'-';$('status').className='badge '+String(t.status||'').toLowerCase();
- $('orderId').textContent=t.orderNumber;$('transactionId').textContent=t.transactionId||'-';$('gatewayStatus').textContent=t.gatewayStatus||'-';$('statusDescription').textContent=t.statusDescription||'-';$('paymentStage').textContent=stageLabel(d.followup?.stage||t.paymentStage||t.status);$('createdAt').textContent=date(t.createdAt);$('paidAt').textContent=date(t.paidAt);
+ $('orderId').textContent=t.orderNumber;$('transactionId').textContent=t.transactionId||'-';$('gatewayStatus').textContent=t.gatewayStatus||'-';$('statusDescription').textContent=t.statusDescription||'-';
+ const rawStage=stageLabel(d.followup?.stage||t.paymentStage||t.status);$('paymentStage').textContent=t.checkoutOpened&&rawStage==='CHECKOUT PENDING'?'CHECKOUT OPENED':rawStage;
+ $('checkoutOpened').textContent=t.checkoutOpened?'Yes ✅':'No';
+ $('checkoutOpenCountRow').hidden=!t.checkoutOpened;$('checkoutLastOpenedRow').hidden=!t.checkoutOpened;
+ $('checkoutOpenCount').textContent=String(t.checkoutOpenCount||0);$('checkoutLastOpened').textContent=date(t.checkoutLastOpenedAt);
+ $('createdAt').textContent=date(t.createdAt);$('paidAt').textContent=date(t.paidAt);
  $('displayName').textContent=t.displayName||'-';$('username').textContent=t.username?('@'+t.username):'-';$('userId').textContent=t.userId||'-';$('submissionState').textContent=t.submissionState||'-';
  const tgCode=String(d.followup?.telegramErrorCode||'');const tgDelivery=String(d.followup?.telegramDeliveryStatus||'');
  if(tgCode==='TELEGRAM_BOT_BLOCKED'){$('botStatusRow').hidden=false;$('botStatus').textContent='Bot Blocked';}

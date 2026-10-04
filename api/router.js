@@ -8,6 +8,7 @@ import diagnosticHandler from '../handlers/diagnostic.js';
 import statusDiagnosticHandler from '../handlers/status-diagnostic.js';
 import bayarcashHandler from '../handlers/bayarcash.js';
 import supportReturnHandler from '../handlers/support-return.js';
+import supportCheckoutHandler from '../handlers/support-checkout.js';
 import premiumHqSuccessHandler from '../handlers/premium-hq-success.js';
 import contentBridgeConnectHandler from '../handlers/content-bridge-connect.js';
 import contentBridgeVerifyHandler from '../handlers/content-bridge-verify.js';
@@ -45,6 +46,7 @@ const routes = new Map([
   ['status-diagnostic', statusDiagnosticHandler],
   ['bayarcash', bayarcashHandler],
   ['support-return', supportReturnHandler],
+  ['support-checkout', supportCheckoutHandler],
   ['premium-hq-success', premiumHqSuccessHandler],
   ['content-bridge-connect', contentBridgeConnectHandler],
   ['content-bridge-verify', contentBridgeVerifyHandler],

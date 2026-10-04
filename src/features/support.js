@@ -5,6 +5,7 @@ import {
   isBayarcashSandbox,
 } from '../payments/bayarcash.js';
 import { createPendingSupport, markSupportIntentCreated, markSupportIntentFailed } from '../support/store.js';
+import { createSupportCheckoutTrackingUrl } from '../support/checkout-tracking.js';
 import {
   activateSupportSubmissionAfterPayment,
   createSupportSubmission,
@@ -529,7 +530,17 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
     await markSupportIntentCreated(orderNumber, payment.paymentIntentId);
     await markSupportSubmissionCheckout(orderNumber, payment.url, payment.paymentIntentId);
 
-    const keyboard = [[{ text: `💳 Bayar RM${amount}`, url: payment.url }]];
+    let trackedPaymentUrl = payment.url;
+    try {
+      trackedPaymentUrl = createSupportCheckoutTrackingUrl({
+        publicBaseUrl: context.baseUrl,
+        orderNumber: payment.orderNumber,
+      });
+    } catch (trackingError) {
+      console.warn('[checkout-tracking] signed URL fallback:', trackingError?.code, trackingError?.message);
+    }
+
+    const keyboard = [[{ text: `💳 Bayar RM${amount}`, url: trackedPaymentUrl }]];
     if (payment.paymentIntentId) {
       keyboard.push([{
         text: '🔎 Check Status',

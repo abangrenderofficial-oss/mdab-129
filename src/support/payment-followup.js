@@ -797,13 +797,8 @@ export async function getPaymentFollowupInfo(orderNumber, {
   const ownerCount = Number(row.followup_count || 0);
   const state = String(row.followup_state || 'ACTIVE').toUpperCase();
   const ownerLast = row.last_followup_at ? String(row.last_followup_at) : null;
-  let ownerNext = null;
-  if (state === 'ACTIVE' && ownerCount < MAX_FOLLOWUPS) {
-    const base = ownerCount === 0
-      ? new Date(String(row.created_at || Date.now())).getTime() + FIRST_FOLLOWUP_MS
-      : new Date(String(ownerLast || row.created_at || Date.now())).getTime() + SECOND_FOLLOWUP_MS;
-    if (Number.isFinite(base)) ownerNext = new Date(base).toISOString();
-  }
+  // Owner follow-up is manual-only. Never expose or calculate an automatic reminder time.
+  const ownerNext = null;
 
   const affiliateViewer = String(viewerRole || '').toLowerCase() === 'affiliate';
   const affiliateState = affiliateViewer
@@ -884,44 +879,14 @@ async function dueOrders(limit = 20) {
 }
 
 export async function runPaymentFollowupCycle() {
-  if (cycleRunning) return { skipped: true, reason: 'already_running' };
-  cycleRunning = true;
-  try {
-    const orders = await dueOrders(20);
-    let sent = 0;
-    let resolved = 0;
-    let failed = 0;
-    for (const orderNumber of orders) {
-      try {
-        const result = await sendPaymentFollowup(orderNumber);
-        if (result.sent) sent += 1;
-        else if (result.reconciliation?.resolved || result.reconciliation?.paid) resolved += 1;
-      } catch (error) {
-        failed += 1;
-        console.warn('[payment-followup] automatic send failed:', orderNumber, error?.code, error?.message);
-      }
-    }
-    if (orders.length) {
-      console.log('[payment-followup] cycle', { candidates: orders.length, sent, resolved, failed });
-    }
-    return { candidates: orders.length, sent, resolved, failed };
-  } finally {
-    cycleRunning = false;
-  }
+  // Automatic payment follow-ups are intentionally disabled.
+  // A follow-up may only be sent by an explicit manual action from PayPing.
+  return { skipped: true, reason: 'manual_only', candidates: 0, sent: 0, resolved: 0, failed: 0 };
 }
 
 export function startPaymentFollowupScheduler() {
-  if (schedulerTimer) return schedulerTimer;
-  const run = () => void runPaymentFollowupCycle().catch((error) => {
-    console.error('[payment-followup] scheduler failed:', error?.message);
-  });
-  setTimeout(run, 25_000);
-  schedulerTimer = setInterval(run, CHECK_INTERVAL_MS);
-  schedulerTimer.unref?.();
-  console.log('[payment-followup] scheduler started', {
-    firstReminderMinutes: FIRST_FOLLOWUP_MS / 60000,
-    secondReminderHours: SECOND_FOLLOWUP_MS / 3600000,
-    maxFollowups: MAX_FOLLOWUPS,
-  });
-  return schedulerTimer;
+  // Keep this exported compatibility hook because promotion.js calls it at startup,
+  // but never create a timer or send a Telegram follow-up automatically.
+  console.log('[payment-followup] automatic scheduler disabled; manual follow-up only');
+  return null;
 }

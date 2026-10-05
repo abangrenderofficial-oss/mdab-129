@@ -291,9 +291,9 @@ export async function sendSupportQuoteToFilter({
   userId = '',
 }) {
   const message = cleanText(supportMessage, 500);
-  const name = cleanText(displayName, 80);
+  const name = cleanText(displayName, 80) || 'Anonymous';
   const tier = cleanText(tierLabel, 100) || '❤️ Supporter';
-  if (!message || !name) throw new Error('Support quote is incomplete.');
+  if (!message) throw new Error('Support quote is incomplete.');
   if (!hasMinimumWords(message, 5)) {
     const error = new Error('Support quote must contain at least 5 words.');
     error.code = 'SUPPORT_QUOTE_TOO_SHORT';
@@ -308,9 +308,13 @@ export async function sendSupportQuoteToFilter({
     sourceOrderNumber: cleanText(orderNumber, 160),
     telegramUserId: cleanText(userId, 40),
     text: [
+      'Kata Support Buat Team MediaX👏🏻',
+      '',
+      name,
+      '',
       `“${message}”`,
       '',
-      `${name}, ${tier}`,
+      `From ${tier}`,
     ].join('\n'),
   });
 }

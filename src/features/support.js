@@ -37,6 +37,7 @@ const PAYMENT_FOLLOWUP_REVIEW_PREFIX = 'payfollow:review:';
 const PAYMENT_FOLLOWUP_CANCEL_PREFIX = 'payfollow:cancel:';
 const SUPPORT_AMOUNTS_ACTION = 'support:amounts';
 const SUPPORT_BACK_ACTION = 'support:back';
+const SUPPORT_ANONYMOUS_NAME_ACTION = 'support:name:anonymous';
 const SUPPORT_AMOUNTS = new Set([10, 20, 30, 50, 100]);
 const RETIRED_SUPPORT_AMOUNTS = new Set([1]);
 
@@ -258,14 +259,25 @@ export async function processSupportMessage(message = {}) {
       return true;
     }
 
-    await sendMessage(chatId, 'Boleh saya tahu nama?').catch(() => {});
+    await sendMessage(
+      chatId,
+      'Boleh saya tahu nama? Kalau tak nak paparkan nama, pilih Anonymous.',
+      {
+        reply_markup: {
+          inline_keyboard: [[{ text: 'Anonymous', callback_data: SUPPORT_ANONYMOUS_NAME_ACTION }]],
+        },
+      },
+    ).catch(() => {});
     return true;
   }
 
   if (submission.state === 'AWAITING_NAME') {
-    const displayName = rawText.slice(0, 60).trim();
+    const typedName = rawText.slice(0, 60).trim();
+    const displayName = /^(anonymous|anon|skip|tak nak|taknak)$/i.test(typedName)
+      ? 'Anonymous'
+      : typedName;
     if (!displayName) {
-      await sendMessage(chatId, 'Isi nama yang awak nak kita paparkan ya.').catch(() => {});
+      await sendMessage(chatId, 'Isi nama atau pilih Anonymous ya.').catch(() => {});
       return true;
     }
 
@@ -438,7 +450,8 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
     || Boolean(retiredAmount)
     || isCheckAction
     || action === SUPPORT_AMOUNTS_ACTION
-    || action === SUPPORT_BACK_ACTION;
+    || action === SUPPORT_BACK_ACTION
+    || action === SUPPORT_ANONYMOUS_NAME_ACTION;
   if (!isSupportAction) return false;
 
   const chatId = callbackQuery?.message?.chat?.id;
@@ -449,6 +462,52 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
 
   if (chatType && chatType !== 'private') {
     await answerSupportCallback(callbackQuery, 'Buka private chat bot untuk support ya ❤️', true);
+    return true;
+  }
+
+  if (action === SUPPORT_ANONYMOUS_NAME_ACTION) {
+    let submission = null;
+    try {
+      submission = await getActiveSupportSubmission(user.id);
+    } catch (error) {
+      console.warn('[support] anonymous name lookup failed:', error?.message);
+    }
+
+    if (!submission || submission.state !== 'AWAITING_NAME') {
+      await answerSupportCallback(callbackQuery, 'Tiada kata-kata support yang tunggu nama sekarang.', true);
+      return true;
+    }
+
+    try {
+      const ready = await setSupportSubmissionName(submission.orderNumber, user.id, 'Anonymous');
+      if (!ready || ready.state !== 'READY') throw new Error('support_submission_not_ready');
+
+      const review = await markSupportSubmissionUnderReview(ready.orderNumber, user.id);
+      if (!review || review.state !== 'REVIEW') throw new Error('support_submission_review_state_failed');
+
+      await sendSupportQuoteToFilter({
+        supportMessage: review.supportMessage,
+        displayName: 'Anonymous',
+        tierLabel: review.tierLabel,
+        orderNumber: review.orderNumber,
+        userId: review.telegramUserId,
+      });
+
+      await answerSupportCallback(callbackQuery, 'Anonymous dipilih ✅');
+      await editSupportMessage(
+        callbackQuery,
+        'Nama paparan: Anonymous ✅',
+        { inline_keyboard: [] },
+      );
+      await sendMessage(
+        user.id,
+        'Terima Kasih Sekali lagi, bantu support bot kita sama2 kekal hidup. 🙇🏻✨',
+      ).catch(() => {});
+    } catch (error) {
+      console.warn('[support] anonymous testimonial filter delivery failed:', error?.code, error?.message);
+      await restoreSupportSubmissionAwaitingName(submission.orderNumber, user.id).catch(() => {});
+      await answerSupportCallback(callbackQuery, 'Belum berjaya hantar untuk review. Cuba lagi kejap.', true);
+    }
     return true;
   }
 

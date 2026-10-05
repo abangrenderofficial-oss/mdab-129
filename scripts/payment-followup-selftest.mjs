@@ -56,7 +56,7 @@ assert(info?.state==='ACTIVE','new followup should be active');
 assert(info?.stage==='CHECKOUT_PENDING','new checkout should classify checkout pending');
 assert(info?.followupCount===0,'new followup count should be zero');
 assert(info?.paymentUrlAvailable===true,'payment URL should be available');
-assert(Boolean(info?.nextFollowupAt),'next followup should exist');
+assert(info?.nextFollowupAt===null,'owner follow-up must be manual-only with no automatic next follow-up');
 assert(affiliateInfo?.canFollowUp===true,'referrer affiliate should be able to follow up');
 assert(affiliateInfo?.followupCount===0,'affiliate followup count should start at zero');
 assert(affiliateInfo?.maxFollowups===2,'affiliate followup cap should be two');
@@ -143,7 +143,9 @@ must(detailPage,"class=\"toast\"",'top toast UI');
 must(detailPage,"const paid=String(d.transaction?.status||'').toUpperCase()==='PAID'",'unsuccessful follow-up remains enabled');
 must(detailPage,"String(d?.role||'').toLowerCase()==='affiliate'",'affiliate follow-up UI');
 must(detailPage,"$('stopFollowup').hidden=affiliate",'affiliate cannot stop global follow-up');
-must(promotion,'startPaymentFollowupScheduler','scheduler startup');
+must(followupModule,"reason: 'manual_only'",'automatic follow-up disabled');
+must(followupModule,'automatic scheduler disabled; manual follow-up only','manual-only scheduler guard');
+must(promotion,'startPaymentFollowupScheduler','compatibility startup hook');
 
 console.log('PAYMENT_FOLLOWUP_SELFTEST_OK',JSON.stringify({
   stage:info.stage,

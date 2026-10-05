@@ -46,16 +46,6 @@ function accountFromRow(row) {
   };
 }
 
-async function affiliateExists(userId) {
-  if (!/^\d+$/.test(String(userId || ''))) return false;
-  const db = await getSupportDb();
-  const result = await db.execute({
-    sql: `SELECT 1 FROM affiliate_profiles WHERE environment = ? AND telegram_user_id = ? LIMIT 1`,
-    args: [currentSupportEnvironment(), String(userId)],
-  });
-  return Boolean(result.rows?.length);
-}
-
 export async function ensurePayPingAuthSchema() {
   if (!schemaPromise) {
     schemaPromise = (async () => {
@@ -134,8 +124,7 @@ export async function createPayPingAccount({
   const accountId = 'ppa_' + randomBytes(18).toString('base64url');
   const salt = randomBytes(18).toString('base64url');
   const hash = await passwordHash(secret, salt);
-  let finalRole = allowedRole;
-  if (finalRole === 'user' && telegramUserId && await affiliateExists(telegramUserId)) finalRole = 'affiliate';
+  const finalRole = allowedRole;
 
   try {
     await db.execute({
@@ -232,7 +221,6 @@ export async function linkTrustedTelegram(accountId, telegramUserId, { promoteOw
 
   let role = String(row.role || 'user');
   if (promoteOwner) role = 'owner';
-  else if (role === 'user' && await affiliateExists(userId)) role = 'affiliate';
 
   const now = new Date().toISOString();
   try {

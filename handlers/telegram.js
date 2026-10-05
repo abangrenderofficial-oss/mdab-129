@@ -86,8 +86,8 @@ async function processMessage(message, context) {
   if (command === '/connectquote') return handleConnectQuoteCommand(message);
   if (command === '/connectpaymentdetail') return handleConnectPaymentDetailCommand(message);
   if (command === '/pushsetup') return handlePaymentPushSetupCommand(message, context);
-  if (command === '/affiliate') return handleAffiliateCommand(message);
-  if (command === '/withdraw') return handleAffiliateWithdrawCommand(message);
+  if (command === '/affiliate') return handleAffiliateCommand(message, context);
+  if (command === '/withdraw') return handleAffiliateWithdrawCommand(message, context);
   if (command === '/affiliatepaid') return handleAffiliatePayoutCommand(message, 'PAID');
   if (command === '/affiliatereject') return handleAffiliatePayoutCommand(message, 'REJECTED');
   if (command === '/start' && startPayload(message).startsWith('payping_')) {
@@ -134,7 +134,7 @@ async function runWebhookUpdate(update, context) {
     if (await processQuoteFilterCallback(callbackQuery)) return;
     if (await processFridaySupportCallback(callbackQuery)) return;
     if (await processChannelGateCallback(callbackQuery)) return;
-    if (await processAffiliateCallback(callbackQuery)) return;
+    if (await processAffiliateCallback(callbackQuery, context)) return;
     if (await processSupportCallback(callbackQuery, context)) return;
     if (await enforceSupportTestimonialGateForCallback(callbackQuery)) return;
     if (await enforceDailyForceSupportForCallback(callbackQuery)) return;

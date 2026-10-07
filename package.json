@@ -10,7 +10,7 @@
     "start": "node server.js",
     "postinstall": "node scripts/postinstall-runtime.mjs",
     "diag:tiktok": "node scripts/diag-tiktok-providers.mjs",
-    "check": "node scripts/check-feature-boundaries.mjs && node scripts/channel-security-selftest.mjs && node scripts/group-owner-only-selftest.mjs && node scripts/payping-mobile-ui-selftest.mjs && node scripts/payping-owner-quick-action-selftest.mjs && node scripts/payping-auth-selftest.mjs && node scripts/affiliate-bot-entry-selftest.mjs && node scripts/payping-affiliate-admin-selftest.mjs && node scripts/payment-followup-selftest.mjs && node scripts/support-quote-format-selftest.mjs && node scripts/checkout-tracking-selftest.mjs && node scripts/bayarcash-payer-name-selftest.mjs && node scripts/payping-notification-scope-selftest.mjs && node scripts/payping-daily-stats-selftest.mjs && node scripts/payping-persistence-selftest.mjs"
+    "check": "node scripts/check-feature-boundaries.mjs && node scripts/channel-security-selftest.mjs && node scripts/group-owner-only-selftest.mjs && node scripts/payping-mobile-ui-selftest.mjs && node scripts/payping-owner-quick-action-selftest.mjs && node scripts/payping-auth-selftest.mjs && node scripts/affiliate-bot-entry-selftest.mjs && node scripts/payping-affiliate-admin-selftest.mjs && node scripts/payment-followup-selftest.mjs && node scripts/support-quote-format-selftest.mjs && node scripts/checkout-tracking-selftest.mjs && node scripts/bayarcash-payer-name-selftest.mjs && node scripts/payping-notification-scope-selftest.mjs && node scripts/payping-daily-stats-selftest.mjs && node scripts/payping-persistence-selftest.mjs && node scripts/payping-multibot-selftest.mjs"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",

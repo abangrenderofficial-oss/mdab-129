@@ -1,5 +1,6 @@
 import { getPayPingAnalytics, getPayPingAnalyticsExport, getPayPingDashboard, getPayPingTransactionDetail, listPayPingTransactions } from '../src/payping/dashboard.js';
 import { resolvePayPingIdentity } from '../src/payping/auth.js';
+import { getPayPingBot, listPayPingBots } from '../src/payping/catalog.js';
 import {
   reconcilePaymentFollowup,
   sendPaymentFollowup,
@@ -62,6 +63,16 @@ export default async function handler(req,res){
     }
 
     const view=String(req.query?.view||'dashboard').trim().toLowerCase();
+    if(view==='bots'){
+      if(!auth.owner)return json(res,403,{ok:false,error:'PAYPING_OWNER_ONLY'});
+      return json(res,200,{ok:true,...auth,bots:await listPayPingBots()});
+    }
+    if(view==='bot'){
+      if(!auth.owner)return json(res,403,{ok:false,error:'PAYPING_OWNER_ONLY'});
+      const bot=await getPayPingBot(req.query?.bot||'');
+      if(!bot)return json(res,404,{ok:false,error:'PAYPING_BOT_NOT_FOUND'});
+      return json(res,200,{ok:true,...auth,bot});
+    }
     if(view==='analytics'){
       if(!auth.owner)return json(res,403,{ok:false,error:'PAYPING_OWNER_ONLY'});
       const analytics=await getPayPingAnalytics({

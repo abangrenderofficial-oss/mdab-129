@@ -65,3 +65,37 @@ export function startSharedConfigHeartbeat(){
   const interval=setInterval(()=>void run(),90_000);
   interval.unref?.();
 }
+
+
+// Access policy stays separate from the downloader; only the channel
+// gate consults this small, bounded cache. Existing fifth-Premium-HQ
+// enforcement is preserved unless Free + Channel is selected.
+let channelRule={checked:0,value:null};
+let channelRuleTask=null;
+export function parseMediaXChannelRule(row){
+  if(!row||String(row.mode)!=='free_channel')return null;
+  const channel=String(row.channel_id||'').trim();
+  const threshold=Number(row.channel_after);
+  if(!/^@[A-Za-z0-9_]{5,}$/.test(channel))return null;
+  if(!Number.isSafeInteger(threshold)||threshold<0||threshold>1000)return null;
+  return {mode:'free_channel',channel,threshold};
+}
+export async function getMediaXChannelRule(){
+  if(!isPayPingSharedConfigEnabled())return null;
+  if(Date.now()-channelRule.checked<10000)return channelRule.value;
+  if(channelRuleTask)return channelRuleTask;
+  channelRuleTask=(async()=>{
+    try{
+      const client=await getSupportDb();
+      const result=await client.execute({sql:"SELECT mode,channel_id,channel_after FROM payping_access_policies_v2 WHERE environment=? AND bot_id='mediax' LIMIT 1",args:[currentSupportEnvironment()]});
+      channelRule.value=parseMediaXChannelRule(result.rows?.[0]);
+      channelRule.checked=Date.now();
+    }catch(error){
+      console.warn('[payping-shared] channel policy lookup failed; keeping previous rule:',error?.message);
+      // Do not drop a previously active channel rule during a DB outage.
+      channelRule.checked=Date.now();
+    }
+    return channelRule.value;
+  })().finally(()=>{channelRuleTask=null});
+  return channelRuleTask;
+}

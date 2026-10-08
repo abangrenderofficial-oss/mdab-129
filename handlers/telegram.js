@@ -166,7 +166,8 @@ export default async function handler(req, res) {
     const update = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
     const decision = beginUpdate(update);
     if (!decision.accept) return json(res, 200, { ok: true, ignored: decision.reason });
-    await syncSharedConfigForUpdate();
+    // Keep downloader and Premium + HQ processing independent of dashboard latency.
+    void syncSharedConfigForUpdate();
 
     const context = { baseUrl: requestBaseUrl(req), mirrorGroupId: mirrorGroupFromRequest(req) };
     const message = update?.message ?? update?.edited_message;

@@ -172,6 +172,18 @@
       "destination": "/api/router?route=heavy-limit"
     },
     {
+      "source": "/api/payping-bot-admin",
+      "destination": "/api/router?route=payping-bot-admin"
+    },
+    {
+      "source": "/ar-payment/bots/add",
+      "destination": "/api/router?route=payping-add-bot-page"
+    },
+    {
+      "source": "/ar-payment/bots/add/",
+      "destination": "/api/router?route=payping-add-bot-page"
+    },
+    {
       "source": "/ar-payment/bot/",
       "destination": "/api/router?route=payping-bot-detail-page"
     },

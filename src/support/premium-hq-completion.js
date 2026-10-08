@@ -35,6 +35,12 @@ export async function recordPremiumHqSuccess({
     return false;
   });
 
+  // Complete the original media session's HQ conversion, without granting
+  // a second download. Support is requested only on the next new input.
+  await completeFirstDailyForceHq(id).catch(error=>{
+    console.warn('[daily-force] first-session HQ completion failed:',error?.message);
+  });
+
   const channelPrompted = chat > 0
     ? await maybePromptChannelAfterSuccess(chat, id).catch((error) => {
         console.warn('[channel-gate] Premium HQ prompt failed:', error?.message);

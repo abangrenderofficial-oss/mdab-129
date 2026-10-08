@@ -25,15 +25,20 @@ try{
    {amount_cents:3000,status:'active'},
    {amount_cents:2000,status:'active'},
  ]),[20,30,50]);
- assert.deepEqual(parseMediaXChannelRule({mode:'free_channel',channel_id:'@channelcontoh',channel_after:5}),{mode:'free_channel',channel:'@channelcontoh',threshold:1});
- assert.deepEqual(parseMediaXChannelRule({mode:'free_channel',channel_id:'@channelcontoh',channel_after:0}),{mode:'free_channel',channel:'@channelcontoh',threshold:1});
+ assert.deepEqual(parseMediaXChannelRule({mode:'free_channel',channel_id:'@channelcontoh',channel_after:5,campaign_seq:1,campaign_channel_id:'@channelcontoh',activated_at:'2026-10-08T00:00:00Z'}),{mode:'free_channel',channel:'@channelcontoh',threshold:1,campaignSequence:1});
+ assert.deepEqual(parseMediaXChannelRule({mode:'free_channel',channel_id:'@channelcontoh',channel_after:0,campaign_seq:1,campaign_channel_id:'@channelcontoh',activated_at:'2026-10-08T00:00:00Z'}),{mode:'free_channel',channel:'@channelcontoh',threshold:1,campaignSequence:1});
  assert.equal(parseMediaXChannelRule({mode:'free',channel_id:'@channelcontoh',channel_after:5}),null);
  assert.equal(parseMediaXChannelRule({mode:'free_channel',channel_id:'invalid-link',channel_after:5}),null);
+ assert.equal(parseMediaXChannelRule({mode:'free_channel',channel_id:'@channelcontoh',channel_after:1}),null,'A saved policy must never lock users before its explicit activation campaign exists');
+ assert.equal(parseMediaXChannelRule({mode:'free_channel',channel_id:'@channelcontoh',campaign_seq:2,campaign_channel_id:'@differentchannel',activated_at:'2026-10-08T00:00:00Z'}),null);
  const channel=await readFile('src/features/channel-gate.js','utf8');
  assert(channel.includes('getMediaXChannelRule'), 'Shared channel config must use the original channel gate');
  assert(channel.includes('getChatMember'), 'Original Telegram membership check must remain intact');
  assert(channel.includes('if(isPayPingSharedConfigEnabled())return {gateRequired:false'), 'Legacy fifth-HQ gate must stay OFF during synced Force Support and Free mode');
  assert(channel.includes('if(await isDailyForceSupportEnabled())return'), 'Force Support must override a stale Free + Channel policy');
+ assert(channel.includes('hasMediaXChannelCampaignUse(userId,remote.campaignSequence)'), 'Channel gate must use new campaign success records, never accumulated HQ history');
+ const completion=await readFile('src/support/premium-hq-completion.js','utf8');
+ assert(completion.includes('recordMediaXChannelCampaignUse(id,label)'), 'A successfully delivered HQ item must count against the new campaign');
  const android=await readFile('src/features/status-hq-android.js','utf8');
  assert(android.includes('androidHqCompleted = true; // Count only after Telegram confirms successful delivery.'),'Android must count only after Telegram upload success');
  assert(android.indexOf('await sendVideoFileUpload(')<android.indexOf('androidHqCompleted = true;'),'Android HQ cannot count before upload success');

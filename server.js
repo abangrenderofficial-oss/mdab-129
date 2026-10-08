@@ -48,6 +48,7 @@ import { startSupportPromotionScheduler } from './src/support/promotion.js';
 import { deliverApprovedBacklog, isContentBridgeConfigured } from './src/support/content-bridge.js';
 import { refreshSupportMonitorMessage } from './src/support/monitor-publisher.js';
 import { getDailyForceRuntimeState, repairDailyForceCurrentCycleUsers } from './src/support/daily-force.js';
+import {startSharedConfigHeartbeat} from './src/support/payping-shared-config.js';
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
@@ -225,6 +226,7 @@ server.listen(port, '0.0.0.0', () => {
   });
 
   startSupportPromotionScheduler();
+  startSharedConfigHeartbeat();
 
   void getDailyForceRuntimeState()
     .then(async (state) => {

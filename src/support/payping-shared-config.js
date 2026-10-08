@@ -135,3 +135,45 @@ export async function recordMediaXChannelCampaignUse(userId,source='premium_hq')
     return false;
   }
 }
+
+
+/** Only the HQ menu/buttons attached to the FIRST delivered media can finish
+ * that free session. Later incoming link/gallery messages are still gated.
+ * No old download counters or Force Support cycle records are modified.
+ */
+export async function canFinishMediaXFirstHq(userId,campaignSequence,messageTimestamp){
+ const id=Number(userId),seq=Number(campaignSequence),mediaMs=Number(messageTimestamp)*1000;
+ if(!Number.isSafeInteger(id)||id<=0||!Number.isSafeInteger(seq)||seq<1||!Number.isFinite(mediaMs)||mediaMs<=0)return false;
+ try{
+  const db=await getSupportDb();
+  const r=await db.execute({sql:"SELECT first_success_at,source FROM payping_channel_campaign_uses_v2 WHERE environment=? AND bot_id='mediax' AND campaign_seq=? AND telegram_user_id=? LIMIT 1",
+   args:[currentSupportEnvironment(),seq,String(id)]});
+  const row=r.rows?.[0];
+  if(!row||String(row.source)==='hq_completed')return false;
+  const first=Date.parse(String(row.first_success_at||'')),age=Date.now()-first;
+  // The source media was sent shortly before the successful download was recorded.
+  // Original HQ buttons can finish within 24 hours, but cannot apply to later media.
+  return Number.isFinite(first)&&age>=0&&age<86_400_000
+   && mediaMs>=first-300_000 && mediaMs<=first+60_000;
+ }catch(e){
+  console.warn('[payping-shared] first channel HQ verification failed:',e.message);
+  return false;
+ }
+}
+
+export async function completeMediaXFirstHq(userId){
+ if(!isPayPingSharedConfigEnabled())return false;
+ const id=Number(userId);
+ if(!Number.isSafeInteger(id)||id<=0)return false;
+ const rule=await getMediaXChannelRule();
+ if(!rule?.campaignSequence)return false;
+ try{
+  const db=await getSupportDb();
+  const r=await db.execute({sql:"UPDATE payping_channel_campaign_uses_v2 SET source='hq_completed' WHERE environment=? AND bot_id='mediax' AND campaign_seq=? AND telegram_user_id=? AND source<>'hq_completed'",
+   args:[currentSupportEnvironment(),rule.campaignSequence,String(id)]});
+  return Number(r.rowsAffected||0)>0;
+ }catch(e){
+  console.warn('[payping-shared] channel HQ completion failed:',e.message);
+  return false;
+ }
+}

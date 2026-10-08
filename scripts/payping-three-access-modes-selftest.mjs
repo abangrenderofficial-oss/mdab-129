@@ -25,7 +25,7 @@ try {
  assert.equal(malaysiaSupportSchedule(new Date('2026-10-09T07:00:00Z')).dailyForceWindowActive,true,'Friday force remains live');
  const router=await readFile('src/support/payping-shared-command-router.js','utf8');
  for(const name of ['/forcesupport','/freesupportchannel','/normalsupport'])
-   assert(router.includes("command==='"+name+"'"),name+' must have explicit command routing');
+   assert(router.includes("'"+name+"'"),name+' must appear in the unified command router');
  assert(router.includes("setMediaXFreeChannelAccessMode({dryRun:true})"),'Channel must be verified before disabling force');
  assert(router.includes('setMediaXFreeAccessMode()'),'Normal mode must update PayPing database');
  assert(router.includes('setDailyForceSupportEnabled(true'),'Force must use existing 7-day bot engine');

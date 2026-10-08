@@ -51,6 +51,7 @@ try{
  assert(androidJob.includes('Record Android HQ delivery')&&androidJob.includes('completion_callback_url'),'Heavy Android must report only successful deliveries');
  const daily=await readFile('src/support/daily-force.js','utf8');
  assert(!daily.includes('sendDailyForceFirstSuccessPrompt'), 'First delivery MUST NOT send any support promotion');
+ assert(daily.slice(daily.indexOf('async function sendDailyForceLock'),daily.indexOf('async function accessContext')).includes('dailyForcePremiumSupportText()'), 'Show full support promotion only when a new source is blocked');
  assert(daily.includes('support_daily_force_first_hq'), 'Original delivered media must retain one HQ option');
  assert(daily.includes('export async function canFinishFirstDailyForceHq'), 'Original media HQ callback must bypass first-use lock');
  assert(daily.includes('export async function completeFirstDailyForceHq'), 'Successful HQ must complete that original session');

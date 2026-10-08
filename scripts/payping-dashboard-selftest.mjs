@@ -57,8 +57,8 @@ const [api,home,page,server,router,vercel]=await Promise.all([
   readFile('vercel.json','utf8'),
 ]);
 const must=(s,m,l)=>{if(!s.includes(m))throw new Error(`${l} missing ${m}`)};
-must(api,'resolvePushDeviceOwner','device auth');
-must(api,'BOT_OWNER_ID','owner scope');
+must(api,'resolvePayPingIdentity','PayPing account auth');
+must(api,'if(!auth.owner)','owner scope');
 must(home,'Today received','dashboard home');
 must(home,"fetch('/api/payping-data?view=dashboard'",'home API');
 must(page,"view:'transactions'",'transactions API');

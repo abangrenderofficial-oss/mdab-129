@@ -103,6 +103,37 @@ export async function getMediaXChannelRule(){
 }
 
 
+
+/**
+ * Telegram and PayPing Access Control share the SAME row. Repeating the
+ * Free+Channel command must not restart the user's successful-use quota.
+ */
+export async function setMediaXFreeAccessMode(){
+ if(!isPayPingSharedConfigEnabled())throw new Error('PayPing shared config belum diaktifkan.');
+ const client=await getSupportDb(),t=new Date().toISOString(),environment=currentSupportEnvironment();
+ await client.execute({sql:"INSERT INTO payping_access_policies_v2(environment,bot_id,mode,updated_at) VALUES(?,'mediax','free',?) ON CONFLICT(environment,bot_id) DO UPDATE SET mode='free',updated_at=excluded.updated_at",args:[environment,t]});
+ channelRule.checked=0;channelRule.value=null;
+ return {mode:'free'};
+}
+
+export async function setMediaXFreeChannelAccessMode(){
+ if(!isPayPingSharedConfigEnabled())throw new Error('PayPing shared config belum diaktifkan.');
+ const client=await getSupportDb(),environment=currentSupportEnvironment();
+ const state=await client.execute({sql:"SELECT p.mode,p.channel_id,c.campaign_seq,c.channel_id campaign_channel_id FROM payping_access_policies_v2 p LEFT JOIN payping_channel_campaign_v2 c ON c.environment=p.environment AND c.bot_id=p.bot_id WHERE p.environment=? AND p.bot_id='mediax' LIMIT 1",args:[environment]});
+ const p=state.rows?.[0]||{};
+ const configured=String(p.channel_id||'').trim();
+ const fallback=String(process.env.REQUIRED_CHANNEL_USERNAME||'').trim();
+ const channel=/^@[A-Za-z0-9_]{5,}$/.test(configured)?configured:/^@[A-Za-z0-9_]{5,}$/.test(fallback)?fallback:'';
+ if(!channel)throw new Error('Set channel @username dalam PayPing → MediaX → Access Control dahulu.');
+ const changed=String(p.mode||'')!=='free_channel'||String(p.campaign_channel_id||'')!==channel||!Number(p.campaign_seq||0);
+ const t=new Date().toISOString();
+ const statements=[{sql:"INSERT INTO payping_access_policies_v2(environment,bot_id,mode,channel_id,channel_after,updated_at) VALUES(?,'mediax','free_channel',?,1,?) ON CONFLICT(environment,bot_id) DO UPDATE SET mode='free_channel',channel_id=excluded.channel_id,channel_after=1,updated_at=excluded.updated_at",args:[environment,channel,t]}];
+ if(changed)statements.push({sql:"INSERT INTO payping_channel_campaign_v2(environment,bot_id,campaign_seq,channel_id,activated_at) VALUES(?,'mediax',1,?,?) ON CONFLICT(environment,bot_id) DO UPDATE SET campaign_seq=payping_channel_campaign_v2.campaign_seq+1,channel_id=excluded.channel_id,activated_at=excluded.activated_at",args:[environment,channel,t]});
+ await client.batch(statements,'write');
+ channelRule.checked=0;channelRule.value=null;
+ return {mode:'free_channel',channel,newCampaign:changed};
+}
+
 // Campaign uses are private to Free + Channel, separate from the historical
 // Premium HQ count in bot-stats.json and separate from Force Support cycles.
 export async function hasMediaXChannelCampaignUse(userId,campaignSequence){

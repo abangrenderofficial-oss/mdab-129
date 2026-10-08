@@ -54,6 +54,7 @@ export async function routeUnifiedForceCommand(message,command){
       next='force_support';
       summary='🔒 Force Support ON (7 hari seminggu). 1 penggunaan media lengkap percuma; input media baharu kali kedua barulah minta support. Cycle: '+saved.cycleId+(previous?' (kekal)':'');
     }else if(command==='/freesupportchannel'){
+      await setMediaXFreeChannelAccessMode({dryRun:true}); // Fail safely BEFORE switching off the force lock.
       if(await isDailyForceSupportEnabled())await setDailyForceSupportEnabled(false,userId);
       const saved=await setMediaXFreeChannelAccessMode();
       next='free_channel';

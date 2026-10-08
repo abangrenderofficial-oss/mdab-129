@@ -53,3 +53,15 @@ export async function reportPayPingSync(){
   await db.execute({sql:"INSERT INTO payping_bot_sync_status_v2(environment,bot_id,last_seen_at,config_version,updated_at) VALUES(?,'mediax',?,'mediax-shared-v1',?) ON CONFLICT(environment,bot_id) DO UPDATE SET last_seen_at=excluded.last_seen_at,config_version=excluded.config_version,updated_at=excluded.updated_at",args:[currentSupportEnvironment(),t,t]});
  }catch(e){console.warn('[payping-shared] heartbeat unavailable:',e.message)}
 }
+
+let backgroundStarted=false;
+export function startSharedConfigHeartbeat(){
+  if(!isPayPingSharedConfigEnabled()||backgroundStarted)return;
+  backgroundStarted=true;
+  const run=()=>Promise.allSettled([refreshSupportAmounts(true),reportPayPingSync()]).then(results=>{
+    for(const entry of results)if(entry.status==='rejected')console.warn('[payping-shared] background sync failed:',entry.reason?.message||'unknown');
+  });
+  void run();
+  const interval=setInterval(()=>void run(),90_000);
+  interval.unref?.();
+}

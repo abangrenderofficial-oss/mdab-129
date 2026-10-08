@@ -20,6 +20,8 @@ const {
 } = await import('../src/affiliate/store.js');
 const {
   classifyPaymentStage,
+  autoFollowupRollout,
+  runPaymentFollowupCycle,
   getPaymentFollowupInfo,
   stopPaymentFollowup,
   cancelPaymentFollowupByUser,
@@ -56,6 +58,12 @@ assert(info?.state==='ACTIVE','new followup should be active');
 assert(info?.stage==='CHECKOUT_PENDING','new checkout should classify checkout pending');
 assert(info?.followupCount===0,'new followup count should be zero');
 assert(info?.paymentUrlAvailable===true,'payment URL should be available');
+const activation=await autoFollowupRollout();
+assert(activation.enabled===true,'automatic checkout reminder should be enabled for future checkout only');
+const legacyBacklog=await runPaymentFollowupCycle();
+assert(legacyBacklog.sent===0,'no Telegram messages to historical orders when automations first activate');
+assert(legacyBacklog.candidates===0,'existing checkout must not enter new auto follow-up rollout');
+
 assert(info?.nextFollowupAt===null,'owner follow-up must be manual-only with no automatic next follow-up');
 assert(affiliateInfo?.canFollowUp===true,'referrer affiliate should be able to follow up');
 assert(affiliateInfo?.followupCount===0,'affiliate followup count should start at zero');

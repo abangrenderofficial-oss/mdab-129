@@ -2,9 +2,12 @@ import { isResetAdmin } from '../recovery.js';
 import { sendMessage, telegram } from '../telegram.js';
 import {
   hasChannelGateRequired,
+  getChannelUseCount,
   hasJoinPromptBeenSent,
   markJoinPromptSent,
 } from '../bot/stats.js';
+
+import {getMediaXChannelRule} from '../support/payping-shared-config.js';
 
 export const CHANNEL_VERIFY_CALLBACK = 'channel:verify:v1';
 
@@ -19,8 +22,8 @@ function channelUsername() {
   return `@${configured.replace(/^@/, '')}`;
 }
 
-function channelUrl() {
-  return `https://t.me/${channelUsername().replace(/^@/, '')}`;
+function channelUrl(channel=channelUsername()) {
+  return `https://t.me/${String(channel).replace(/^@/, '')}`;
 }
 
 function membershipAllowed(member = {}) {
@@ -42,16 +45,16 @@ function trace(userId, event, details = {}) {
   }));
 }
 
-async function getMembership(userId) {
+async function getMembership(userId, channel=channelUsername()) {
   if (!userId) return null;
   try {
     const member = await telegram('getChatMember', {
-      chat_id: channelUsername(),
+      chat_id: channel,
       user_id: userId,
     });
     const allowed = membershipAllowed(member);
     trace(userId, 'membership', {
-      channel: channelUsername(),
+      channel,
       status: String(member?.status || 'unknown'),
       isMember: member?.is_member === undefined ? null : Boolean(member.is_member),
       allowed,
@@ -64,7 +67,7 @@ async function getMembership(userId) {
   }
 }
 
-export async function sendChannelGatePrompt(chatId) {
+export async function sendChannelGatePrompt(chatId, channel=channelUsername()) {
   if (!chatId) return false;
   await sendMessage(
     chatId,
@@ -72,7 +75,7 @@ export async function sendChannelGatePrompt(chatId) {
       '📢 Join Official Channel Kita 🇲🇾',
       '',
       'Premium + HQ ke-5 dah siap 🥳',
-      `Untuk terus guna bot, boleh join ${channelUsername()} dulu?`,
+      `Untuk terus guna bot, boleh join ${channel} dulu?`,
       '',
       'Thank you banyak-banyak atas support korang yang tak berbelah bahagi! 🥹❤️',
       '',
@@ -81,7 +84,7 @@ export async function sendChannelGatePrompt(chatId) {
     {
       reply_markup: {
         inline_keyboard: [
-          [{ text: '📢 Join Channel Kita', url: channelUrl() }],
+          [{ text: '📢 Join Channel Kita', url: channelUrl(channel) }],
           [{ text: 'Dah Join ✅', callback_data: CHANNEL_VERIFY_CALLBACK }],
         ],
       },
@@ -90,18 +93,27 @@ export async function sendChannelGatePrompt(chatId) {
   return true;
 }
 
+async function channelGatePolicy(userId){
+  const remote=await getMediaXChannelRule();
+  if(remote){
+    const count=await getChannelUseCount(userId);
+    return {gateRequired:count>=remote.threshold,channel:remote.channel,threshold:remote.threshold};
+  }
+  return {gateRequired:await hasChannelGateRequired(userId),channel:channelUsername(),threshold:5};
+}
+
 export async function maybePromptChannelAfterSuccess(chatId, userId) {
   if (!chatId || !userId || isResetAdmin(userId)) return false;
-  const gateRequired = await hasChannelGateRequired(userId);
+  const {gateRequired,channel} = await channelGatePolicy(userId);
   trace(userId, 'after_success_gate_check', { gateRequired });
   if (!gateRequired) return false;
   if (await hasJoinPromptBeenSent(userId)) return false;
 
-  const member = await getMembership(userId);
+  const member = await getMembership(userId,channel);
   if (member !== false) return false;
 
   try {
-    await sendChannelGatePrompt(chatId);
+    await sendChannelGatePrompt(chatId,channel);
     await markJoinPromptSent(userId);
     trace(userId, 'after_success_prompt', { prompted: true });
     return true;
@@ -116,18 +128,18 @@ export async function enforceChannelGateForMessage(message = {}) {
   const userId = message?.from?.id;
   const chatType = message?.chat?.type;
   if (!chatId || !userId || chatType !== 'private' || isResetAdmin(userId)) return false;
-  const gateRequired = await hasChannelGateRequired(userId);
+  const {gateRequired,channel} = await channelGatePolicy(userId);
   trace(userId, 'message_gate_check', { gateRequired, chatType });
   if (!gateRequired) return false;
 
-  const member = await getMembership(userId);
+  const member = await getMembership(userId,channel);
   if (member !== false) {
     trace(userId, 'message_gate_result', { blocked: false, membership: member });
     return false;
   }
 
   trace(userId, 'message_gate_result', { blocked: true, membership: false });
-  await sendChannelGatePrompt(chatId).catch((error) => {
+  await sendChannelGatePrompt(chatId,channel).catch((error) => {
     console.warn('[channel-gate] message gate prompt failed:', error?.message);
   });
   return true;
@@ -138,7 +150,7 @@ export async function enforceChannelGateForCallback(callbackQuery = {}) {
   const chatType = callbackQuery?.message?.chat?.type;
   const userId = callbackQuery?.from?.id;
   if (!chatId || !userId || chatType !== 'private' || isResetAdmin(userId)) return false;
-  const gateRequired = await hasChannelGateRequired(userId);
+  const {gateRequired,channel} = await channelGatePolicy(userId);
   trace(userId, 'callback_gate_check', {
     gateRequired,
     chatType,
@@ -146,7 +158,7 @@ export async function enforceChannelGateForCallback(callbackQuery = {}) {
   });
   if (!gateRequired) return false;
 
-  const member = await getMembership(userId);
+  const member = await getMembership(userId,channel);
   if (member !== false) {
     trace(userId, 'callback_gate_result', { blocked: false, membership: member });
     return false;
@@ -158,7 +170,7 @@ export async function enforceChannelGateForCallback(callbackQuery = {}) {
     text: 'Join channel kita dulu ya 😊',
     show_alert: false,
   }).catch(() => {});
-  await sendChannelGatePrompt(chatId).catch((error) => {
+  await sendChannelGatePrompt(chatId,channel).catch((error) => {
     console.warn('[channel-gate] callback gate prompt failed:', error?.message);
   });
   return true;
@@ -172,7 +184,8 @@ export async function processChannelGateCallback(callbackQuery = {}) {
   if (!chatId || !userId) return true;
 
   trace(userId, 'verify_callback_received', { action: CHANNEL_VERIFY_CALLBACK });
-  const member = await getMembership(userId);
+  const {channel}=await channelGatePolicy(userId);
+  const member = await getMembership(userId,channel);
   if (member === true) {
     trace(userId, 'verify_callback_result', { verified: true });
     await telegram('answerCallbackQuery', {
@@ -184,7 +197,7 @@ export async function processChannelGateCallback(callbackQuery = {}) {
     await telegram('editMessageText', {
       chat_id: chatId,
       message_id: callbackQuery.message.message_id,
-      text: `✅ Dah settle! Terima kasih join ${channelUsername()} 🥹❤️\n\nBoleh terus guna bot macam biasa.`,
+      text: `✅ Dah settle! Terima kasih join ${channel} 🥹❤️\n\nBoleh terus guna bot macam biasa.`,
       disable_web_page_preview: true,
     }).catch(async () => {
       await sendMessage(chatId, '✅ Dah verify! Boleh terus guna bot macam biasa.').catch(() => {});
@@ -196,7 +209,7 @@ export async function processChannelGateCallback(callbackQuery = {}) {
     trace(userId, 'verify_callback_result', { verified: false });
     await telegram('answerCallbackQuery', {
       callback_query_id: callbackQuery.id,
-      text: `Belum nampak lagi 😅 Join ${channelUsername()} dulu, lepas tu tekan “Dah Join ✅” sekali lagi.`,
+      text: `Belum nampak lagi 😅 Join ${channel} dulu, lepas tu tekan “Dah Join ✅” sekali lagi.`,
       show_alert: true,
     }).catch(() => {});
     return true;

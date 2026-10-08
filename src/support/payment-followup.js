@@ -921,6 +921,21 @@ export async function runPaymentFollowupCycle(){
    result.candidates=candidates.length;
    for(const {order,sequence} of candidates){
      if(!await claimAutoFollowup(order,sequence))continue;
+     const db=await getSupportDb(),env=currentSupportEnvironment();
+     const previous=await db.execute({sql:`SELECT 1 FROM support_orders o
+       JOIN support_payment_followups f ON f.environment=o.environment AND f.order_number=o.order_number
+       WHERE o.environment=? AND o.telegram_user_id=(
+         SELECT telegram_user_id FROM support_orders WHERE environment=? AND order_number=?)
+       AND o.order_number<>? AND
+         (f.last_followup_at>? OR
+           (f.last_delivery_status='BLOCKED' AND f.last_error_code='TELEGRAM_BOT_BLOCKED'))
+       LIMIT 1`,
+       args:[env,env,order,order,new Date(Date.now()-SECOND_FOLLOWUP_MS).toISOString()]});
+     if(previous.rows?.length){
+       // No message sent; release this sequence for a later safe cycle.
+       await db.execute({sql:"DELETE FROM support_auto_followup_claims_v3 WHERE environment=? AND order_number=? AND sequence_no=? AND state='sending'",args:[env,order,sequence]});
+       continue;
+     }
      let state='needs_review';
      try{
        const outcome=await sendPaymentFollowup(order,{manual:false});

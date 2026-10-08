@@ -196,6 +196,7 @@ async function answerSupportCallback(callbackQuery, text = '', showAlert = false
 }
 
 export async function handleSupportCommand(message = {}) {
+  if(isPayPingSharedConfigEnabled()) await refreshSupportAmounts(true).catch(e=>console.warn('[payping-shared] menu refresh failed:',e.message));
   const chatId = message?.chat?.id;
   const userId = message?.from?.id;
   if (!chatId || !userId) return true;

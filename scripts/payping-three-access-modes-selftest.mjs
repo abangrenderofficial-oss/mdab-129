@@ -1,0 +1,53 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {supportPromotionScheduleState} from '../src/support/promotion.js';
+import {malaysiaSupportSchedule} from '../src/support/daily-force-schedule.js';
+const env=process.env.PAYPING_SHARED_CONFIG_ENABLED;
+try {
+ process.env.PAYPING_SHARED_CONFIG_ENABLED='true';
+ const fridayBefore=supportPromotionScheduleState(new Date('2026-10-09T01:59:00.000Z'));
+ const fridayAt=supportPromotionScheduleState(new Date('2026-10-09T02:00:00.000Z'));
+ const fridayLate=supportPromotionScheduleState(new Date('2026-10-09T03:00:00.000Z'));
+ assert.equal(fridayBefore.weekday,'Fri');
+ assert.equal(fridayBefore.due,false);
+ assert.equal(fridayAt.due,true);
+ assert.equal(fridayAt.privateDue,true);
+ assert.equal(fridayAt.scheduledHour,10);
+ assert.equal(fridayLate.due,false,'Friday promotions cannot fire late at 11am');
+ const thursdayBefore=supportPromotionScheduleState(new Date('2026-10-08T06:59:00.000Z'));
+ const thursdayAt=supportPromotionScheduleState(new Date('2026-10-08T07:00:00.000Z'));
+ const thursdayLate=supportPromotionScheduleState(new Date('2026-10-08T08:00:00.000Z'));
+ assert.equal(thursdayBefore.due,false);
+ assert.equal(thursdayAt.due,true);
+ assert.equal(thursdayAt.privateDue,true);
+ assert.equal(thursdayAt.scheduledHour,15);
+ assert.equal(thursdayLate.due,false,'Regular promotions cannot fire late at 4pm');
+ assert.equal(malaysiaSupportSchedule(new Date('2026-10-09T07:00:00Z')).dailyForceWindowActive,true,'Friday force remains live');
+ const router=await readFile('src/support/payping-shared-command-router.js','utf8');
+ for(const name of ['/forcesupport','/freesupportchannel','/normalsupport'])
+   assert(router.includes("command==='"+name+"'"),name+' must have explicit command routing');
+ assert(router.includes("setMediaXFreeChannelAccessMode({dryRun:true})"),'Channel must be verified before disabling force');
+ assert(router.includes('setMediaXFreeAccessMode()'),'Normal mode must update PayPing database');
+ assert(router.includes('setDailyForceSupportEnabled(true'),'Force must use existing 7-day bot engine');
+ assert(router.includes('deprecated:true'),'Old daily commands must not mutate state');
+ const handler=await readFile('handlers/telegram.js','utf8');
+ assert(handler.includes('routeUnifiedForceCommand(message,command)'));
+ assert(!handler.includes("if (command === '/forcesupportdaily')"),'Old Daily Force command handler must be removed');
+ assert(!handler.includes("if (command === '/stopforcesupportdaily')"));
+ const menu=await readFile('src/bot/commands.js','utf8');
+ assert(menu.includes("'/freesupportchannel") && !menu.includes("'/forcesupportdaily"));
+ const promotions=await readFile('src/support/promotion.js','utf8');
+ assert(promotions.includes('claimPromotionSlot('),'One-time promotional dispatch must use atomic claim');
+ assert(promotions.includes("getActiveSupporterTitle(userId)"),'Active supporters must not receive promotional reminders');
+ assert(promotions.includes("supportPromotionScheduleState()"),'Promo scheduler must use MY 10am/3pm window');
+ const force=await readFile('src/support/daily-force.js','utf8');
+ assert(force.includes('export async function markDailyForceUsageSuccess'),'Only completion can consume free usage');
+ assert(force.includes("if (!isUsageAttempt(message)) return false;"),'Second NEW source is required for support lock');
+ assert(force.includes('canFinishFirstDailyForceHq'),'Original HQ conversion remains part of first session');
+ const channel=await readFile('src/features/channel-gate.js','utf8');
+ assert(channel.includes('if(!isNewChannelUsage(message))return false;'),'Channel lock requires second media source');
+ console.log('PAYPING_THREE_ACCESS_MODES_SELFTEST_OK — three synced commands, Friday 10am, daily 3pm, one-per-day promo, second-source locks');
+}finally{
+ if(env===undefined)delete process.env.PAYPING_SHARED_CONFIG_ENABLED;
+ else process.env.PAYPING_SHARED_CONFIG_ENABLED=env;
+}

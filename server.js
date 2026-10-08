@@ -19,6 +19,7 @@ import contentBridgeConnectHandler from './handlers/content-bridge-connect.js';
 import contentBridgeVerifyHandler from './handlers/content-bridge-verify.js';
 import paymentPushHandler from './handlers/payment-push.js';
 import payPingDataHandler from './handlers/payping-data.js';
+import {startMediaXTelegramAvatarSync} from './src/support/payping-bot-avatar-sync.js';
 import payPingAuthHandler from './handlers/payping-auth.js';
 import payPingLoginPage from './handlers/payping-login-pwa.js';
 import payPingRegisterPage from './handlers/payping-register-pwa.js';
@@ -227,6 +228,7 @@ server.listen(port, '0.0.0.0', () => {
 
   startSupportPromotionScheduler();
   startSharedConfigHeartbeat();
+  startMediaXTelegramAvatarSync();
 
   void getDailyForceRuntimeState()
     .then(async (state) => {

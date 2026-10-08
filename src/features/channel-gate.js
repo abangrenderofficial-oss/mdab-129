@@ -8,6 +8,7 @@ import {
 } from '../bot/stats.js';
 
 import {getMediaXChannelRule,isPayPingSharedConfigEnabled} from '../support/payping-shared-config.js';
+import {isDailyForceSupportEnabled} from '../support/daily-force.js';
 
 export const CHANNEL_VERIFY_CALLBACK = 'channel:verify:v1';
 
@@ -96,6 +97,9 @@ export async function sendChannelGatePrompt(chatId, channel=channelUsername(), t
 async function channelGatePolicy(userId){
   const remote=await getMediaXChannelRule();
   if(remote){
+    // Protect against a stale channel policy during Force Support switches.
+    // Read only when a channel rule exists; normal Force traffic adds no query.
+    if(await isDailyForceSupportEnabled())return {gateRequired:false,channel:remote.channel,threshold:remote.threshold};
     const count=await getChannelUseCount(userId);
     return {gateRequired:count>=remote.threshold,channel:remote.channel,threshold:remote.threshold};
   }

@@ -152,6 +152,8 @@ export async function getPayPingDashboard({ userId, owner = false, role = 'user'
               COUNT(*) AS total_count,
               COALESCE(SUM(CASE WHEN o.status = 'PAID' THEN 1 ELSE 0 END),0) AS paid_count,
               COALESCE(SUM(CASE WHEN o.status != 'PAID' THEN 1 ELSE 0 END),0) AS pending_count,
+              COUNT(DISTINCT CASE WHEN o.status = 'PAID' THEN o.telegram_user_id END) AS supporter_count,
+              COALESCE(SUM(CASE WHEN o.status IN ('FAILED','CANCELLED','EXPIRED','INTENT_FAILED','AMOUNT_MISMATCH') THEN 1 ELSE 0 END),0) AS failed_count,
               COALESCE(SUM(CASE WHEN o.status = 'PAID' THEN o.amount_cents ELSE 0 END),0) AS paid_cents,
               COALESCE(SUM(CASE
                 WHEN o.status = 'PAID'
@@ -199,6 +201,8 @@ export async function getPayPingDashboard({ userId, owner = false, role = 'user'
       totalTransactions: Number(s.total_count || 0),
       paidTransactions: Number(s.paid_count || 0),
       pendingTransactions: Number(s.pending_count || 0),
+      supporters: Number(s.supporter_count || 0),
+      failedTransactions: Number(s.failed_count || 0),
       totalReceived: money(s.paid_cents),
       todayReceived: money(persistedToday.receivedCents),
       todayTransactions: persistedToday.successfulCount,

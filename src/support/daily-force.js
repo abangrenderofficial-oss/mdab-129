@@ -5,6 +5,7 @@ import { dailyForcePremiumSupportText, supportAmountKeyboard } from '../features
 import { getActiveSupporterTitle } from './community-store.js';
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { malaysiaSupportSchedule } from './daily-force-schedule.js';
+import {isPayPingSharedConfigEnabled,publishSharedForceState} from './payping-shared-config.js';
 
 const DAILY_FORCE_COPY = 'Please support bot utk teruskan guna ❤️';
 const DAILY_FORCE_PROCESSING_COPY = '⏳ Penggunaan pertama sedang diproses. Tunggu sampai siap dulu ya.';
@@ -214,6 +215,7 @@ async function setDailyForceSupportEnabled(enabled, adminUserId = '') {
       now,
     ],
   });
+  if(isPayPingSharedConfigEnabled()) await publishSharedForceState(Boolean(enabled), 'telegram');
   return { enabled: Boolean(enabled), cycleId: nextCycleId };
 }
 
@@ -466,6 +468,10 @@ export async function handleDailyForceSupportCommand(message = {}) {
 
   const alreadyEnabled = await isDailyForceSupportEnabled();
   const saved = await setDailyForceSupportEnabled(true, access.userId);
+  if(isPayPingSharedConfigEnabled()){
+    await sendMessage(access.chatId,`🔒 Force Support ${alreadyEnabled?'memang dah aktif':'aktif'} untuk SETIAP HARI termasuk Jumaat.\n\nPengguna bukan supporter boleh guna 1 kali berjaya secara percuma; cubaan seterusnya locked sehingga support.\n\nAmaun ikut Support Plans PayPing. Guna /normalsupport untuk FREE atau /stopforcesupport untuk OFF.\n\nCycle: ${saved.cycleId}`);
+    return true;
+  }
   await sendMessage(
     access.chatId,
     alreadyEnabled
@@ -502,6 +508,10 @@ export async function handleStopDailyForceSupportCommand(message = {}) {
   }
 
   await setDailyForceSupportEnabled(false, access.userId);
+  if(isPayPingSharedConfigEnabled()){
+    await sendMessage(access.chatId,'🔓 Force Support OFF. Bot kembali ke Free Mode setiap hari. Status PayPing dikemaskini.');
+    return true;
+  }
   await sendMessage(
     access.chatId,
     '⏹ /forcesupportdaily dihentikan sepenuhnya. Sabtu–Khamis tak akan berjalan lagi sehingga kau aktifkan semula /forcesupportdaily.',

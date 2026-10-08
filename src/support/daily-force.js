@@ -418,7 +418,37 @@ export async function canFinishFirstDailyForceHq(callbackQuery = {}) {
          WHERE s.environment=? AND s.telegram_user_id=? AND s.cycle_id=? AND u.used_once=1 LIMIT 1`,
     args:[currentSupportEnvironment(),String(id),mode.cycleId],
   });
-  const record=r.rows?.[0];
+  let record=r.rows?.[0];
+  if(!record){
+    // Backward-compatible grace for users who received the premature promo
+    // just before this fix. Only their ORIGINAL media button can use it.
+    const previous=await db.execute({
+      sql:`SELECT used_once,use_claimed,prompt_sent,success_count,updated_at
+           FROM support_daily_force_usage
+           WHERE environment=? AND telegram_user_id=? AND cycle_id=? LIMIT 1`,
+      args:[currentSupportEnvironment(),String(id),mode.cycleId],
+    });
+    const old=previous.rows?.[0],oldTime=Date.parse(String(old?.updated_at||''));
+    const mediaDate=Number(callbackQuery?.message?.date||0)*1000;
+    if(Number(old?.used_once)===1 && Number(old?.prompt_sent)===1
+       && Number(old?.success_count)===1 && Number(old?.use_claimed)===0
+       && Number.isFinite(oldTime) && Date.now()-oldTime>=0
+       && Date.now()-oldTime<4*3_600_000
+       && Number.isFinite(mediaDate) && mediaDate>=oldTime-120_000 && mediaDate<=oldTime+120_000){
+      await db.execute({
+        sql:`INSERT OR IGNORE INTO support_daily_force_first_hq
+             (environment,telegram_user_id,cycle_id,raw_completed_at,hq_completed_at)
+             VALUES(?,?,?,?, '')`,
+        args:[currentSupportEnvironment(),String(id),mode.cycleId,new Date(oldTime).toISOString()],
+      });
+      const justCreated=await db.execute({
+        sql:`SELECT raw_completed_at,hq_completed_at FROM support_daily_force_first_hq
+             WHERE environment=? AND telegram_user_id=? AND cycle_id=? LIMIT 1`,
+        args:[currentSupportEnvironment(),String(id),mode.cycleId],
+      });
+      record=justCreated.rows?.[0];
+    }
+  }
   if(!record || record.hq_completed_at)return false;
   const first=Date.parse(String(record.raw_completed_at||''));
   const mediaDate=Number(callbackQuery?.message?.date||0)*1000;

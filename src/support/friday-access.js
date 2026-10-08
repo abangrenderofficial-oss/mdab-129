@@ -2,6 +2,7 @@ import { isResetAdmin } from '../recovery.js';
 import { sendMessage, telegram } from '../telegram.js';
 import { supportCampaignText, supportMenuKeyboard } from '../features/support.js';
 import { getActiveSupporterTitle } from './community-store.js';
+import {isPayPingSharedConfigEnabled} from './payping-shared-config.js';
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 
 export const FRIDAY_SUPPORT_MODE_OFF = 'OFF';
@@ -162,6 +163,7 @@ async function markFirstUseAndClaimPrompt(userId, dateKey) {
 }
 
 export async function claimFridayUsageAttempt(userId) {
+  if(isPayPingSharedConfigEnabled())return false;
   const id = Number(userId || 0);
   if (!Number.isSafeInteger(id) || id <= 0 || isResetAdmin(id)) return false;
 
@@ -310,6 +312,7 @@ async function sendDonateGate(chatId, userId, dateKey) {
 
 async function accessContext(userId) {
   const parts = malaysiaParts();
+  if(isPayPingSharedConfigEnabled())return {gated:false,mode:FRIDAY_SUPPORT_MODE_OFF,parts,supporter:null};
   if (parts.weekday !== 'Fri') {
     return { gated: false, mode: FRIDAY_SUPPORT_MODE_OFF, parts, supporter: null };
   }
@@ -388,6 +391,7 @@ export async function enforceFridaySupportForCallback(callbackQuery = {}) {
 }
 
 export async function markFridayUsageSuccess(userId) {
+  if(isPayPingSharedConfigEnabled())return false;
   const id = Number(userId || 0);
   if (!Number.isSafeInteger(id) || id <= 0 || isResetAdmin(id)) return false;
 
@@ -438,6 +442,7 @@ async function updateDonateMessage(callbackQuery, userId, dateKey, slots) {
 
 export async function processFridaySupportCallback(callbackQuery = {}) {
   const action = String(callbackQuery?.data || '');
+  if(isPayPingSharedConfigEnabled()&&action.startsWith('friday:share:')){await telegram('answerCallbackQuery',{callback_query_id:callbackQuery?.id,text:'Friday-only mode sudah diganti oleh Force Support harian.',show_alert:true}).catch(()=>{});return true}
   const match = action.match(/^friday:share:([123])$/);
   if (!match) return false;
 

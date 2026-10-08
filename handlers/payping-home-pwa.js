@@ -87,6 +87,91 @@ body{background:#f4f5fb;color:#171725}
  #mainNav a{font-size:10px}#mainNav b{font-size:20px}
 }
 
+
+/* PAYPING_MOCKUP2_ADMIN_V1 - owner only; preserve affiliate/user experience */
+body.ownerDash{--pp-bg:#f3f5fc;--pp-surface:#fff;--pp-ink:#151d37;--pp-muted:#8792ac;--pp-border:#e8ecf7;--pp-soft:#f7f8fd;--pp-shadow:0 9px 28px rgba(38,58,120,.055);background:var(--pp-bg);color:var(--pp-ink);padding:0}
+body.ownerDash[data-theme="dark"]{--pp-bg:#0a1223;--pp-surface:#121d31;--pp-ink:#f4f6ff;--pp-muted:#93a1bd;--pp-border:#24314c;--pp-soft:#0d172a;--pp-shadow:0 9px 28px rgba(0,0,0,.15);color-scheme:dark}
+body.ownerDash main{max-width:1440px;margin:0 auto;padding:0 26px 48px 220px;min-height:100vh}
+body.ownerDash .top{margin:0 0 23px;padding:15px 0;background:none;box-shadow:none;border-radius:0;color:var(--pp-ink)}
+body.ownerDash .top .title{color:var(--pp-ink);font-size:20px}
+body.ownerDash .top .sub{color:var(--pp-muted)}
+body.ownerDash .top .logo{width:37px;height:37px;border-radius:11px}
+body.ownerDash .top .scope{color:var(--pp-muted);background:var(--pp-soft)}
+body.ownerDash #mainNav{position:fixed;left:max(0px,calc((100vw - 1440px)/2));top:0;bottom:0;transform:none;width:196px;height:auto;display:flex;flex-direction:column;gap:6px;padding:88px 12px 20px;border:0;border-right:1px solid var(--pp-border);border-radius:0;background:var(--pp-surface);box-shadow:none;z-index:5}
+body.ownerDash #mainNav a{min-height:48px;display:flex;flex-direction:row;justify-content:flex-start;gap:14px;padding:0 13px;font-size:13px;border-radius:12px;color:var(--pp-muted)}
+body.ownerDash #mainNav a b{font-size:22px;font-weight:500}
+body.ownerDash #mainNav a.active{background:#e7edff;color:#2452f5}
+body.ownerDash[data-theme="dark"] #mainNav a.active{background:#1a3265;color:#8fb4ff}
+body.ownerDash #mainNav:before{content:"PayPing";font-size:23px;font-weight:900;color:var(--pp-ink);position:absolute;top:29px;left:22px;letter-spacing:-.7px}
+body.ownerDash #dashboard{display:block}
+body.ownerDash #dashboard[hidden]{display:none}
+body.ownerDash #dashboard .ppHeading{display:flex;align-items:center;justify-content:space-between;gap:15px;margin:6px 0 18px}
+body.ownerDash .ppHeading h1{margin:0;font-size:27px;letter-spacing:-.8px}
+body.ownerDash .ppHeading p{font-size:13px;color:var(--pp-muted);margin:4px 0 0}
+body.ownerDash .ppActions{display:flex;gap:10px;align-items:center}
+body.ownerDash .ppButton{display:inline-flex;align-items:center;justify-content:center;gap:7px;text-decoration:none;border-radius:13px;border:1px solid var(--pp-border);background:var(--pp-surface);color:var(--pp-ink);font-size:13px;font-weight:800;padding:12px 17px;cursor:pointer}
+body.ownerDash .ppButton.primary{background:linear-gradient(115deg,#2869f8,#a14cf1);color:white;border:0}
+body.ownerDash .ppTheme{width:40px;height:40px;border-radius:50%;border:1px solid var(--pp-border);background:var(--pp-surface);color:var(--pp-ink);cursor:pointer;font-size:19px}
+body.ownerDash .ppHero{display:grid;grid-template-columns:38% 62%;align-items:center;gap:0;padding:26px;border-radius:18px;background:linear-gradient(110deg,#2769f9,#8b57f3 95%);color:#fff;box-shadow:var(--pp-shadow)}
+body.ownerDash .ppHero small{font-size:13px;color:#e8efff}
+body.ownerDash .ppHero strong{display:block;font-size:clamp(30px,4vw,42px);letter-spacing:-1.5px;margin:7px 0}
+body.ownerDash .ppHero .ppGrowth{display:inline-block;padding:6px 11px;border-radius:100px;background:#d9ffed;color:#069f63;font-weight:800;font-size:12px}
+body.ownerDash .ppHero svg{width:100%;height:160px}
+body.ownerDash .ppStats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:14px 0}
+body.ownerDash .ppStat,body.ownerDash .ppPanel{border-radius:17px;background:var(--pp-surface);border:1px solid var(--pp-border);box-shadow:var(--pp-shadow)}
+body.ownerDash .ppStat{padding:18px;min-height:115px}
+body.ownerDash .ppStat .ppIco{font-size:22px;color:#3266f7}
+body.ownerDash .ppStat .ppK{display:block;color:var(--pp-muted);font-size:12px;margin:10px 0 4px}
+body.ownerDash .ppStat strong{font-size:25px}
+body.ownerDash .ppCols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+body.ownerDash .ppPanel{padding:18px;margin-bottom:14px}
+body.ownerDash .ppPanel h2{font-size:16px;margin:0 0 14px}
+body.ownerDash .ppPanel .ppPanelHead{display:flex;justify-content:space-between;align-items:center;gap:8px}
+body.ownerDash .ppPanel a{color:#4778fa;text-decoration:none;font-size:12px;font-weight:800}
+body.ownerDash .ppBot{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--pp-border);padding:12px 0;color:inherit;text-decoration:none}
+body.ownerDash .ppBot:last-child{border:0}
+body.ownerDash .ppBotIcon{width:42px;height:42px;border-radius:13px;background:linear-gradient(135deg,#215cf6,#9143ef);display:grid;place-items:center;color:#fff;font-size:23px;flex:none}
+body.ownerDash .ppBotMain{flex:1;min-width:0}
+body.ownerDash .ppBotMain strong{font-size:13px}
+body.ownerDash .ppBotMain small{display:block;font-size:11px;color:var(--pp-muted);margin-top:5px}
+body.ownerDash .ppBotValue{font-size:13px;font-weight:800}
+body.ownerDash .ppRecent{display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid var(--pp-border);text-decoration:none;color:inherit}
+body.ownerDash .ppRecent:last-child{border:0}
+body.ownerDash .ppRecent strong{font-size:12px}
+body.ownerDash .ppRecent small{display:block;color:var(--pp-muted);font-size:11px;margin-top:4px}
+body.ownerDash .ppRecent .ppAmount{color:#0ab478;font-weight:800;font-size:13px}
+body.ownerDash #ppMobileAdd{display:none}
+body.ownerDash .ppEmpty{color:var(--pp-muted);font-size:13px;padding:14px 0}
+body.ownerDash #ppAdminTools{margin-top:14px}
+body.ownerDash #ppAdminTools .setupHead{padding:4px}
+body.ownerDash #ppAdminTools .cardTitle{color:var(--pp-ink)}
+body.ownerDash #ppAdminTools .muted{color:var(--pp-muted)}
+body.ownerDash .ppTheme:focus-visible,body.ownerDash .ppButton:focus-visible{outline:3px solid #9e9dff;outline-offset:3px}
+@media(max-width:900px){
+body.ownerDash main{padding-left:188px;padding-right:16px}
+body.ownerDash #mainNav{width:172px}
+body.ownerDash .ppStats{grid-template-columns:repeat(2,minmax(0,1fr))}
+body.ownerDash .ppCols{grid-template-columns:1fr}
+}
+@media(max-width:619px){
+body.ownerDash{overflow:auto}
+body.ownerDash main{position:static;max-width:none;min-height:100vh;padding:0 15px calc(115px + env(safe-area-inset-bottom));overflow:visible;background:var(--pp-bg)}
+body.ownerDash .top{padding:17px 0;margin:0 0 10px}
+body.ownerDash .top .scope{display:none}
+body.ownerDash #mainNav{left:10px;right:10px;top:auto;bottom:calc(9px + env(safe-area-inset-bottom));transform:none;width:auto;height:72px;padding:7px;flex-direction:row;gap:0;border:1px solid var(--pp-border);border-radius:23px;background:var(--pp-surface);box-shadow:var(--pp-shadow)}
+body.ownerDash #mainNav:before{display:none}
+body.ownerDash #mainNav a{flex:1;min-width:0;padding:0;flex-direction:column;gap:3px;justify-content:center;min-height:0;font-size:10px}
+body.ownerDash #mainNav a b{font-size:21px}
+body.ownerDash .ppHeading h1{font-size:24px}
+body.ownerDash .ppHeading{align-items:flex-start}
+body.ownerDash .ppHeading .ppActions .ppButton{display:none}
+body.ownerDash .ppHero{display:block;padding:21px}
+body.ownerDash .ppHero svg{height:95px}
+body.ownerDash .ppStats{gap:10px}
+body.ownerDash .ppStat{padding:14px;min-height:108px}
+body.ownerDash .ppStat strong{font-size:22px}
+body.ownerDash #ppMobileAdd{display:flex;width:100%;margin:4px 0 17px}
+}
 </style></head>
 <body><main>
 <div class="top"><div class="brand"><div class="logo"><img src="/ar-payment/payping-icon-v4.svg"></div><div><div class="title">PayPing!</div><div class="sub">Payment dashboard</div></div></div><div id="scope" class="scope">Not connected</div></div>
@@ -94,6 +179,15 @@ body{background:#f4f5fb;color:#171725}
 <div id="dashLoading" class="loader">Loading PayPing…</div>
 <section id="onboarding" class="card" hidden><div class="cardTitle">Connect Telegram</div><div class="muted">Link PayPing account dengan Telegram supaya dashboard, payment dan affiliate ikut user yang betul.</div><button id="connectTelegram" class="btn">Connect Telegram</button><div id="linkMsg" class="msg"></div></section>
 <div id="dashboard" hidden>
+<div id="ppAdminView" hidden>
+<div class="ppHeading"><div><h1>Dashboard</h1><p>Overview of your PayPing platform performance.</p></div><div class="ppActions"><button id="ppThemeToggle" class="ppTheme" type="button" aria-label="Toggle light or dark mode">☾</button><a class="ppButton primary" href="/ar-payment/bots">＋ Add Bot</a></div></div>
+<section class="ppHero"><div><small>Total Revenue</small><strong id="ppRevenue">RM0.00</strong><span class="ppGrowth" id="ppRevenueCount">0 successful payments</span></div><svg viewBox="0 0 520 160" aria-label="Decorative revenue trend"><path d="M0 133 L60 110 L112 118 L166 83 L215 98 L270 62 L321 76 L382 30 L430 54 L520 12" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M0 133 L60 110 L112 118 L166 83 L215 98 L270 62 L321 76 L382 30 L430 54 L520 12 L520 160 L0 160 Z" fill="#ffffff" fill-opacity=".13"/></svg></section>
+<div class="ppStats"><div class="ppStat"><span class="ppIco">♙</span><span class="ppK">Active Supporters</span><strong id="ppSupporters">—</strong></div><div class="ppStat"><span class="ppIco">◇</span><span class="ppK">Active Bots</span><strong id="ppBotsCount">—</strong></div><div class="ppStat"><span class="ppIco">▣</span><span class="ppK">Pending Payments</span><strong id="ppPending">—</strong></div><div class="ppStat"><span class="ppIco">⚠</span><span class="ppK">All Transactions</span><strong id="ppTransactions">—</strong></div></div>
+<div class="ppCols"><section class="ppPanel"><div class="ppPanelHead"><h2>Bot Performance</h2><a href="/ar-payment/bots">View All →</a></div><div id="ppBotRows" class="ppEmpty">Loading bots…</div></section><section class="ppPanel"><div class="ppPanelHead"><h2>Recent Activity</h2><a href="/ar-payment/transactions">View All →</a></div><div id="ppRecentRows" class="ppEmpty">Loading transactions…</div></section></div>
+<section class="ppPanel"><div class="ppPanelHead"><h2>Affiliates</h2><a href="/ar-payment/affiliate/admin">View Affiliators →</a></div><p style="font-size:13px;color:var(--pp-muted);margin:0">Manage affiliate accounts, commissions and payouts for each bot.</p></section>
+<a id="ppMobileAdd" class="ppButton primary" href="/ar-payment/bots">＋ Add Bot</a>
+</div>
+
 <section class="hero"><div class="eyebrow">Today received</div><div id="todayReceived" class="heroValue">RM0.00</div><div id="todayCount" class="muted">0 successful payments today</div></section>
 <section class="grid">
 <div class="stat"><div class="k">Total Received</div><div id="totalReceived" class="v">RM0.00</div></div>
@@ -106,7 +200,7 @@ body{background:#f4f5fb;color:#171725}
 <section class="card"><div class="line"><div class="cardTitle">Recent Payments</div><a href="/ar-payment/transactions" style="font-size:11px;color:#bfaeff;text-decoration:none">View all</a></div><div id="recent" class="list"></div></section>
 </div>
 
-<section class="card">
+<section id="ppAdminTools" class="card">
 <div class="setupHead"><div><div class="cardTitle" style="margin:0"><span id="dot" class="dot"></span>Notifications</div><div id="state" class="muted">Belum connected</div></div><button id="toggleSetup" class="btn secondary" style="width:auto;margin:0;padding:9px 11px">Setup</button></div>
 <div id="setupBody" class="setupBody" hidden>
 <div id="modernPushHint" class="muted" style="margin-bottom:12px"></div>
@@ -202,7 +296,7 @@ async function loadDashboard(){
  if(!r.ok||!d.ok)throw new Error(d.message||'Dashboard unavailable.');
  const s=d.summary;$('scope').textContent=d.owner?'Merchant view':String(d.role||'user').toLowerCase()==='affiliate'?'Affiliate view':'My view';$('analyticsQuick').hidden=!d.owner;$('affiliateAdminQuick').hidden=!d.owner;$('todayReceived').textContent=money(s.todayReceived);$('todayCount').textContent=s.todayTransactions+' successful payments today';$('totalReceived').textContent=money(s.totalReceived);$('paidCount').textContent=s.paidTransactions;$('pendingCount').textContent=s.pendingTransactions;$('totalCount').textContent=s.totalTransactions;
  $('recent').innerHTML=d.recent.length?d.recent.map(t=>'<a class="tx" href="/ar-payment/transaction?order='+encodeURIComponent(t.orderNumber)+'"><div class="line"><div><div class="name">'+esc(t.displayName||t.username||('ID '+t.userId))+'</div><div class="meta">'+esc(t.tierLabel)+' · '+date(t.paidAt||t.createdAt)+' · Details →</div></div><div style="text-align:right"><div class="amount">'+money(t.amount)+'</div><span class="badge '+esc(t.status.toLowerCase())+'">'+esc(t.status)+'</span></div></div></a>').join(''):'<div class="empty">No payments yet.</div>';
- if(d.owner)await loadBotCards();
+ if(d.owner){ppAdminStart(d);await loadBotCards();}
  $('dashLoading').hidden=true;$('onboarding').hidden=true;$('dashboard').hidden=false;
  }catch(e){$('dashLoading').hidden=false;$('dashLoading').innerHTML='<div class="error">'+esc(e.message||String(e))+'</div>'}
 }
@@ -243,6 +337,43 @@ $('test').addEventListener('click',async()=>{try{const t=token();if(!t)throw new
 window.addEventListener('pageshow',()=>{if(sessionStorage.getItem(telegramLinkKey)==='1')refreshTelegramLinkState()});
 window.addEventListener('focus',()=>{if(sessionStorage.getItem(telegramLinkKey)==='1')refreshTelegramLinkState()});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&sessionStorage.getItem(telegramLinkKey)==='1')refreshTelegramLinkState()});
+
+function ppApplyTheme(theme){
+ const selected=theme==='dark'?'dark':'light';
+ document.body.dataset.theme=selected;
+ const b=$('ppThemeToggle');
+ if(b){b.textContent=selected==='dark'?'☀':'☾';b.setAttribute('aria-label',selected==='dark'?'Switch to light mode':'Switch to dark mode')}
+ try{localStorage.setItem('payping_admin_theme_v1',selected)}catch{}
+}
+function ppAdminStart(data){
+ if(!data.owner)return;
+ document.body.classList.add('ownerDash');
+ $('ppAdminView').hidden=false;
+ const existing=$('dashboard').querySelectorAll(':scope > section, :scope > div:not(#ppAdminView)');
+ existing.forEach(e=>e.hidden=true);
+ $('ppAdminTools').hidden=false;
+ $('ppRevenue').textContent=money(data.summary.totalReceived);
+ $('ppRevenueCount').textContent=String(data.summary.paidTransactions||0)+' successful payments';
+ $('ppPending').textContent=String(data.summary.pendingTransactions||0);
+ $('ppTransactions').textContent=String(data.summary.totalTransactions||0);
+ const recent=Array.isArray(data.recent)?data.recent:[];
+ $('ppRecentRows').innerHTML=recent.length?recent.slice(0,5).map(t=>'<a class="ppRecent" href="/ar-payment/transaction?order='+encodeURIComponent(t.orderNumber)+'"><span><strong>'+esc(t.displayName||t.username||('ID '+t.userId))+'</strong><small>'+esc(t.tierLabel||'Payment')+' · '+date(t.paidAt||t.createdAt)+'</small></span><span class="ppAmount">'+money(t.amount)+'</span></a>').join(''):'<div class="ppEmpty">No payments yet.</div>';
+ let selected='light';try{selected=localStorage.getItem('payping_admin_theme_v1')||'light'}catch{}
+ ppApplyTheme(selected);
+ $('ppThemeToggle').onclick=()=>ppApplyTheme(document.body.dataset.theme==='dark'?'light':'dark');
+ ppLoadBots();
+}
+async function ppLoadBots(){
+ try{
+ const r=await fetch('/api/payping-data?view=bots',{headers:authHeaders(false),cache:'no-store'});
+ const d=await r.json();if(!r.ok||!d.ok)throw new Error('Bots unavailable');
+ const bots=Array.isArray(d.bots)?d.bots:[];
+ $('ppBotsCount').textContent=String(bots.filter(b=>b.status==='active').length);
+ $('ppSupporters').textContent=String(bots.reduce((n,b)=>n+Number(b.supporterCount||b.activeSupporters||0),0));
+ $('ppBotRows').innerHTML=bots.length?bots.map(b=>'<a class="ppBot" href="/ar-payment/bot?bot='+encodeURIComponent(b.id)+'"><span class="ppBotIcon">'+(b.id==='musix'?'♫':'▸')+'</span><span class="ppBotMain"><strong>'+esc(b.name)+'</strong><small>'+esc(b.supporterCount||b.activeSupporters||0)+' supporters · '+esc(b.activeAffiliates||0)+' affiliators</small></span><span class="ppBotValue">'+money(b.totalReceived)+'</span></a>').join(''):'<div class="ppEmpty">No bots yet.</div>';
+ }catch(e){$('ppBotRows').textContent='Bot data unavailable';$('ppBotsCount').textContent='—';$('ppSupporters').textContent='—'}
+}
+
 refreshConnection();loadDashboard();
 </script></body></html>`;
 

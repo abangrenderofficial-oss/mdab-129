@@ -5,6 +5,7 @@ import { dailyForcePremiumSupportText, supportAmountKeyboard } from '../features
 import { getActiveSupporterTitle } from './community-store.js';
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { malaysiaSupportSchedule } from './daily-force-schedule.js';
+import { MEDIA_STATUS_HQ, MEDIA_STATUS_HQ_ANDROID, MEDIA_STATUS_HQ_MENU } from '../bot/media-actions.js';
 import {isPayPingSharedConfigEnabled,publishSharedForceState} from './payping-shared-config.js';
 
 const DAILY_FORCE_COPY = 'Please support bot utk teruskan guna ❤️';
@@ -406,6 +407,8 @@ export async function canFinishFirstDailyForceHq(callbackQuery = {}) {
   const id = Number(callbackQuery?.from?.id || 0);
   if (!Number.isSafeInteger(id) || id <= 0 || isResetAdmin(id)) return false;
   if (callbackQuery?.message?.chat?.type !== 'private') return false;
+  const action=String(callbackQuery?.data||'');
+  if (![MEDIA_STATUS_HQ,MEDIA_STATUS_HQ_ANDROID,MEDIA_STATUS_HQ_MENU].some(prefix=>action.startsWith(prefix)))return false;
   if (!callbackQuery?.message?.video && !callbackQuery?.message?.photo?.length) return false;
   const mode=await modeState();
   if(!mode.enabled || !malaysiaSupportSchedule().dailyForceWindowActive)return false;

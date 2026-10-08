@@ -21,7 +21,7 @@ nav a{text-decoration:none;color:#9496a7;display:flex;flex-direction:column;alig
 </style></head>
 <body><main>
 <section class="header"><div class="top"><div class="brand"><div class="logo"><img src="/ar-payment/payping-icon-v4.svg" alt=""></div><div><div class="title">Bots</div><div class="sub">Manage PayPing products & payment flows</div></div></div><div id="count" class="count">0 bots</div></div></section>
-<div class="sectionTitle">Your Bots</div><div class="muted" style="margin:0 2px 12px">Each bot keeps its own plan, payment portal, supporters and affiliate view.</div>
+<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:22px 2px 12px"><div class="sectionTitle" style="margin:0">Your Bots</div><a href="/ar-payment/bots/add" style="text-decoration:none;background:linear-gradient(145deg,#7657f4,#6041e0);color:#fff;padding:10px 13px;border-radius:13px;font-size:12px;font-weight:900">＋ Add Bot</a></div><div class="muted" style="margin:0 2px 12px">Each bot keeps its own plan, payment portal, supporters and affiliate view.</div>
 <div id="loading" class="loader">Loading bots…</div><div id="error" class="error" hidden></div><div id="list" class="list" hidden></div>
 </main>
 <nav><a href="/ar-payment/"><b>⌂</b>Home</a><a class="active" href="/ar-payment/bots"><b>◇</b>Bots</a><a href="/ar-payment/transactions"><b>≡</b>Transactions</a><a href="/ar-payment/affiliate/admin"><b>♙</b>Affiliates</a><a href="/ar-payment/settings"><b>⚙</b>Settings</a></nav>

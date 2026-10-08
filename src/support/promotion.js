@@ -78,15 +78,29 @@ function malaysiaParts(date = new Date()) {
   };
 }
 
-export function supportChannelScheduleState(date = new Date()) {
+/**
+ * One promotional slot per calendar day (Asia/Kuala_Lumpur):
+ * Friday 10:00, Saturday-Thursday 15:00. The mode is independent from
+ * lock enforcement and never consumes a user's free successful use.
+ */
+export function supportPromotionScheduleState(date = new Date()) {
   const parts = malaysiaParts(date);
+  const shared = isPayPingSharedConfigEnabled();
+  const friday = parts.weekday === 'Fri';
+  const scheduledHour = shared ? (friday ? 10 : 15) : channelPromoHour();
+  const scheduledMinute = shared ? 0 : channelPromoMinute();
+  const due = parts.hour > scheduledHour || (parts.hour === scheduledHour && parts.minute >= scheduledMinute);
   return {
     ...parts,
-    due: channelTimeReached(parts),
-    scheduledHour: channelPromoHour(),
-    scheduledMinute: channelPromoMinute(),
+    due,
+    privateDue: shared ? due : (friday && parts.hour >= promoHour()),
+    scheduledHour,
+    scheduledMinute,
     timezone: MALAYSIA_TIMEZONE,
   };
+}
+export function supportChannelScheduleState(date = new Date()) {
+  return supportPromotionScheduleState(date);
 }
 
 function sleep(ms) {
@@ -245,23 +259,23 @@ export async function runSupportPromotionCycle({ force = false } = {}) {
   if (cycleRunning) return { skipped: true, reason: 'already_running' };
   cycleRunning = true;
   try {
-    const parts = malaysiaParts();
-    const mode = isPayPingSharedConfigEnabled()?FRIDAY_SUPPORT_MODE_OFF:await getFridaySupportMode();
+    const parts = supportPromotionScheduleState();
+    const shared = isPayPingSharedConfigEnabled();
+    const mode = shared ? 'PAYPING_SHARED' : await getFridaySupportMode();
 
     let channelSent = false;
-    if (force || channelTimeReached(parts)) {
+    if (force || parts.due) {
       channelSent = await deliverChannelDaily(parts.dateKey);
     }
 
     let privateResult = {
       skipped: true,
-      reason: mode === FRIDAY_SUPPORT_MODE_OFF
-        ? 'support_mode_off'
-        : (parts.weekday !== 'Fri' ? 'not_friday' : 'too_early'),
+      reason: !parts.privateDue ? 'scheduled_later' : 'support_mode_off',
     };
 
-    const privateReady = mode !== FRIDAY_SUPPORT_MODE_OFF
-      && (force || (parts.weekday === 'Fri' && parts.hour >= promoHour()));
+    const privateReady = shared
+      ? (force || parts.privateDue)
+      : (mode !== FRIDAY_SUPPORT_MODE_OFF && (force || parts.privateDue));
     if (privateReady) {
       privateResult = await deliverPrivateFriday(parts);
     }
@@ -293,8 +307,8 @@ export function startSupportPromotionScheduler() {
   schedulerTimer.unref?.();
   console.log('[support-promo] scheduler started', {
     timezone: MALAYSIA_TIMEZONE,
-    fridayPrivateHour: promoHour(),
-    channelDailyTime: `${String(channelPromoHour()).padStart(2, '0')}:${String(channelPromoMinute()).padStart(2, '0')}`,
+    fridayPromotions: isPayPingSharedConfigEnabled()?'10:00 MY (channel + private)':`${String(promoHour()).padStart(2,'0')}:00 MY (private)`,
+    normalDayPromotions: isPayPingSharedConfigEnabled()?'15:00 MY (channel + private)':'legacy channel time',
     channel: channelUsername(),
     privateAudience: 'all-tracked-users',
   });

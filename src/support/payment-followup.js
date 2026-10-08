@@ -11,9 +11,10 @@ import { notifyWebPushSupportPayment } from './webpush-payment.js';
 import { notifyNtfySupportPayment } from './ntfy-payment.js';
 import { notifyAffiliateCommission } from '../affiliate/notify.js';
 import { sendMessage, telegram } from '../telegram.js';
+import {refreshSupportAmounts} from './payping-shared-config.js';
 
 const FIRST_FOLLOWUP_MS = 15 * 60 * 1000;
-const SECOND_FOLLOWUP_MS = 3 * 60 * 60 * 1000;
+const SECOND_FOLLOWUP_MS = 8 * 60 * 60 * 1000;
 const CHECK_INTERVAL_MS = 60 * 1000;
 const MAX_FOLLOWUPS = 2;
 const AFFILIATE_FOLLOWUP_COOLDOWN_MS = 8 * 60 * 60 * 1000;
@@ -87,6 +88,20 @@ export async function ensurePaymentFollowupSchema() {
         )`,
         `CREATE INDEX IF NOT EXISTS idx_support_payment_followups_state
           ON support_payment_followups(environment, state, followup_count, last_followup_at)`,
+        `CREATE TABLE IF NOT EXISTS support_auto_followup_rollout_v3 (
+          environment TEXT NOT NULL PRIMARY KEY,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          activated_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )`,
+        `CREATE TABLE IF NOT EXISTS support_auto_followup_claims_v3 (
+          environment TEXT NOT NULL,
+          order_number TEXT NOT NULL,
+          sequence_no INTEGER NOT NULL,
+          claimed_at TEXT NOT NULL,
+          state TEXT NOT NULL DEFAULT 'sending',
+          PRIMARY KEY(environment,order_number,sequence_no)
+        )`,
         `CREATE TABLE IF NOT EXISTS support_affiliate_followups (
           environment TEXT NOT NULL,
           order_number TEXT NOT NULL,
@@ -396,26 +411,21 @@ function followupText(row, recipient = '') {
   ].join('\n');
 }
 
-function followupKeyboard(row) {
-  return {
-    inline_keyboard: [
-      [
-        { text: 'RM10', callback_data: 'support:select:10' },
-        { text: 'RM20', callback_data: 'support:select:20' },
-        { text: 'RM30', callback_data: 'support:select:30' },
-      ],
-      [
-        { text: 'RM50', callback_data: 'support:select:50' },
-        { text: 'RM100', callback_data: 'support:select:100' },
-      ],
-      [
-        { text: '✅ Dah Bayar / Semak', callback_data: `payfollow:review:${row.order_number}` },
-      ],
-      [
-        { text: '✖️ Tak Jadi', callback_data: `payfollow:cancel:${row.order_number}` },
-      ],
-    ],
-  };
+async function followupKeyboard(row) {
+  const amounts=await refreshSupportAmounts().catch(()=>[10,20,30,50,100]);
+  const active=amounts.map(Number).filter(x=>Number.isFinite(x)&&x>=1&&x<=1000000);
+  const rows=[];
+  for(let i=0;i<active.length;i+=3){
+    rows.push(active.slice(i,i+3).map(v=>({
+      text:'RM'+(Number.isInteger(v)?String(v):v.toFixed(2)),
+      callback_data:'support:select:'+String(v)
+    })));
+  }
+  return {inline_keyboard:[
+    ...rows,
+    [{text:'✅ Dah Bayar / Semak',callback_data:`payfollow:review:${row.order_number}`}],
+    [{text:'✖️ Tak Jadi',callback_data:`payfollow:cancel:${row.order_number}`}],
+  ]};
 }
 
 function telegramDeliveryError(error) {
@@ -633,6 +643,8 @@ export async function sendPaymentFollowup(orderNumber, {
         manualUnsuccessfulFollowup: true,
       }
     : await reconcilePaymentFollowup(orderNumber);
+  // A failed/unavailable gateway lookup is not evidence of an abandoned payment.
+  if (!manual && checked.lookupFailed) return {sent:false,reason:'payment_status_unverified'};
   if (checked.resolved || checked.paid) {
     return { sent: false, reason: checked.orderStatus || 'resolved', reconciliation: checked, followup: await getPaymentFollowupInfo(orderNumber) };
   }
@@ -649,7 +661,7 @@ export async function sendPaymentFollowup(orderNumber, {
   try {
     const recipient = await followupRecipient(row);
     sent = await sendMessage(row.telegram_user_id, followupText(row, recipient), {
-      reply_markup: followupKeyboard(row),
+      reply_markup: await followupKeyboard(row),
     });
   } catch (error) {
     const delivery = telegramDeliveryError(error);
@@ -845,48 +857,77 @@ export async function getPaymentFollowupInfo(orderNumber, {
   };
 }
 
-async function dueOrders(limit = 20) {
-  await Promise.all([ensurePaymentFollowupSchema(), ensureSubmissionSchema()]);
-  const db = await getSupportDb();
-  const env = currentSupportEnvironment();
-  const cutoff = new Date(Date.now() - FIRST_FOLLOWUP_MS).toISOString();
-  const result = await db.execute({
-    sql: `SELECT o.order_number
-          FROM support_orders o
-          JOIN support_submissions s
-            ON s.environment = o.environment
-           AND s.order_number = o.order_number
-          LEFT JOIN support_payment_followups f
-            ON f.environment = o.environment
-           AND f.order_number = o.order_number
-          WHERE o.environment = ?
-            AND o.status = 'PENDING'
-            AND o.paid_at IS NULL
-            AND s.state = 'CHECKOUT'
-            AND s.payment_url <> ''
-            AND o.created_at <= ?
-            AND COALESCE(f.state, 'ACTIVE') = 'ACTIVE'
-            AND COALESCE(f.followup_count, 0) < ?
-            AND (
-              COALESCE(f.followup_count, 0) = 0
-              OR datetime(COALESCE(f.last_followup_at, o.created_at), '+3 hours') <= datetime('now')
-            )
-          ORDER BY o.created_at ASC
-          LIMIT ?`,
-    args: [env, cutoff, MAX_FOLLOWUPS, Math.max(1, Math.min(100, Number(limit || 20)))],
-  });
-  return (result.rows || []).map((row) => String(row.order_number || '')).filter(Boolean);
+// Set a persistent activation watermark. Old pending orders are deliberately
+// excluded: enabling this feature must never send a backlog of historic DMs.
+export async function autoFollowupRollout(){
+  await ensurePaymentFollowupSchema();
+  const db=await getSupportDb(),env=currentSupportEnvironment();
+  const t=new Date().toISOString();
+  await db.execute({sql:"INSERT OR IGNORE INTO support_auto_followup_rollout_v3(environment,enabled,activated_at,updated_at) VALUES(?,1,?,?)",args:[env,t,t]});
+  const r=await db.execute({sql:"SELECT enabled,activated_at FROM support_auto_followup_rollout_v3 WHERE environment=? LIMIT 1",args:[env]});
+  return {enabled:Number(r.rows?.[0]?.enabled||0)===1,activatedAt:String(r.rows?.[0]?.activated_at||t)};
 }
 
-export async function runPaymentFollowupCycle() {
-  // Automatic payment follow-ups are intentionally disabled.
-  // A follow-up may only be sent by an explicit manual action from PayPing.
-  return { skipped: true, reason: 'manual_only', candidates: 0, sent: 0, resolved: 0, failed: 0 };
+async function dueOrders(limit=20){
+  const mode=await autoFollowupRollout();
+  if(!mode.enabled)return [];
+  await ensureSubmissionSchema();
+  const db=await getSupportDb(),env=currentSupportEnvironment();
+  const cutoff=new Date(Date.now()-FIRST_FOLLOWUP_MS).toISOString();
+  const secondCutoff=new Date(Date.now()-SECOND_FOLLOWUP_MS).toISOString();
+  const r=await db.execute({sql:`SELECT o.order_number,COALESCE(f.followup_count,0) AS followup_count
+    FROM support_orders o JOIN support_submissions s ON s.environment=o.environment AND s.order_number=o.order_number
+    LEFT JOIN support_payment_followups f ON f.environment=o.environment AND f.order_number=o.order_number
+    WHERE o.environment=? AND o.created_at>=? AND o.created_at<=?
+      AND o.status='PENDING' AND o.paid_at IS NULL
+      AND s.state='CHECKOUT' AND s.payment_url LIKE 'https://%'
+      AND COALESCE(f.state,'ACTIVE')='ACTIVE'
+      AND COALESCE(f.followup_count,0)<2
+      AND (COALESCE(f.followup_count,0)=0 OR f.last_followup_at<=?)
+    ORDER BY o.created_at ASC LIMIT ?`,args:[env,mode.activatedAt,cutoff,secondCutoff,Math.max(1,Math.min(Number(limit)||20,100))]});
+  return (r.rows||[]).map(x=>({order:String(x.order_number),sequence:Number(x.followup_count||0)+1}));
 }
-
-export function startPaymentFollowupScheduler() {
-  // Keep this exported compatibility hook because promotion.js calls it at startup,
-  // but never create a timer or send a Telegram follow-up automatically.
-  console.log('[payment-followup] automatic scheduler disabled; manual follow-up only');
-  return null;
+async function claimAutoFollowup(order,sequence){
+ const db=await getSupportDb();
+ const t=new Date().toISOString();
+ const result=await db.execute({sql:"INSERT OR IGNORE INTO support_auto_followup_claims_v3(environment,order_number,sequence_no,claimed_at,state) VALUES(?,?,?,?,'sending')",args:[currentSupportEnvironment(),order,sequence,t]});
+ return Number(result.rowsAffected||0)===1;
+}
+async function finishAutoClaim(order,sequence,status){
+ const db=await getSupportDb();
+ await db.execute({sql:"UPDATE support_auto_followup_claims_v3 SET state=? WHERE environment=? AND order_number=? AND sequence_no=?",args:[status,currentSupportEnvironment(),order,sequence]});
+}
+export async function runPaymentFollowupCycle(){
+ if(cycleRunning)return {skipped:true,reason:'already_running'};
+ cycleRunning=true;
+ const result={skipped:false,candidates:0,sent:0,resolved:0,failed:0};
+ try{
+   const candidates=await dueOrders(20);
+   result.candidates=candidates.length;
+   for(const {order,sequence} of candidates){
+     if(!await claimAutoFollowup(order,sequence))continue;
+     let state='needs_review';
+     try{
+       const outcome=await sendPaymentFollowup(order,{manual:false});
+       if(outcome.sent){result.sent++;state='sent'}
+       else{state='skipped';result.resolved++}
+     }catch(e){result.failed++;console.warn('[payment-followup] automatic delivery requires review:',e.code||e.message)}
+     finally{await finishAutoClaim(order,sequence,state).catch(e=>console.warn('[payment-followup] claim update failed:',e.message))}
+   }
+   return result;
+ }finally{cycleRunning=false}
+}
+export function startPaymentFollowupScheduler(){
+ if(schedulerTimer)return schedulerTimer;
+ const run=()=>void runPaymentFollowupCycle().catch(e=>console.warn('[payment-followup] auto cycle failed:',e.message));
+ // Activation is persisted *before* the first scheduled check.
+ void autoFollowupRollout().then(x=>{
+   console.log('[payment-followup] automatic future checkouts only',x);
+   if(!schedulerTimer){
+     schedulerTimer=setInterval(run,CHECK_INTERVAL_MS);
+     schedulerTimer.unref?.();
+     setTimeout(run,15_000).unref?.();
+   }
+ }).catch(e=>console.warn('[payment-followup] auto schedule initialization failed:',e.message));
+ return schedulerTimer;
 }

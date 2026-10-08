@@ -20,6 +20,7 @@ import { reconcileSupportPayment } from '../support/reconcile.js';
 import { sendMessage, telegram } from '../telegram.js';
 import { sendSupportQuoteToFilter } from '../support/quote-filter.js';
 import { recordSupportAmountClick } from '../support/click-analytics.js';
+import {currentSupportAmounts,refreshSupportAmounts,isSupportAmountCurrentlyActive,isPayPingSharedConfigEnabled} from '../support/payping-shared-config.js';
 import { hasMinimumWords } from '../support/text-validation.js';
 import { notifySuccessfulSupportPayment } from '../support/payment-detail.js';
 import { notifyWebPushSupportPayment } from '../support/webpush-payment.js';
@@ -117,12 +118,12 @@ function selectedAmountFromCallback(action = '') {
 
 function amountFromCallback(action = '') {
   const amount = selectedAmountFromCallback(action);
-  return SUPPORT_AMOUNTS.has(amount) ? amount : null;
+  return currentSupportAmounts().includes(amount) ? amount : null;
 }
 
 function retiredAmountFromCallback(action = '') {
   const amount = selectedAmountFromCallback(action);
-  return RETIRED_SUPPORT_AMOUNTS.has(amount) ? amount : null;
+  return (RETIRED_SUPPORT_AMOUNTS.has(amount)|| (isPayPingSharedConfigEnabled() && Number.isFinite(amount)&&amount>0&&!currentSupportAmounts().includes(amount))) ? amount : null;
 }
 
 function tierForAmount(amount) {
@@ -146,37 +147,21 @@ function supportMenuText() {
   return lines.join('\n');
 }
 
-export function supportAmountKeyboard() {
-  return {
-    inline_keyboard: [
-      [
-        { text: 'RM10', callback_data: `${SUPPORT_SELECT_PREFIX}10` },
-        { text: 'RM20', callback_data: `${SUPPORT_SELECT_PREFIX}20` },
-        { text: 'RM30', callback_data: `${SUPPORT_SELECT_PREFIX}30` },
-      ],
-      [
-        { text: 'RM50', callback_data: `${SUPPORT_SELECT_PREFIX}50` },
-        { text: 'RM100', callback_data: `${SUPPORT_SELECT_PREFIX}100` },
-      ],
-    ],
-  };
+function amountButtonRows(includeBack=false){
+  const amounts=currentSupportAmounts();
+  const rows=[];
+  for(let i=0;i<amounts.length;i+=3)rows.push(amounts.slice(i,i+3).map(value=>({
+    text:'RM'+value,
+    callback_data:SUPPORT_SELECT_PREFIX+value,
+  })));
+  if(includeBack)rows.push([{text:'↩️ Back',callback_data:SUPPORT_BACK_ACTION}]);
+  return rows;
 }
-
-export function supportMenuKeyboard() {
-  return {
-    inline_keyboard: [
-      [
-        { text: 'RM10', callback_data: `${SUPPORT_SELECT_PREFIX}10` },
-        { text: 'RM20', callback_data: `${SUPPORT_SELECT_PREFIX}20` },
-        { text: 'RM30', callback_data: `${SUPPORT_SELECT_PREFIX}30` },
-      ],
-      [
-        { text: 'RM50', callback_data: `${SUPPORT_SELECT_PREFIX}50` },
-        { text: 'RM100', callback_data: `${SUPPORT_SELECT_PREFIX}100` },
-      ],
-      [{ text: '↩️ Back', callback_data: SUPPORT_BACK_ACTION }],
-    ],
-  };
+export function supportAmountKeyboard(){
+  return {inline_keyboard:amountButtonRows(false)};
+}
+export function supportMenuKeyboard(){
+  return {inline_keyboard:amountButtonRows(true)};
 }
 
 async function editSupportMessage(callbackQuery, text, replyMarkup, extra = {}) {
@@ -391,6 +376,7 @@ async function handlePaymentCheck(callbackQuery, paymentIntentId) {
 
 export async function processSupportCallback(callbackQuery = {}, context = {}) {
   const action = String(callbackQuery?.data || '');
+  if(action.startsWith(SUPPORT_SELECT_PREFIX)||action===SUPPORT_AMOUNTS_ACTION){try{await refreshSupportAmounts(true)}catch(e){console.warn('[payping-shared] amount menu refresh failed:',e.message)}}
 
   if (action.startsWith(PAYMENT_FOLLOWUP_REVIEW_PREFIX)) {
     const orderNumber = action.slice(PAYMENT_FOLLOWUP_REVIEW_PREFIX.length).trim();
@@ -511,6 +497,19 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
     return true;
   }
 
+  if (amount && isPayPingSharedConfigEnabled()) {
+    let active=false;
+    try{active=await isSupportAmountCurrentlyActive(amount)}catch(e){
+      console.warn('[payping-shared] checkout amount validation unavailable:',e.message);
+      await answerSupportCallback(callbackQuery,'Sistem payment sedang dikemaskini. Cuba lagi sebentar.',true);
+      return true;
+    }
+    if(!active){
+      await answerSupportCallback(callbackQuery,'Amaun ini sudah tidak aktif. Pilih amount yang terkini.',true);
+      await editSupportMessage(callbackQuery,supportMenuText(),supportMenuKeyboard());
+      return true;
+    }
+  }
   if (amount) {
     await stopPaymentFollowupForAmountSelection(messageId, user.id).catch((error) => {
       console.warn('[payment-followup] amount selection stop failed:', error?.message);
@@ -521,7 +520,7 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
   }
 
   if (retiredAmount) {
-    await answerSupportCallback(callbackQuery, 'RM1 ialah option test lama dan dah ditutup. Pilih RM10 atau amount lain ya ❤️', true);
+    await answerSupportCallback(callbackQuery, 'Pilihan jumlah support ini tidak aktif lagi. Sila pilih amaun yang tersedia ❤️', true);
     await editSupportMessage(callbackQuery, supportMenuText(), supportMenuKeyboard());
     return true;
   }

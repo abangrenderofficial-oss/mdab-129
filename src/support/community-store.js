@@ -1,5 +1,6 @@
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { getSupportSubmission } from './submissions.js';
+import {supportExpiryFromSnapshot} from './payping-order-plan.js';
 
 function validUserId(value) {
   const id = Number(value || 0);
@@ -90,8 +91,10 @@ export async function getActiveSupporterTitle(userId) {
                    COALESCE(s.tier_label, '') AS tier_label,
                    o.amount_cents,
                    COALESCE(s.display_name, '') AS display_name,
-                   o.paid_at
+                   o.paid_at,
+                   plan.duration_days AS snapshot_duration_days
             FROM support_orders o
+            LEFT JOIN payping_order_plan_snapshots_v2 plan ON plan.environment=o.environment AND plan.order_number=o.order_number
             LEFT JOIN support_submissions s
               ON s.environment = o.environment AND s.order_number = o.order_number
             WHERE o.environment = ? AND o.telegram_user_id = ?
@@ -109,7 +112,9 @@ export async function getActiveSupporterTitle(userId) {
   const now = Date.now();
   const active = rows
     .map((row) => {
-      const expiresAt = addOneCalendarYear(row.paid_at);
+      const expiresAt = row.snapshot_duration_days===null||row.snapshot_duration_days===undefined
+        ? addOneCalendarYear(row.paid_at)
+        : supportExpiryFromSnapshot(row.paid_at,row.snapshot_duration_days);
       if (!expiresAt || expiresAt.getTime() <= now) return null;
       const tier = normalizedTier(row);
       return {

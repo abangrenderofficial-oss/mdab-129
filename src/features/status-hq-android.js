@@ -95,15 +95,19 @@ export async function processStatusAndroidButton(callbackQuery, context = {}) {
   if (heavyCandidate) {
     const progressMessage = await startHeavyStatusProgress(chatId);
     try {
+      const baseUrl=String(context.baseUrl||'').replace(/\/$/,'');
       await dispatchHeavyMediaJob({
         chatId,
+        userId: Number(callbackQuery?.from?.id||0),
         videoFileId,
         fileSize,
         action: 'status_hq_android',
         sourceKind: 'gallery',
         progressMessageId: progressMessage?.message_id || 0,
         sourceMessageId: gallery.sourceMessageId,
+        completionCallbackUrl: baseUrl ? `${baseUrl}/api/premium-hq-success` : '',
       });
+      return {androidHqDispatched:true};
     } catch (error) {
       console.error('[status-hq/android/heavy] dispatch failed:', error?.code, error?.message);
       await removeHeavyProgress(chatId, progressMessage?.message_id);
@@ -116,6 +120,7 @@ export async function processStatusAndroidButton(callbackQuery, context = {}) {
 
   await sendChatAction(chatId, 'upload_video').catch(() => {});
   let prepared = null;
+  let androidHqCompleted = false;
   const progress = await startStatusProgress(chatId);
   try {
     prepared = await localMediaLane(async () => {
@@ -159,6 +164,7 @@ export async function processStatusAndroidButton(callbackQuery, context = {}) {
       prepared.filePath,
       await statusAndroidVideoCaption(),
     );
+    androidHqCompleted = true; // Count only after Telegram confirms successful delivery.
     await progress.remove();
   } catch (error) {
     console.error('[status-hq/android] failed:', error?.code, error?.message);
@@ -170,5 +176,5 @@ export async function processStatusAndroidButton(callbackQuery, context = {}) {
     if (prepared?.cleanup) await prepared.cleanup().catch(() => {});
   }
 
-  return true;
+  return androidHqCompleted ? {androidHqCompleted:true} : true;
 }

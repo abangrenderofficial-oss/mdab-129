@@ -1,4 +1,4 @@
-const PAGE = String.raw\`<!doctype html>
+const PAGE = String.raw`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -34,6 +34,6 @@ function icon(bot){return bot.id==='musix'?'♫':'⇩'}
 function card(bot){return '<a class="bot" href="/ar-payment/bot?bot='+encodeURIComponent(bot.id)+'"><div class="botTop"><div class="icon">'+icon(bot)+'</div><div class="botMain"><div class="name">'+esc(bot.name)+'</div><div class="status">● '+esc(bot.status||'active')+'</div></div><div class="chev">›</div></div><div class="metrics"><div class="metric"><div class="k">Received</div><div class="v">'+money(bot.totalReceived)+'</div></div><div class="metric"><div class="k">Paid</div><div class="v">'+esc(bot.successfulPayments||0)+'</div></div><div class="metric"><div class="k">Supporters</div><div class="v">'+esc(bot.supporterCount||0)+'</div></div><div class="metric"><div class="k">Affiliators</div><div class="v">'+esc(bot.activeAffiliates||0)+'</div></div></div></a>'}
 async function load(){try{const r=await fetch('/api/payping-data?view=bots',{headers:headers(),cache:'no-store'});const d=await r.json();if(r.status===401){location.replace('/ar-payment/login');return}if(r.status===403)throw new Error('Owner access sahaja.');if(!r.ok||!d.ok)throw new Error(d.message||'Bots unavailable.');const bots=d.bots||[];$('count').textContent=bots.length+' bots';$('list').innerHTML=bots.length?bots.map(card).join(''):'<div class="empty">Belum ada bot.</div>';$('loading').hidden=true;$('list').hidden=false}catch(e){$('loading').hidden=true;$('error').hidden=false;$('error').textContent=e.message||String(e)}}
 load();
-</script></body></html>\`;
+</script></body></html>`;
 function send(res,type,body){res.statusCode=200;res.setHeader('Content-Type',type);res.setHeader('Cache-Control','no-store');res.end(body)}
 export default function payPingBotsPage(req,res){if(req.method!=='GET'&&req.method!=='HEAD')return res.status(405).send('Method Not Allowed');return send(res,'text/html; charset=utf-8',req.method==='HEAD'?'':PAGE);}

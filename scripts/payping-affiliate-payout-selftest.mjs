@@ -1,10 +1,11 @@
 import { readFile } from 'node:fs/promises';
 
-const [store, webApi, userPage, adminPage, telegramAffiliate] = await Promise.all([
+const [store, webApi, userPage, adminPage, adminDetailPage, telegramAffiliate] = await Promise.all([
   readFile('src/affiliate/store.js', 'utf8'),
   readFile('handlers/affiliate-web.js', 'utf8'),
   readFile('handlers/affiliate-pwa.js', 'utf8'),
   readFile('handlers/affiliate-admin-pwa.js', 'utf8'),
+  readFile('handlers/affiliate-admin-detail-pwa.js', 'utf8'),
   readFile('src/features/affiliate.js', 'utf8'),
 ]);
 
@@ -21,7 +22,7 @@ must(store,"method === 'BANK'",'bank payout');
 must(store,'export async function saveAffiliatePayoutProfile','save payout profile');
 must(store,'export async function getAffiliatePayoutProfile','get payout profile');
 must(store,"reason: 'payout_profile_required'",'withdrawal payout requirement');
-must(store,'decryptPayoutDetails(row.payout_details_ciphertext)','owner payout decryption');
+must(store,'decryptPayoutDetails(row.details_ciphertext)','owner payout decryption');
 
 must(webApi,"action === 'save_payout'",'web payout save action');
 must(webApi,'getAffiliatePayoutProfile','web payout read');
@@ -34,12 +35,12 @@ must(userPage,'Bank Transfer','bank UI');
 must(userPage,"action:'save_payout'",'payout save request');
 must(userPage,'Setup payout first','withdraw guard UI');
 
-must(adminPage,'payoutHtml(w.payout)','owner payout rendering');
-must(adminPage,'DuitNow','owner DuitNow detail rendering');
-must(adminPage,'accountNumber','owner bank detail rendering');
+must(adminDetailPage,'payoutHtml(d.payoutProfile)','owner payout rendering');
+must(adminDetailPage,'DuitNow','owner DuitNow detail rendering');
+must(adminDetailPage,'accountNumber','owner bank detail rendering');
 
-must(telegramAffiliate,"result.reason === 'payout_profile_required'",'Telegram payout profile guard');
-must(telegramAffiliate,'Payout Method','Telegram payout guidance');
+must(telegramAffiliate,'sendAffiliateWebEntry','Telegram PayPing affiliate entry');
+must(telegramAffiliate,'Open PayPing Withdrawal','Telegram withdrawal opens PayPing');
 
 if(/details_ciphertext[^\n]*console|console[^\n]*details_ciphertext/i.test(store+webApi)){
   throw new Error('Encrypted payout payload must not be logged.');

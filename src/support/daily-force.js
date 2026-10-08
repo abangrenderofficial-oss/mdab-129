@@ -1,7 +1,7 @@
 import { isResetAdmin } from '../recovery.js';
 import { sendMessage, telegram } from '../telegram.js';
 import { refreshSupportMonitorMessage } from './monitor-publisher.js';
-import { dailyForcePremiumSupportText, supportAmountKeyboard } from '../features/support.js';
+import { supportAmountKeyboard } from '../features/support.js';
 import { getActiveSupporterTitle } from './community-store.js';
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { malaysiaSupportSchedule } from './daily-force-schedule.js';
@@ -34,6 +34,14 @@ async function ensureSchema() {
           success_count INTEGER NOT NULL DEFAULT 0,
           updated_at TEXT NOT NULL,
           PRIMARY KEY (environment, telegram_user_id, cycle_id)
+        )`,
+        `CREATE TABLE IF NOT EXISTS support_daily_force_first_hq (
+          environment TEXT NOT NULL,
+          telegram_user_id TEXT NOT NULL,
+          cycle_id INTEGER NOT NULL,
+          raw_completed_at TEXT NOT NULL,
+          hq_completed_at TEXT NOT NULL DEFAULT '',
+          PRIMARY KEY(environment, telegram_user_id, cycle_id)
         )`,
       ], 'write');
 
@@ -253,14 +261,6 @@ async function sendDailyForceLock(chatId) {
   );
 }
 
-async function sendDailyForceFirstSuccessPrompt(chatId) {
-  await sendMessage(
-    chatId,
-    dailyForcePremiumSupportText(),
-    { reply_markup: supportAmountKeyboard() },
-  );
-}
-
 async function accessContext(userId) {
   if (isResetAdmin(userId)) return { gated: false, enabled: false, cycleId: 0 };
   const mode = await modeState();
@@ -346,7 +346,7 @@ export async function releaseDailyForceUsageAttempt(userId) {
   return Number(result.rowsAffected || 0) > 0;
 }
 
-export async function markDailyForceUsageSuccess(userId) {
+export async function markDailyForceUsageSuccess(userId, { allowFirstHq = false } = {}) {
   const id = Number(userId || 0);
   if (!Number.isSafeInteger(id) || id <= 0 || isResetAdmin(id)) return false;
 
@@ -382,24 +382,64 @@ export async function markDailyForceUsageSuccess(userId) {
     return false;
   }
 
-  const prompt = await db.execute({
-    sql: `UPDATE support_daily_force_usage
-          SET prompt_sent = 1, updated_at = ?
-          WHERE environment = ? AND telegram_user_id = ? AND cycle_id = ?
-            AND prompt_sent = 0`,
-    args: [now, environment, String(id), mode.cycleId],
-  });
-
-  if (Number(prompt.rowsAffected || 0) > 0) {
-    await sendDailyForceFirstSuccessPrompt(id).catch((error) => {
-      console.warn('[daily-force] first-use support prompt failed:', error?.message);
-    });
+  // A raw photo/video/link is one free session. Its original HQ button
+  // remains usable once AFTER raw media is delivered, not as a second use.
+  // Do not send any support promotion on the first successful delivery.
+  if (allowFirstHq) {
+    await db.execute({
+      sql: `INSERT OR IGNORE INTO support_daily_force_first_hq (
+              environment, telegram_user_id, cycle_id, raw_completed_at, hq_completed_at
+            ) VALUES (?,?,?,?, '')`,
+      args: [environment, String(id), mode.cycleId, now],
+    }).catch(error => console.warn('[daily-force] first HQ session save failed:',error?.message));
   }
 
   await refreshSupportMonitorMessage().catch((error) => {
     console.warn('[support-monitor] refresh after Daily Force success failed:', error?.message);
   });
   return true;
+}
+
+// Valid only for the Premium+ HQ/Android HQ button on the first delivered
+// Telegram media. The NEXT incoming source still receives the support lock.
+export async function canFinishFirstDailyForceHq(callbackQuery = {}) {
+  const id = Number(callbackQuery?.from?.id || 0);
+  if (!Number.isSafeInteger(id) || id <= 0 || isResetAdmin(id)) return false;
+  if (callbackQuery?.message?.chat?.type !== 'private') return false;
+  if (!callbackQuery?.message?.video && !callbackQuery?.message?.photo?.length) return false;
+  const mode=await modeState();
+  if(!mode.enabled || !malaysiaSupportSchedule().dailyForceWindowActive)return false;
+  const db=await getSupportDb();
+  const r=await db.execute({
+    sql:`SELECT s.raw_completed_at,s.hq_completed_at
+         FROM support_daily_force_first_hq s
+         JOIN support_daily_force_usage u
+           ON u.environment=s.environment AND u.telegram_user_id=s.telegram_user_id AND u.cycle_id=s.cycle_id
+         WHERE s.environment=? AND s.telegram_user_id=? AND s.cycle_id=? AND u.used_once=1 LIMIT 1`,
+    args:[currentSupportEnvironment(),String(id),mode.cycleId],
+  });
+  const record=r.rows?.[0];
+  if(!record || record.hq_completed_at)return false;
+  const first=Date.parse(String(record.raw_completed_at||''));
+  const mediaDate=Number(callbackQuery?.message?.date||0)*1000;
+  if(!Number.isFinite(first)||!Number.isFinite(mediaDate)||!mediaDate)return false;
+  // Telegram messages are second-resolution; allow 2 min tolerance around
+  // the source delivery, with a 24 h expiry for the original HQ button.
+  return mediaDate>=first-120_000 && Date.now()-first<86_400_000;
+}
+
+export async function completeFirstDailyForceHq(userId){
+  const id=Number(userId||0);
+  if(!Number.isSafeInteger(id)||id<=0)return false;
+  const mode=await modeState();
+  if(!mode.enabled)return false;
+  const db=await getSupportDb();
+  const r=await db.execute({
+    sql:`UPDATE support_daily_force_first_hq SET hq_completed_at=?
+          WHERE environment=? AND telegram_user_id=? AND cycle_id=? AND hq_completed_at=''`,
+    args:[new Date().toISOString(),currentSupportEnvironment(),String(id),mode.cycleId],
+  });
+  return Number(r.rowsAffected||0)>0;
 }
 
 export async function enforceDailyForceSupportForMessage(message = {}) {
@@ -428,6 +468,7 @@ export async function enforceDailyForceSupportForCallback(callbackQuery = {}) {
 
   const context = await accessContext(userId);
   if (!context.gated) return false;
+  if (context.gateReason === 'support_required' && await canFinishFirstDailyForceHq(callbackQuery))return false;
 
   const copy = context.gateReason === 'processing_first_use'
     ? DAILY_FORCE_PROCESSING_COPY
@@ -438,9 +479,8 @@ export async function enforceDailyForceSupportForCallback(callbackQuery = {}) {
     show_alert: true,
   }).catch(() => {});
 
-  if (context.gateReason !== 'processing_first_use') {
-    await sendDailyForceLock(chatId).catch(() => {});
-  }
+  // Promotional payment buttons are sent only when a NEW link/photo/video
+  // arrives, never simply because an old HQ button was tapped.
   return true;
 }
 

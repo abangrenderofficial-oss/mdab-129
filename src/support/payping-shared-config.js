@@ -75,10 +75,10 @@ let channelRuleTask=null;
 export function parseMediaXChannelRule(row){
   if(!row||String(row.mode)!=='free_channel')return null;
   const channel=String(row.channel_id||'').trim();
-  const threshold=Number(row.channel_after);
   if(!/^@[A-Za-z0-9_]{5,}$/.test(channel))return null;
-  if(!Number.isSafeInteger(threshold)||threshold<0||threshold>1000)return null;
-  return {mode:'free_channel',channel,threshold};
+  // MediaX Free + Channel now requires joining after the first successful HQ job.
+  // Ignore legacy values of 5 until the admin next saves the form.
+  return {mode:'free_channel',channel,threshold:1};
 }
 export async function getMediaXChannelRule(){
   if(!isPayPingSharedConfigEnabled())return null;

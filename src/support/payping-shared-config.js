@@ -75,10 +75,12 @@ let channelRuleTask=null;
 export function parseMediaXChannelRule(row){
   if(!row||String(row.mode)!=='free_channel')return null;
   const channel=String(row.channel_id||'').trim();
-  if(!/^@[A-Za-z0-9_]{5,}$/.test(channel))return null;
-  // MediaX Free + Channel now requires joining after the first successful HQ job.
-  // Ignore legacy values of 5 until the admin next saves the form.
-  return {mode:'free_channel',channel,threshold:1};
+  const campaignSequence=Number(row.campaign_seq);
+  // Never activate a legacy channel policy without a deliberately started
+  // campaign. This prevents pre-activation HQ history from locking users.
+  if(!/^@[A-Za-z0-9_]{5,}$/.test(channel)||channel!==String(row.campaign_channel_id||''))return null;
+  if(!Number.isSafeInteger(campaignSequence)||campaignSequence<1||!String(row.activated_at||''))return null;
+  return {mode:'free_channel',channel,threshold:1,campaignSequence};
 }
 export async function getMediaXChannelRule(){
   if(!isPayPingSharedConfigEnabled())return null;
@@ -87,7 +89,7 @@ export async function getMediaXChannelRule(){
   channelRuleTask=(async()=>{
     try{
       const client=await getSupportDb();
-      const result=await client.execute({sql:"SELECT mode,channel_id,channel_after FROM payping_access_policies_v2 WHERE environment=? AND bot_id='mediax' LIMIT 1",args:[currentSupportEnvironment()]});
+      const result=await client.execute({sql:"SELECT p.mode,p.channel_id,p.channel_after,c.campaign_seq,c.channel_id AS campaign_channel_id,c.activated_at FROM payping_access_policies_v2 p LEFT JOIN payping_channel_campaign_v2 c ON c.environment=p.environment AND c.bot_id=p.bot_id WHERE p.environment=? AND p.bot_id='mediax' LIMIT 1",args:[currentSupportEnvironment()]});
       channelRule.value=parseMediaXChannelRule(result.rows?.[0]);
       channelRule.checked=Date.now();
     }catch(error){
@@ -98,4 +100,38 @@ export async function getMediaXChannelRule(){
     return channelRule.value;
   })().finally(()=>{channelRuleTask=null});
   return channelRuleTask;
+}
+
+
+// Campaign uses are private to Free + Channel, separate from the historical
+// Premium HQ count in bot-stats.json and separate from Force Support cycles.
+export async function hasMediaXChannelCampaignUse(userId,campaignSequence){
+  const id=Number(userId);
+  if(!Number.isSafeInteger(id)||id<=0||!Number.isSafeInteger(Number(campaignSequence)))return false;
+  try{
+    const db=await getSupportDb();
+    const r=await db.execute({sql:"SELECT 1 FROM payping_channel_campaign_uses_v2 WHERE environment=? AND bot_id='mediax' AND campaign_seq=? AND telegram_user_id=? LIMIT 1",
+      args:[currentSupportEnvironment(),campaignSequence,String(id)]});
+    return Boolean(r.rows?.length);
+  }catch(e){
+    console.warn('[payping-shared] channel campaign usage lookup failed:',e.message);
+    return false;
+  }
+}
+
+export async function recordMediaXChannelCampaignUse(userId,source='premium_hq'){
+  if(!isPayPingSharedConfigEnabled())return false;
+  const id=Number(userId);
+  if(!Number.isSafeInteger(id)||id<=0)return false;
+  const rule=await getMediaXChannelRule();
+  if(!rule?.campaignSequence)return false;
+  const db=await getSupportDb(),t=new Date().toISOString();
+  try{
+    const r=await db.execute({sql:"INSERT OR IGNORE INTO payping_channel_campaign_uses_v2(environment,bot_id,campaign_seq,telegram_user_id,first_success_at,source) SELECT p.environment,'mediax',c.campaign_seq,?,?,? FROM payping_access_policies_v2 p JOIN payping_channel_campaign_v2 c ON c.environment=p.environment AND c.bot_id=p.bot_id LEFT JOIN support_daily_force_mode f ON f.environment=p.environment WHERE p.environment=? AND p.bot_id='mediax' AND p.mode='free_channel' AND p.channel_id=c.channel_id AND c.campaign_seq=? AND COALESCE(f.enabled,0)=0",
+      args:[String(id),t,String(source).slice(0,40),currentSupportEnvironment(),rule.campaignSequence]});
+    return Number(r.rowsAffected||0)===1;
+  }catch(e){
+    console.warn('[payping-shared] channel completion save failed:',e.message);
+    return false;
+  }
 }

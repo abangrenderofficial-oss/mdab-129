@@ -153,6 +153,8 @@ must(followupModule,"support_auto_followup_rollout_v3",'future-checkout-only act
 must(followupModule,"support_auto_followup_claims_v3",'duplicate-safe delivery claims');
 must(followupModule,"checked.lookupFailed",'skip message when payment reconciliation is uncertain');
 must(followupModule,"o.created_at>=?",'exclude old pending orders');
+must(followupModule,"COALESCE(s.checkout_open_count,0)>0",'only follow up after an actually opened Bayarcash checkout');
+must(followupModule,"s.checkout_first_opened_at<=?",'give a full 15 minutes after user opens checkout');
 must(promotion,'startPaymentFollowupScheduler','compatibility startup hook');
 
 console.log('PAYMENT_FOLLOWUP_SELFTEST_OK',JSON.stringify({

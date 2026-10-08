@@ -8,6 +8,7 @@ import { isGalleryVideoTooLarge, processUploadedPhoto, processUploadedVideo } fr
 import { TT_SLIDE_SPLIT, TT_SLIDE_VIDEO, processTikTokSlideshowChoice } from '../features/tiktok-slideshow.js';
 import { recordUsage } from './stats.js';
 import { recordPremiumHqSuccess } from '../support/premium-hq-completion.js';
+import {recordMediaXChannelCampaignUse} from '../support/payping-shared-config.js';
 import {
   claimFridayUsageAttempt,
   enforceFridaySupportForCallback,
@@ -88,6 +89,7 @@ export async function processGalleryUploadWithSupport(message, context = {}) {
       : await processUploadedVideo(message, context);
 
     if (completed) {
+      await recordMediaXChannelCampaignUse(userId,isPhoto?'gallery_photo':'gallery_video').catch(()=>{});
       if (claims.fridayClaimed) await markFridaySuccess(userId, isPhoto ? 'gallery photo' : 'gallery video');
       if (claims.dailyClaimed) await markDailyForceUsageSuccess(userId, {allowFirstHq:true});
     } else {
@@ -171,6 +173,7 @@ export async function processMediaCallbackWithSupport(callbackQuery, context = {
     await recordUsage(userId, 'download');
     await markFridaySuccess(userId, 'slideshow');
     if (claims.dailyClaimed) await markDailyForceUsageSuccess(userId).catch(() => {});
+    await recordMediaXChannelCampaignUse(userId,'slideshow').catch(()=>{});
     return true;
   }
 

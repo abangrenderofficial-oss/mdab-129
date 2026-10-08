@@ -31,6 +31,27 @@ function channelUsername() {
   return `@${configured.replace(/^@/, '')}`;
 }
 
+// Prefer the verified channel configured for MediaX in PayPing. Never
+// assume the bot username is a Telegram channel destination.
+let lastMissingChannelWarning='';
+async function promotionalChannelTarget(){
+  const explicit=String(process.env.SUPPORT_PROMOTION_CHANNEL_USERNAME||process.env.REQUIRED_CHANNEL_USERNAME||'').trim();
+  if(/^@[A-Za-z0-9_]{5,}$/.test(explicit))return explicit;
+  if(isPayPingSharedConfigEnabled()){
+    try{
+      const client=await getSupportDb();
+      const r=await client.execute({sql:"SELECT channel_id FROM payping_access_policies_v2 WHERE environment=? AND bot_id='mediax' LIMIT 1",args:[currentSupportEnvironment()]});
+      const channel=String(r.rows?.[0]?.channel_id||'').trim();
+      if(/^@[A-Za-z0-9_]{5,}$/.test(channel))return channel;
+    }catch(error){console.warn('[support-promo] PayPing channel lookup failed:',error?.message)}
+  }
+  const old=channelUsername();
+  // The old default may be the bot itself. It is unsafe to assume that it is
+  // a channel; explicit configuration is required for outbound channel posts.
+  if(old!=='@ar_downloaderbot'&&/^@[A-Za-z0-9_]{5,}$/.test(old))return old;
+  return '';
+}
+
 function promoHour() {
   const value = Number(process.env.SUPPORT_PROMO_HOUR_MY ?? DEFAULT_PROMO_HOUR);
   if (!Number.isInteger(value) || value < 0 || value > 23) return DEFAULT_PROMO_HOUR;
@@ -200,10 +221,10 @@ async function sendPrivatePromotion(userId) {
   });
 }
 
-async function sendChannelPromotion() {
+async function sendChannelPromotion(channel) {
   const username = await botUsername();
   const url = username ? `https://t.me/${username}?start=support` : '';
-  await sendSupportPromotionToChannel(channelUsername(), dailyForcePremiumChannelSupportText(), {
+  await sendSupportPromotionToChannel(channel, dailyForcePremiumChannelSupportText(), {
     ...(url ? {
       reply_markup: {
         inline_keyboard: [[{ text: '❤️ Support Bot', url }]],
@@ -213,11 +234,18 @@ async function sendChannelPromotion() {
 }
 
 async function deliverChannelDaily(dateKey) {
-  const target = channelUsername();
+  const target = await promotionalChannelTarget();
+  if(!target){
+    if(lastMissingChannelWarning!==dateKey){
+      lastMissingChannelWarning=dateKey;
+      console.warn('[support-promo] Channel reminder skipped: set MediaX channel @username in PayPing or SUPPORT_PROMOTION_CHANNEL_USERNAME in bot environment.');
+    }
+    return false;
+  }
   const periodKey = `channel-daily:${dateKey}`;
   if (!(await claimPromotionSlot('CHANNEL', target, periodKey))) return false;
   try {
-    await sendChannelPromotion();
+    await sendChannelPromotion(target);
     await markDelivery('CHANNEL', target, periodKey, 'SENT');
     console.log('[support-promo] channel sent', { target, periodKey });
     return true;
@@ -317,7 +345,7 @@ export function startSupportPromotionScheduler() {
     timezone: MALAYSIA_TIMEZONE,
     fridayPromotions: isPayPingSharedConfigEnabled()?'10:00 MY (channel + private)':`${String(promoHour()).padStart(2,'0')}:00 MY (private)`,
     normalDayPromotions: isPayPingSharedConfigEnabled()?'15:00 MY (channel + private)':'legacy channel time',
-    channel: channelUsername(),
+    channel: process.env.SUPPORT_PROMOTION_CHANNEL_USERNAME||process.env.REQUIRED_CHANNEL_USERNAME||'PayPing saved channel',
     privateAudience: 'tracked non-supporters, once per Malaysia day',
   });
   return schedulerTimer;

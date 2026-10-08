@@ -173,6 +173,28 @@ jobs:
       - name: Process Android Status HQ Beta
         run: python scripts/heavy_status_android_worker.py
 
+      - name: Record Android HQ delivery
+        if: ${{ success() && inputs.completion_callback_url != '' && inputs.user_id != '0' }}
+        shell: bash
+        env:
+          COMPLETION_CALLBACK_URL: ${{ inputs.completion_callback_url }}
+          COMPLETION_CHAT_ID: ${{ inputs.chat_id }}
+          COMPLETION_USER_ID: ${{ inputs.user_id }}
+          COMPLETION_SOURCE_MESSAGE_ID: ${{ inputs.source_message_id }}
+          COMPLETION_VIDEO_FILE_ID: ${{ inputs.video_file_id }}
+          COMPLETION_SIGNING_SECRET: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          completion_key="android-heavy:${COMPLETION_CHAT_ID}:${COMPLETION_USER_ID}:${COMPLETION_SOURCE_MESSAGE_ID}:${COMPLETION_VIDEO_FILE_ID}"
+          payload="${COMPLETION_CHAT_ID}:${COMPLETION_USER_ID}:status_hq:${completion_key}:v2"
+          signature="$(printf '%s' "$payload" | openssl dgst -sha256 -hmac "$COMPLETION_SIGNING_SECRET" -hex | awk '{print $2}')"
+          if ! curl --fail-with-body --silent --show-error --retry 3 --retry-delay 2 \
+            -H 'Content-Type: application/json' \
+            -H "x-heavy-worker-signature: ${signature}" \
+            --data "{\"chat_id\":\"${COMPLETION_CHAT_ID}\",\"user_id\":\"${COMPLETION_USER_ID}\",\"event\":\"status_hq\",\"completion_key\":\"${completion_key}\"}" \
+            "$COMPLETION_CALLBACK_URL"; then
+            echo '::warning::Android HQ was delivered, but completion callback failed after retries.'
+          fi
+
   live_wallpaper:
     if: ${{ inputs.action == 'live_wallpaper' }}
     runs-on: macos-15

@@ -62,6 +62,31 @@ a,button,.btn,.quick a,.tab,.back,.link,.item,.tx{touch-action:manipulation}
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}
 }
+
+/* PAYPING_LIGHT_SHELL_V3 */
+:root{color-scheme:light}
+body{background:#f4f5fb;color:#171725}
+.top{padding:18px;border-radius:24px;background:radial-gradient(circle at 86% 0,rgba(133,111,255,.9),transparent 34%),linear-gradient(145deg,#25206f,#4b2eb1 60%,#754aed);box-shadow:0 18px 44px rgba(65,45,157,.2)}
+.top .sub{color:rgba(255,255,255,.72)}.top .scope{background:rgba(255,255,255,.15);color:#fff}.top .title{color:#fff}
+.hero{background:radial-gradient(circle at 86% 0,rgba(91,189,255,.5),transparent 32%),linear-gradient(145deg,#6943ef,#4775f2 68%,#8051ee);border:0;color:#fff;box-shadow:0 16px 36px rgba(73,70,200,.18)}
+.hero .muted{color:rgba(255,255,255,.76)}.hero .eyebrow{color:rgba(255,255,255,.78)}
+.stat,.card{background:#fff;border-color:#ececf4;color:#171725;box-shadow:0 8px 24px rgba(50,43,86,.05)}
+.stat .k,.muted,.meta,.sub{color:#8e91a4}.quick a{background:#f4f3fb;color:#4f3bc0;border-color:#ebe8f7}.quick a.primary{color:#fff}.tx{background:#fafafe;border-color:#eeeef5}
+.name,.amount,.cardTitle,.stat .v{color:#171725}.badge{background:#ececf4;color:#6e7182}
+.setupSteps,.msg{color:#7f8396}.btn.secondary{background:#efeff7;color:#504f62}.code{background:#fafafe!important;color:#171725!important;border-color:#e4e4ee!important}
+.botHomeList{display:flex;flex-direction:column;gap:9px}.botHome{display:flex;align-items:center;gap:11px;text-decoration:none;color:inherit;padding:12px;border-radius:17px;background:#fafafe;border:1px solid #eeeef5}
+.botHomeIcon{width:42px;height:42px;flex:0 0 42px;border-radius:13px;display:grid;place-items:center;background:#11111a;color:#fff;font-size:20px}.botHomeMain{min-width:0;flex:1}.botHomeName{font-size:14px;font-weight:900}.botHomeMeta{font-size:10px;color:#9295a6;margin-top:4px}.botHomeAmount{text-align:right;font-size:14px;font-weight:900;color:#5d40db}.botHomeAmount small{display:block;color:#9a9cad;font-size:9px;margin-top:3px;font-weight:700}
+#mainNav{grid-template-columns:repeat(4,1fr);background:rgba(255,255,255,.96);border-color:#e7e7f0;box-shadow:0 12px 36px rgba(45,40,82,.13)}
+#mainNav.owner{grid-template-columns:repeat(5,1fr)}#mainNav a{color:#9698a8}#mainNav a.active{color:#fff;background:linear-gradient(145deg,#7152ef,#5837db)}
+@media(max-width:619px){
+ body{background:#f4f5fb;background-image:none}
+ body::before{display:none}
+ main{top:env(safe-area-inset-top,0px);left:0;right:0;padding:0 18px calc(102px + env(safe-area-inset-bottom));background:#f4f5fb}
+ .top{margin:0 -18px 16px;border-radius:0 0 28px 28px;padding:22px 20px 24px}
+ #mainNav{left:12px;right:12px;transform:none;width:auto;bottom:calc(10px + env(safe-area-inset-bottom));height:70px;padding:7px;border:1px solid #e7e7f0;border-radius:23px;background:rgba(255,255,255,.97);box-shadow:0 12px 36px rgba(45,40,82,.13)}
+ #mainNav a{font-size:10px}#mainNav b{font-size:20px}
+}
+
 </style></head>
 <body><main>
 <div class="top"><div class="brand"><div class="logo"><img src="/ar-payment/payping-icon-v4.svg"></div><div><div class="title">PayPing!</div><div class="sub">Payment dashboard</div></div></div><div id="scope" class="scope">Not connected</div></div>
@@ -76,6 +101,7 @@ a,button,.btn,.quick a,.tab,.back,.link,.item,.tx{touch-action:manipulation}
 <div class="stat"><div class="k">Pending</div><div id="pendingCount" class="v">0</div></div>
 <div class="stat"><div class="k">All Transactions</div><div id="totalCount" class="v">0</div></div>
 </section>
+<section id="botsSection" class="card" hidden><div class="line"><div class="cardTitle">Your Bots</div><a href="/ar-payment/bots" style="font-size:11px;color:#6748df;text-decoration:none;font-weight:800">View all ›</a></div><div id="botHomeList" class="botHomeList"></div></section>
 <section class="card"><div class="cardTitle">Quick Actions</div><div class="quick"><a class="primary" href="/ar-payment/transactions">Transactions</a><a id="earnQuick" href="/ar-payment/affiliate">Affiliate / Earn</a><a href="/ar-payment/notifications">Notifications</a><a href="/ar-payment/settings">Settings / Account</a><a id="analyticsQuick" href="/ar-payment/analytics" hidden>Analytics / Reports</a><a id="affiliateAdminQuick" href="/ar-payment/affiliate/admin" hidden>Affiliate Admin</a></div></section>
 <section class="card"><div class="line"><div class="cardTitle">Recent Payments</div><a href="/ar-payment/transactions" style="font-size:11px;color:#bfaeff;text-decoration:none">View all</a></div><div id="recent" class="list"></div></section>
 </div>
@@ -92,7 +118,7 @@ a,button,.btn,.quick a,.tab,.back,.link,.item,.tx{touch-action:manipulation}
 </div>
 </section>
 </main>
-<nav><a class="active" href="/ar-payment/"><b>⌂</b>Home</a><a href="/ar-payment/transactions"><b>≡</b>Transactions</a><a href="/ar-payment/affiliate"><b>₿</b>Earn</a><a href="/ar-payment/settings"><b>⚙</b>Settings</a></nav>
+<nav id="mainNav"><a class="active" href="/ar-payment/"><b>⌂</b>Home</a><a id="botsNav" href="/ar-payment/bots" hidden><b>◇</b>Bots</a><a href="/ar-payment/transactions"><b>≡</b>Transactions</a><a id="affiliateNav" href="/ar-payment/affiliate"><b>♙</b>Affiliates</a><a href="/ar-payment/settings"><b>⚙</b>Settings</a></nav>
 <script>
 const $=id=>document.getElementById(id);const deviceKey='ar_payment_device_token_v1';const telegramLinkKey='payping_telegram_link_pending_v1';const token=()=>localStorage.getItem(deviceKey)||'';let accountContext=null;let telegramLinkWatch=null;let telegramLinkCheckBusy=false;
 const authHeaders=(json=false)=>{const h=json?{'Content-Type':'application/json'}:{};const t=token();if(t)h['X-PayPing-Device-Token']=t;return h};
@@ -111,6 +137,10 @@ async function loadIdentity(){
   const role=String(d.role||'user').toLowerCase();
   $('scope').textContent=role==='owner'||role==='admin'?'Merchant view':role==='affiliate'?'Affiliate view':'User view';
   $('earnQuick').textContent=role==='user'?'Join Affiliate / Earn':'Affiliate / Earn';
+  const owner=Boolean(d.owner)||role==='owner'||role==='admin';
+  $('botsNav').hidden=!owner;
+  $('mainNav').classList.toggle('owner',owner);
+  $('affiliateNav').href=owner?'/ar-payment/affiliate/admin':'/ar-payment/affiliate';
   return d;
  }catch(e){
   $('dashLoading').innerHTML='<div class="error">'+esc(e.message||String(e))+'</div>';return null;
@@ -150,6 +180,17 @@ async function requestTelegramLink(){
   $('linkMsg').textContent='Opening Telegram…';startTelegramLinkWatch();location.href=d.telegramLink;
  }catch(e){$('linkMsg').textContent=e.message||String(e)}finally{$('connectTelegram').disabled=false}
 }
+
+async function loadBotCards(){
+ try{
+  const r=await fetch('/api/payping-data?view=bots',{headers:authHeaders(false),cache:'no-store'});const d=await r.json();
+  if(!r.ok||!d.ok)return;
+  const bots=d.bots||[];
+  $('botHomeList').innerHTML=bots.length?bots.map(b=>'<a class="botHome" href="/ar-payment/bot?bot='+encodeURIComponent(b.id)+'"><div class="botHomeIcon">'+(b.id==='musix'?'♫':'⇩')+'</div><div class="botHomeMain"><div class="botHomeName">'+esc(b.name)+'</div><div class="botHomeMeta">'+esc(b.supporterCount||0)+' supporters · '+esc(b.activeAffiliates||0)+' affiliators</div></div><div class="botHomeAmount">'+money(b.totalReceived)+'<small>'+esc(b.successfulPayments||0)+' paid</small></div></a>').join(''):'<div class="empty">Belum ada bot.</div>';
+  $('botsSection').hidden=false;
+ }catch{}
+}
+
 async function loadDashboard(){
  const identity=await loadIdentity();if(!identity)return;
  if(identity.needsTelegramLink){
@@ -161,6 +202,7 @@ async function loadDashboard(){
  if(!r.ok||!d.ok)throw new Error(d.message||'Dashboard unavailable.');
  const s=d.summary;$('scope').textContent=d.owner?'Merchant view':String(d.role||'user').toLowerCase()==='affiliate'?'Affiliate view':'My view';$('analyticsQuick').hidden=!d.owner;$('affiliateAdminQuick').hidden=!d.owner;$('todayReceived').textContent=money(s.todayReceived);$('todayCount').textContent=s.todayTransactions+' successful payments today';$('totalReceived').textContent=money(s.totalReceived);$('paidCount').textContent=s.paidTransactions;$('pendingCount').textContent=s.pendingTransactions;$('totalCount').textContent=s.totalTransactions;
  $('recent').innerHTML=d.recent.length?d.recent.map(t=>'<a class="tx" href="/ar-payment/transaction?order='+encodeURIComponent(t.orderNumber)+'"><div class="line"><div><div class="name">'+esc(t.displayName||t.username||('ID '+t.userId))+'</div><div class="meta">'+esc(t.tierLabel)+' · '+date(t.paidAt||t.createdAt)+' · Details →</div></div><div style="text-align:right"><div class="amount">'+money(t.amount)+'</div><span class="badge '+esc(t.status.toLowerCase())+'">'+esc(t.status)+'</span></div></div></a>').join(''):'<div class="empty">No payments yet.</div>';
+ if(d.owner)await loadBotCards();
  $('dashLoading').hidden=true;$('onboarding').hidden=true;$('dashboard').hidden=false;
  }catch(e){$('dashLoading').hidden=false;$('dashLoading').innerHTML='<div class="error">'+esc(e.message||String(e))+'</div>'}
 }

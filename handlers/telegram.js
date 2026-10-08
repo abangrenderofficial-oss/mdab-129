@@ -49,7 +49,6 @@ import {
   enforceSupportTestimonialGateForCallback,
   enforceSupportTestimonialGateForMessage,
 } from '../src/support/testimonial-gate.js';
-
 function json(res, status, body) { res.status(status).json(body); }
 function isAuthorizedWebhook(req) {
   const expected = process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -75,12 +74,10 @@ function startPayload(message) {
   const parts = String(message?.text || '').trim().split(/\s+/);
   return parts[0]?.toLowerCase().startsWith('/start') ? String(parts[1] || '').trim().toLowerCase() : '';
 }
-
 async function processMessage(message, context) {
   const chatId = message?.chat?.id;
   const text = message?.text || message?.caption || '';
   if (!chatId) return;
-
   const command = commandFromMessage(message);
   if (command === '/connect') return handleConnectCommand(message, context.baseUrl, false);
   if (command === '/disconnect') return handleConnectCommand(message, context.baseUrl, true);
@@ -101,7 +98,6 @@ async function processMessage(message, context) {
   if (command === '/start' && startPayload(message) === 'support') return handleSupportCommand(message, context);
   if (command === '/start' || command === '/help') return sendMessage(chatId, startText(message?.from?.id));
   if (command === '/support') return handleSupportCommand(message, context);
-
   if (await processSupportMessage(message, context)) return;
   if (await enforceSupportTestimonialGateForMessage(message)) return;
   if (command === '/luahrasa') return handleLuahRasaCommand(message, context);
@@ -110,7 +106,6 @@ async function processMessage(message, context) {
   if (await enforceChannelGateForMessage(message)) return;
   if (await processHqLabBeforeMedia(message, context)) return;
   if (await processGalleryUploadWithSupport(message, context)) return;
-
   const statusMode = command === '/status' || command === 'status';
   const url = extractFirstUrl(text);
   if (!url) {
@@ -120,7 +115,6 @@ async function processMessage(message, context) {
       : 'Hantar satu link TikTok, Instagram, Threads, X/Twitter atau YouTube, atau upload video/gambar dari gallery.');
     return;
   }
-
   const platform = detectPlatform(url);
   if (!platform) {
     await sendMessage(chatId, 'Link ni belum disokong. Buat masa sekarang: TikTok, Instagram, Threads, X/Twitter dan YouTube.');

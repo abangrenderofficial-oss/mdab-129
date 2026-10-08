@@ -66,7 +66,7 @@ async function runLinkJob({ message, context, url, platform, statusMode, fridayC
       await recordUsage(userId, 'download');
       await markFridaySuccess(userId, 'download');
       if (dailyClaimed) {
-        await markDailyForceUsageSuccess(userId).catch((error) => {
+        await markDailyForceUsageSuccess(userId, {allowFirstHq:true}).catch((error) => {
           console.warn('[daily-force] download mark failed:', error?.message);
         });
       }

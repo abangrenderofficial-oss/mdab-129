@@ -3,6 +3,8 @@ import { URL } from 'node:url';
 
 import healthHandler from './handlers/health.js';
 import payPingHomePage from './handlers/payping-home-pwa.js';
+import payPingBotsPage from './handlers/payping-bots-pwa.js';
+import payPingBotDetailPage from './handlers/payping-bot-detail-pwa.js';
 import telegramHandler from './handlers/telegram.js';
 import setupHandler from './handlers/setup.js';
 import setupWebhookHandler from './handlers/setup-webhook.js';
@@ -89,6 +91,10 @@ const routes = new Map([
   ['/ar-payment/affiliate/admin/detail/', affiliateAdminDetailPageHandler],
   ['/ar-payment/affiliate', affiliatePwaPageHandler],
   ['/ar-payment/affiliate/', affiliatePwaPageHandler],
+  ['/ar-payment/bots', payPingBotsPage],
+  ['/ar-payment/bots/', payPingBotsPage],
+  ['/ar-payment/bot', payPingBotDetailPage],
+  ['/ar-payment/bot/', payPingBotDetailPage],
   ['/ar-payment', payPingHomePage],
   ['/ar-payment/', payPingHomePage],
   ['/ar-payment/manifest.webmanifest', paymentPwaManifestHandler],

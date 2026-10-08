@@ -1,7 +1,7 @@
 import { isResetAdmin } from '../recovery.js';
 import { sendMessage, telegram } from '../telegram.js';
 import { refreshSupportMonitorMessage } from './monitor-publisher.js';
-import { supportAmountKeyboard } from '../features/support.js';
+import { dailyForcePremiumSupportText, supportAmountKeyboard } from '../features/support.js';
 import { getActiveSupporterTitle } from './community-store.js';
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { malaysiaSupportSchedule } from './daily-force-schedule.js';
@@ -256,7 +256,7 @@ async function usageState(userId, cycleId) {
 async function sendDailyForceLock(chatId) {
   await sendMessage(
     chatId,
-    DAILY_FORCE_COPY,
+    dailyForcePremiumSupportText(),
     { reply_markup: supportAmountKeyboard() },
   );
 }

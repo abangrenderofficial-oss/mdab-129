@@ -32,6 +32,8 @@ try{
  const channel=await readFile('src/features/channel-gate.js','utf8');
  assert(channel.includes('getMediaXChannelRule'), 'Shared channel config must use the original channel gate');
  assert(channel.includes('getChatMember'), 'Original Telegram membership check must remain intact');
+ assert(channel.includes('if(isPayPingSharedConfigEnabled())return {gateRequired:false'), 'Legacy fifth-HQ gate must stay OFF during synced Force Support and Free mode');
+ assert(channel.includes('if(await isDailyForceSupportEnabled())return'), 'Force Support must override a stale Free + Channel policy');
  const android=await readFile('src/features/status-hq-android.js','utf8');
  assert(android.includes('androidHqCompleted = true; // Count only after Telegram confirms successful delivery.'),'Android must count only after Telegram upload success');
  assert(android.indexOf('await sendVideoFileUpload(')<android.indexOf('androidHqCompleted = true;'),'Android HQ cannot count before upload success');

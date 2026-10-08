@@ -1,5 +1,6 @@
 import { currentSupportEnvironment, getSupportDb } from '../support/store.js';
 import { getAffiliateAdminDashboard } from '../affiliate/store.js';
+import { ensurePayPingAuthSchema } from './auth.js';
 
 let schemaPromise = null;
 let seedPromise = null;
@@ -409,7 +410,7 @@ function genericAffiliateLabel(row) {
 }
 
 export async function listPayPingBotAffiliates(botId, { limit = 100 } = {}) {
-  await seedDefaultPayPingCatalog();
+  await Promise.all([seedDefaultPayPingCatalog(), ensurePayPingAuthSchema()]);
   const id = clean(botId, 64).toLowerCase();
   if (!id) return null;
 
@@ -505,7 +506,7 @@ export async function listPayPingBotAffiliates(botId, { limit = 100 } = {}) {
 }
 
 export async function listPayPingBots() {
-  await seedDefaultPayPingCatalog();
+  await Promise.all([seedDefaultPayPingCatalog(), ensurePayPingAuthSchema()]);
   const db = await getSupportDb();
   const environment = currentSupportEnvironment();
   const result = await db.execute({

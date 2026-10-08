@@ -5,6 +5,7 @@ import { dailyForcePremiumChannelSupportText, supportCampaignText, supportMenuKe
 import { FRIDAY_SUPPORT_MODE_OFF, getFridaySupportMode } from './friday-access.js';
 import {isPayPingSharedConfigEnabled} from './payping-shared-config.js';
 import { startPaymentFollowupScheduler } from './payment-followup.js';
+import {getActiveSupporterTitle} from './community-store.js';
 
 const STATS_FILE = String(process.env.STATS_FILE_PATH || '/data/bot-stats.json');
 const MALAYSIA_TIMEZONE = 'Asia/Kuala_Lumpur';
@@ -89,7 +90,9 @@ export function supportPromotionScheduleState(date = new Date()) {
   const friday = parts.weekday === 'Fri';
   const scheduledHour = shared ? (friday ? 10 : 15) : channelPromoHour();
   const scheduledMinute = shared ? 0 : channelPromoMinute();
-  const due = parts.hour > scheduledHour || (parts.hour === scheduledHour && parts.minute >= scheduledMinute);
+  const due = shared
+    ? (parts.hour === scheduledHour && parts.minute >= scheduledMinute)
+    : channelTimeReached(parts);
   return {
     ...parts,
     due,
@@ -132,17 +135,16 @@ async function ensurePromotionSchema() {
   return schemaPromise;
 }
 
-async function alreadySent(targetType, targetId, periodKey) {
+// Atomic once-per-day claim across restarts and replicas. Never retry a
+// possibly delivered promotional Telegram message in the same local day.
+async function claimPromotionSlot(targetType,targetId,periodKey){
   await ensurePromotionSchema();
-  const db = await getSupportDb();
-  const environment = currentSupportEnvironment();
-  const result = await db.execute({
-    sql: `SELECT status FROM support_promotion_delivery
-          WHERE environment = ? AND target_type = ? AND target_id = ? AND period_key = ?
-          LIMIT 1`,
-    args: [environment, targetType, String(targetId), periodKey],
+  const client=await getSupportDb(),t=new Date().toISOString();
+  const r=await client.execute({
+    sql:"INSERT OR IGNORE INTO support_promotion_delivery(environment,target_type,target_id,period_key,status,created_at,updated_at) VALUES(?,?,?,?,'CLAIMED',?,?)",
+    args:[currentSupportEnvironment(),targetType,String(targetId),periodKey,t,t],
   });
-  return String(result.rows?.[0]?.status || '') === 'SENT';
+  return Number(r.rowsAffected||0)===1;
 }
 
 async function markDelivery(targetType, targetId, periodKey, status, errorMessage = '') {
@@ -213,7 +215,7 @@ async function sendChannelPromotion() {
 async function deliverChannelDaily(dateKey) {
   const target = channelUsername();
   const periodKey = `channel-daily:${dateKey}`;
-  if (await alreadySent('CHANNEL', target, periodKey)) return false;
+  if (!(await claimPromotionSlot('CHANNEL', target, periodKey))) return false;
   try {
     await sendChannelPromotion();
     await markDelivery('CHANNEL', target, periodKey, 'SENT');
@@ -226,7 +228,7 @@ async function deliverChannelDaily(dateKey) {
   }
 }
 
-async function deliverPrivateFriday({ dateKey }) {
+async function deliverPrivatePromotion({ dateKey }) {
   const users = await trackedUserIds();
   let sent = 0;
   let skipped = 0;
@@ -234,12 +236,18 @@ async function deliverPrivateFriday({ dateKey }) {
   const periodKey = `all-users:${dateKey}`;
 
   for (const userId of users) {
-    if (await alreadySent('PRIVATE', userId, periodKey)) {
+    if (!(await claimPromotionSlot('PRIVATE', userId, periodKey))) {
       skipped += 1;
       continue;
     }
 
     try {
+      // Existing supporters are not chased by the recurring promotion.
+      if(await getActiveSupporterTitle(userId)){
+        await markDelivery('PRIVATE', userId, periodKey, 'SKIPPED');
+        skipped += 1;
+        continue;
+      }
       await sendPrivatePromotion(userId);
       await markDelivery('PRIVATE', userId, periodKey, 'SENT');
       sent += 1;
@@ -251,7 +259,7 @@ async function deliverPrivateFriday({ dateKey }) {
     await sleep(PRIVATE_SEND_DELAY_MS);
   }
 
-  console.log('[support-promo] private 10AM cycle complete', { users: users.length, sent, skipped, failed });
+  console.log('[support-promo] private daily cycle complete', { users: users.length, sent, skipped, failed });
   return { users: users.length, sent, skipped, failed };
 }
 
@@ -277,7 +285,7 @@ export async function runSupportPromotionCycle({ force = false } = {}) {
       ? (force || parts.privateDue)
       : (mode !== FRIDAY_SUPPORT_MODE_OFF && (force || parts.privateDue));
     if (privateReady) {
-      privateResult = await deliverPrivateFriday(parts);
+      privateResult = await deliverPrivatePromotion(parts);
     }
 
     return {
@@ -310,7 +318,7 @@ export function startSupportPromotionScheduler() {
     fridayPromotions: isPayPingSharedConfigEnabled()?'10:00 MY (channel + private)':`${String(promoHour()).padStart(2,'0')}:00 MY (private)`,
     normalDayPromotions: isPayPingSharedConfigEnabled()?'15:00 MY (channel + private)':'legacy channel time',
     channel: channelUsername(),
-    privateAudience: 'all-tracked-users',
+    privateAudience: 'tracked non-supporters, once per Malaysia day',
   });
   return schedulerTimer;
 }

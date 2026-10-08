@@ -1,4 +1,4 @@
-const PAGE = String.raw\`<!doctype html>
+const PAGE = String.raw`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -41,6 +41,6 @@ async function load(){try{const r=await fetch('/api/payping-data?view=bot&bot='+
 async function loadAffiliates(){if(affiliateLoaded)return;affiliateLoaded=true;$('affLoading').textContent='Loading affiliators…';try{const r=await fetch('/api/payping-data?view=bot-affiliates&bot='+encodeURIComponent(botId)+'&limit=100',{headers:headers(),cache:'no-store'});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Affiliate data unavailable.');const s=d.summary||{};$('aTotal').textContent=s.affiliates||0;$('aEarned').textContent=money(s.totalCommission);$('aPending').textContent=money(s.pendingCommission);const a=d.affiliates||[];$('affList').innerHTML=a.length?a.map(x=>'<div class="affiliate"><div class="avatar">'+esc(initial(x.label))+'</div><div class="am"><div class="an">'+esc(x.label||x.username||x.userId)+'</div><div class="meta">'+esc(x.paymentCount||x.payingReferrals||0)+' sales · '+esc(x.referrals||0)+' referrals</div></div><div class="earned">'+money(x.totalEarned)+'<small>earned</small></div></div>').join(''):'<div class="empty">Belum ada affiliator untuk bot ini.</div>';$('affLoading').hidden=true;$('affBody').hidden=false}catch(e){$('affLoading').textContent=e.message||String(e)}}
 document.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));btn.classList.add('active');document.querySelectorAll('.pane').forEach(x=>x.hidden=true);$(btn.dataset.tab).hidden=false;if(btn.dataset.tab==='affiliate')loadAffiliates()}));
 load();
-</script></body></html>\`;
+</script></body></html>`;
 function send(res,type,body){res.statusCode=200;res.setHeader('Content-Type',type);res.setHeader('Cache-Control','no-store');res.end(body)}
 export default function payPingBotDetailPage(req,res){if(req.method!=='GET'&&req.method!=='HEAD')return res.status(405).send('Method Not Allowed');return send(res,'text/html; charset=utf-8',req.method==='HEAD'?'':PAGE);}

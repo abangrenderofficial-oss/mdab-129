@@ -1,4 +1,5 @@
 import { currentSupportEnvironment, getSupportDb } from '../support/store.js';
+import { getAffiliateAdminDashboard } from '../affiliate/store.js';
 
 let schemaPromise = null;
 let seedPromise = null;
@@ -371,6 +372,138 @@ export async function seedDefaultPayPingCatalog() {
   return seedPromise;
 }
 
+
+async function botPaymentMetrics(db, environment, botId) {
+  const result = await db.execute({
+    sql: `SELECT
+            COUNT(*) AS total_count,
+            COALESCE(SUM(CASE WHEN o.status = 'PAID' THEN 1 ELSE 0 END), 0) AS paid_count,
+            COALESCE(SUM(CASE WHEN o.status = 'PAID' THEN o.amount_cents ELSE 0 END), 0) AS paid_cents,
+            COUNT(DISTINCT CASE WHEN o.status = 'PAID' THEN o.telegram_user_id END) AS supporter_count
+          FROM support_orders o
+          LEFT JOIN payping_order_context ctx
+            ON ctx.environment = o.environment
+           AND ctx.order_number = o.order_number
+          WHERE o.environment = ?
+            AND (
+              ctx.bot_id = ?
+              OR (? = 'mediax' AND (ctx.bot_id IS NULL OR ctx.bot_id = ''))
+            )`,
+    args: [environment, botId, botId],
+  });
+  const row = result.rows?.[0] || {};
+  return {
+    totalPayments: Number(row.total_count || 0),
+    successfulPayments: Number(row.paid_count || 0),
+    totalReceived: (Number(row.paid_cents || 0) / 100).toFixed(2),
+    supporterCount: Number(row.supporter_count || 0),
+  };
+}
+
+function genericAffiliateLabel(row) {
+  const username = String(row.telegram_username || '').trim().replace(/^@+/, '');
+  if (username) return '@' + username;
+  const email = String(row.email || '').trim();
+  if (email) return email.split('@')[0] || email;
+  return 'ID ' + String(row.affiliate_user_id || row.telegram_user_id || '');
+}
+
+export async function listPayPingBotAffiliates(botId, { limit = 100 } = {}) {
+  await seedDefaultPayPingCatalog();
+  const id = clean(botId, 64).toLowerCase();
+  if (!id) return null;
+
+  const bot = await getPayPingBot(id);
+  if (!bot) return null;
+
+  const safeLimit = Math.max(1, Math.min(200, Number(limit || 100)));
+
+  // Historical PayPing affiliate data predates multi-bot support and belongs
+  // to MediaX. Read it in place; never copy, reset or delete the original ledger.
+  if (id === 'mediax') {
+    const legacy = await getAffiliateAdminDashboard({ limit: safeLimit });
+    return {
+      bot,
+      source: 'legacy_mediax',
+      summary: legacy.summary,
+      affiliates: (legacy.affiliates || []).map((item) => ({
+        ...item,
+        botId: 'mediax',
+      })),
+      withdrawals: legacy.withdrawals || [],
+    };
+  }
+
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const rows = await db.execute({
+    sql: `SELECT
+            ba.affiliate_user_id,
+            ba.status,
+            ba.commission_type,
+            ba.commission_value,
+            ba.created_at,
+            COALESCE(p.telegram_username, '') AS telegram_username,
+            COALESCE(p.referral_code, '') AS referral_code,
+            COALESCE(a.email, '') AS email,
+            COUNT(c.commission_id) AS payment_count,
+            COALESCE(SUM(c.gross_cents), 0) AS gross_cents,
+            COALESCE(SUM(c.commission_cents), 0) AS total_cents,
+            COALESCE(SUM(CASE WHEN c.status = 'PENDING' THEN c.commission_cents ELSE 0 END), 0) AS pending_cents,
+            COALESCE(SUM(CASE WHEN c.status = 'AVAILABLE' THEN c.commission_cents ELSE 0 END), 0) AS available_cents,
+            COALESCE(SUM(CASE WHEN c.status = 'PAID' THEN c.commission_cents ELSE 0 END), 0) AS paid_cents
+          FROM payping_bot_affiliates ba
+          LEFT JOIN affiliate_profiles p
+            ON p.environment = ba.environment
+           AND p.telegram_user_id = ba.affiliate_user_id
+          LEFT JOIN payping_accounts a
+            ON a.telegram_user_id = ba.affiliate_user_id
+           AND a.status = 'active'
+          LEFT JOIN payping_affiliate_commissions c
+            ON c.environment = ba.environment
+           AND c.bot_id = ba.bot_id
+           AND c.affiliate_user_id = ba.affiliate_user_id
+          WHERE ba.environment = ? AND ba.bot_id = ?
+          GROUP BY ba.affiliate_user_id, ba.status, ba.commission_type, ba.commission_value,
+                   ba.created_at, p.telegram_username, p.referral_code, a.email
+          ORDER BY total_cents DESC, ba.created_at ASC
+          LIMIT ?`,
+    args: [environment, id, safeLimit],
+  });
+
+  const affiliates = (rows.rows || []).map((row) => ({
+    botId: id,
+    userId: String(row.affiliate_user_id || ''),
+    username: String(row.telegram_username || ''),
+    email: String(row.email || ''),
+    label: genericAffiliateLabel(row),
+    referralCode: String(row.referral_code || ''),
+    status: String(row.status || ''),
+    commissionType: String(row.commission_type || ''),
+    commissionValue: Number(row.commission_value || 0),
+    paymentCount: Number(row.payment_count || 0),
+    grossSales: (Number(row.gross_cents || 0) / 100).toFixed(2),
+    totalEarned: (Number(row.total_cents || 0) / 100).toFixed(2),
+    pending: (Number(row.pending_cents || 0) / 100).toFixed(2),
+    available: (Number(row.available_cents || 0) / 100).toFixed(2),
+    paid: (Number(row.paid_cents || 0) / 100).toFixed(2),
+    createdAt: String(row.created_at || ''),
+  }));
+
+  return {
+    bot,
+    source: 'bot_affiliate',
+    summary: {
+      affiliates: affiliates.length,
+      totalCommission: affiliates.reduce((sum, item) => sum + Number(item.totalEarned || 0), 0).toFixed(2),
+      pendingCommission: affiliates.reduce((sum, item) => sum + Number(item.pending || 0), 0).toFixed(2),
+      paidCommission: affiliates.reduce((sum, item) => sum + Number(item.paid || 0), 0).toFixed(2),
+    },
+    affiliates,
+    withdrawals: [],
+  };
+}
+
 export async function listPayPingBots() {
   await seedDefaultPayPingCatalog();
   const db = await getSupportDb();
@@ -420,12 +553,20 @@ export async function listPayPingBots() {
       }),
     ]);
 
+    const metrics = await botPaymentMetrics(db, environment, bot.id);
+    let activeAffiliates = Number(affiliateResult.rows?.[0]?.total || 0);
+    if (bot.id === 'mediax') {
+      const legacyAffiliate = await getAffiliateAdminDashboard({ limit: 1 });
+      activeAffiliates = Math.max(activeAffiliates, Number(legacyAffiliate.summary?.affiliates || 0));
+    }
+
     bots.push({
       ...bot,
       plans: (plansResult.rows || []).map(rowToPlan),
       portals: (portalsResult.rows || []).map(rowToPortal),
       activeSupporters: Number(supporterResult.rows?.[0]?.total || 0),
-      activeAffiliates: Number(affiliateResult.rows?.[0]?.total || 0),
+      activeAffiliates,
+      ...metrics,
     });
   }
   return bots;

@@ -172,6 +172,22 @@
       "destination": "/api/router?route=heavy-limit"
     },
     {
+      "source": "/ar-payment/bot/",
+      "destination": "/api/router?route=payping-bot-detail-page"
+    },
+    {
+      "source": "/ar-payment/bot",
+      "destination": "/api/router?route=payping-bot-detail-page"
+    },
+    {
+      "source": "/ar-payment/bots/",
+      "destination": "/api/router?route=payping-bots-page"
+    },
+    {
+      "source": "/ar-payment/bots",
+      "destination": "/api/router?route=payping-bots-page"
+    },
+    {
       "source": "/ar-payment",
       "destination": "/api/router?route=payment-pwa-page"
     },

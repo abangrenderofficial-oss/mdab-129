@@ -61,6 +61,7 @@ const PAGE = String.raw`<!doctype html>
       <div class="mini"><div class="k">Withdrawing</div><div id="withdrawing" class="v">RM0</div></div>
       <div class="mini"><div class="k">Paid</div><div id="paid" class="v">RM0</div></div>
     </div></div></section>
+    <section class="card"><div class="card-pad"><div class="card-title" style="margin-bottom:10px">Payout Method</div><div id="payoutDetail" class="meta">No payout method configured.</div></div></section>
 
     <section class="card"><div class="card-head card-pad" style="margin-bottom:0"><div class="card-title">Payments</div><div id="paymentCount" class="meta">0</div></div><div id="paymentRows" class="rows"></div></section>
 
@@ -80,6 +81,17 @@ const date=v=>{const d=new Date(v);return Number.isNaN(d.getTime())?'-':new Intl
 const headers=()=>{const h={'Content-Type':'application/json'};if(token)h['X-PayPing-Device-Token']=token;return h};
 function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function rowLabel(username,userId){return username?'@'+username:'ID '+userId}
+function payoutHtml(payout){
+  if(!payout?.configured||payout?.readable===false)return '<div class="empty">No payout method configured.</div>';
+  const d=payout.details||{};
+  if(payout.method==='DUITNOW'){
+    return '<div class="mini"><div class="k">DuitNow</div><div class="v">'+esc(d.identifierType||'-')+' · '+esc(d.identifier||'-')+'</div><div class="meta" style="margin-top:5px">'+esc(d.accountName||'-')+'</div></div>';
+  }
+  if(payout.method==='BANK'){
+    return '<div class="mini"><div class="k">Bank Transfer</div><div class="v">'+esc(d.bankName||'-')+'</div><div class="meta" style="margin-top:5px">'+esc(d.accountName||'-')+' · '+esc(d.accountNumber||'-')+'</div></div>';
+  }
+  return '<div class="empty">'+esc(payout.displayHint||payout.method||'Payout configured')+'</div>';
+}
 function renderAudit(a){
   if(!a||!a.exists){$('auditCard').classList.add('hidden');return}
   $('auditCard').classList.remove('hidden');
@@ -103,6 +115,7 @@ function render(d){
   $('refs').textContent=String(s.referrals||0);$('paying').textContent=String(s.payingReferrals||0);$('payments').textContent=String(s.paymentCount||0);
   $('pending').textContent=money(s.pending);$('available').textContent=money(s.available);$('withdrawing').textContent=money(s.withdrawing);$('paid').textContent=money(s.paid);
   $('payoutHint').textContent=d.payoutProfile?.configured?(d.payoutProfile.displayHint||d.payoutProfile.method):'No payout method';
+  $('payoutDetail').innerHTML=payoutHtml(d.payoutProfile);
   renderAudit(d.audit);
 
   const commissions=d.commissions||[];$('paymentCount').textContent=String(commissions.length);

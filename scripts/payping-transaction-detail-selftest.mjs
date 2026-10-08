@@ -55,14 +55,22 @@ await db.batch([
           created_at,updated_at
         ) VALUES(?,?,?,?,?,?,?,?, 'PENDING', ?, NULL, ?, ?)`,
    args:[env,'AFF:DETAIL-A','DETAIL-A','899999','810001',1000,2000,200,now,now,now]},
+  {sql:`INSERT INTO support_push_subscriptions(
+          environment,endpoint_hash,endpoint,p256dh,auth,device_token_hash,owner_user_id,created_at,updated_at,disabled_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,'')`,
+   args:[env,'device-1','https://push.example/device-1','p256dh-1','auth-1','token-1','810001',now,now]},
+  {sql:`INSERT INTO support_push_subscriptions(
+          environment,endpoint_hash,endpoint,p256dh,auth,device_token_hash,owner_user_id,created_at,updated_at,disabled_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,'')`,
+   args:[env,'device-2','https://push.example/device-2','p256dh-2','auth-2','token-2','810001',now,now]},
   {sql:`INSERT INTO support_webpush_delivery(
           environment,delivery_key,endpoint_hash,status,last_error,updated_at
         ) VALUES(?,?,'device-1','SENT','',?)`,
-   args:[env,'order:DETAIL-A',now]},
+   args:[env,'order:DETAIL-A:device-1',now]},
   {sql:`INSERT INTO support_webpush_delivery(
           environment,delivery_key,endpoint_hash,status,last_error,updated_at
         ) VALUES(?,?,'device-2','FAILED','network_test',?)`,
-   args:[env,'order:DETAIL-A',now]},
+   args:[env,'order:DETAIL-A:device-2',now]},
 ], 'write');
 
 const own=await getPayPingTransactionDetail({userId:'810001',owner:false,orderNumber:'DETAIL-A'});

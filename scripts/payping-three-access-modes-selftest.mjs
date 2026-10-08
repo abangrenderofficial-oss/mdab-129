@@ -38,6 +38,8 @@ try {
  assert(menu.includes("'/freesupportchannel") && !menu.includes("'/forcesupportdaily"));
  const promotions=await readFile('src/support/promotion.js','utf8');
  assert(promotions.includes('claimPromotionSlot('),'One-time promotional dispatch must use atomic claim');
+ assert(promotions.includes('promotionalChannelTarget()'),'Channel promo must resolve PayPing saved channel');
+ assert(promotions.includes("if(!target)"),'Never attempt channel broadcast without validated destination');
  assert(promotions.includes("getActiveSupporterTitle(userId)"),'Active supporters must not receive promotional reminders');
  assert(promotions.includes("supportPromotionScheduleState()"),'Promo scheduler must use MY 10am/3pm window');
  const force=await readFile('src/support/daily-force.js','utf8');

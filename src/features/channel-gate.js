@@ -7,7 +7,7 @@ import {
   markJoinPromptSent,
 } from '../bot/stats.js';
 
-import {getMediaXChannelRule,hasMediaXChannelCampaignUse,isPayPingSharedConfigEnabled} from '../support/payping-shared-config.js';
+import {getMediaXChannelRule,hasMediaXChannelCampaignUse,canFinishMediaXFirstHq,isPayPingSharedConfigEnabled} from '../support/payping-shared-config.js';
 import {isDailyForceSupportEnabled} from '../support/daily-force.js';
 
 export const CHANNEL_VERIFY_CALLBACK = 'channel:verify:v1';
@@ -108,12 +108,28 @@ async function channelGatePolicy(userId){
   return {gateRequired:await hasChannelGateRequired(userId),channel:channelUsername(),threshold:5};
 }
 
+
+function isNewChannelUsage(message={}) {
+  if(Array.isArray(message?.photo)&&message.photo.length)return true;
+  if(message?.video?.file_id)return true;
+  const text=String(message?.text||message?.caption||'');
+  return /https?:\/\/\S+/i.test(text);
+}
+function isOriginalHqAction(action=''){
+  return action.startsWith('media:status:v2')||
+    action.startsWith('media:status:a1')||
+    action.startsWith('media:status:m1');
+}
+
 export async function maybePromptChannelAfterSuccess(chatId, userId) {
   if (!chatId || !userId || isResetAdmin(userId)) return false;
   const {gateRequired,channel,threshold,campaignSequence} = await channelGatePolicy(userId);
   trace(userId, 'after_success_gate_check', { gateRequired, campaignSequence });
   if (!gateRequired) return false;
-  if (!campaignSequence && await hasJoinPromptBeenSent(userId)) return false;
+  // A completed first use NEVER triggers a channel promotion. Only the next
+  // newly sent link/photo/video may display the mandatory-join message.
+  if (campaignSequence) return false;
+  if (await hasJoinPromptBeenSent(userId)) return false;
 
   const member = await getMembership(userId,channel);
   if (member !== false) return false;
@@ -134,6 +150,7 @@ export async function enforceChannelGateForMessage(message = {}) {
   const userId = message?.from?.id;
   const chatType = message?.chat?.type;
   if (!chatId || !userId || chatType !== 'private' || isResetAdmin(userId)) return false;
+  if(!isNewChannelUsage(message))return false;
   const {gateRequired,channel,threshold} = await channelGatePolicy(userId);
   trace(userId, 'message_gate_check', { gateRequired, chatType });
   if (!gateRequired) return false;
@@ -156,13 +173,17 @@ export async function enforceChannelGateForCallback(callbackQuery = {}) {
   const chatType = callbackQuery?.message?.chat?.type;
   const userId = callbackQuery?.from?.id;
   if (!chatId || !userId || chatType !== 'private' || isResetAdmin(userId)) return false;
-  const {gateRequired,channel,threshold} = await channelGatePolicy(userId);
+  const {gateRequired,channel,threshold,campaignSequence} = await channelGatePolicy(userId);
   trace(userId, 'callback_gate_check', {
     gateRequired,
     chatType,
     action: String(callbackQuery?.data || '').slice(0, 100),
   });
   if (!gateRequired) return false;
+  // The first session includes choosing iPhone/Android HQ and downloading
+  // its HQ output. A second MEDIA SOURCE remains locked.
+  if(campaignSequence&&isOriginalHqAction(String(callbackQuery?.data||''))&&
+     await canFinishMediaXFirstHq(userId,campaignSequence,callbackQuery?.message?.date))return false;
 
   const member = await getMembership(userId,channel);
   if (member !== false) {

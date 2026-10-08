@@ -54,6 +54,8 @@ try{
  assert(daily.slice(daily.indexOf('async function sendDailyForceLock'),daily.indexOf('async function accessContext')).includes('dailyForcePremiumSupportText()'), 'Show full support promotion only when a new source is blocked');
  assert(daily.includes('support_daily_force_first_hq'), 'Original delivered media must retain one HQ option');
  assert(daily.includes('export async function canFinishFirstDailyForceHq'), 'Original media HQ callback must bypass first-use lock');
+ assert(daily.includes('MEDIA_STATUS_HQ_MENU')&&daily.includes('MEDIA_STATUS_HQ_ANDROID'), 'First source must allow profile chooser and Android HQ');
+ assert(daily.includes('action.startsWith(prefix)'), 'First session bypass applies only to HQ buttons');
  assert(daily.includes('export async function completeFirstDailyForceHq'), 'Successful HQ must complete that original session');
  assert(daily.includes("if (context.gateReason === 'support_required' && await canFinishFirstDailyForceHq(callbackQuery))return false;"), 'HQ callback must not be blocked on first raw media');
  const callbackSection=daily.slice(daily.indexOf('export async function enforceDailyForceSupportForCallback'),daily.indexOf('async function validateAdminPrivate'));

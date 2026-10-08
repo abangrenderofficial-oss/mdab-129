@@ -39,6 +39,7 @@ try{
  assert(channel.includes('hasMediaXChannelCampaignUse(userId,remote.campaignSequence)'), 'Channel gate must use new campaign success records, never accumulated HQ history');
  assert(channel.includes('if (campaignSequence) return false;'),'First successful HQ must NEVER send join-channel prompt');
  assert(channel.includes('if(!isNewChannelUsage(message))return false;'),'Channel prompt must only appear on newly submitted link/photo/video');
+ assert(channel.includes('if(campaignSequence){')&&channel.includes('No join-channel PROMPT from an old HQ button'),'Old HQ button callbacks must never trigger mandatory-join promotion');
  assert(channel.includes('canFinishMediaXFirstHq(userId,campaignSequence,callbackQuery?.message?.date)'),'First media HQ selection must remain usable after first source');
  assert(channel.includes("action.startsWith('media:status:a1')")&&channel.includes("action.startsWith('media:status:m1')"),'Android HQ and iPhone HQ menu both remain available within first session');
  const shared=await readFile('src/support/payping-shared-config.js','utf8');

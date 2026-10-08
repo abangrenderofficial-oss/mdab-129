@@ -18,7 +18,7 @@ import { handleLuahRasaCommand, processLuahRasaMessage } from '../src/features/l
 import { handleConnectQuoteCommand, processQuoteFilterCallback } from '../src/features/quote-filter.js';
 import { handleConnectPaymentDetailCommand, handlePaymentDetailTestCommand, handleSupportMonitorCommand, handleSupportCheckCommand } from '../src/features/payment-detail.js';
 import { handlePaymentPushSetupCommand } from '../src/features/payment-push.js';
-import { refreshSupportMonitorForMode, trackSupportMonitorActor } from '../src/support/monitor-hooks.js';
+import { trackSupportMonitorActor } from '../src/support/monitor-hooks.js';
 import { handleAffiliateCommand, handleAffiliatePayoutCommand, handleAffiliateStartPayload, handleAffiliateWithdrawCommand, processAffiliateCallback } from '../src/features/affiliate.js';
 import { handleCheckMemberCommand } from '../src/features/channel-diagnostic.js';
 import { handleResetChannelCommand } from '../src/features/channel-reset.js';
@@ -32,8 +32,6 @@ import { handlePayPingAccountLinkStart } from '../src/features/payping-account-l
 import {syncSharedConfigForUpdate,routeUnifiedForceCommand} from '../src/support/payping-shared-command-router.js';
 import {
   FRIDAY_SUPPORT_MODE_DONATE,
-  FRIDAY_SUPPORT_MODE_FORCE,
-  FRIDAY_SUPPORT_MODE_NORMAL,
   enforceFridaySupportForCallback,
   handleFridaySupportModeCommand,
   handleFridaySupportStopCommand,
@@ -42,8 +40,6 @@ import {
 import {
   enforceDailyForceSupportForCallback,
   enforceDailyForceSupportForMessage,
-  handleDailyForceSupportCommand,
-  handleStopDailyForceSupportCommand,
 } from '../src/support/daily-force.js';
 import {
   enforceSupportTestimonialGateForCallback,
@@ -203,14 +199,9 @@ export default async function handler(req, res) {
 
     const unified = await routeUnifiedForceCommand(message,command);
     if(unified)return json(res,200,unified);
-    if (command === '/forcesupport') { await handleFridaySupportModeCommand(message, FRIDAY_SUPPORT_MODE_FORCE); return json(res, 200, { ok: true, friday_support_mode: 'FORCE' }); }
     if (command === '/donatesupport') { await handleFridaySupportModeCommand(message, FRIDAY_SUPPORT_MODE_DONATE); return json(res, 200, { ok: true, friday_support_mode: 'DONATE' }); }
-    if (command === '/normalsupport' || command === '/supportnormal') { await handleFridaySupportModeCommand(message, FRIDAY_SUPPORT_MODE_NORMAL); return json(res, 200, { ok: true, friday_support_mode: 'NORMAL' }); }
-    if (command === '/stopforcesupport') { await handleFridaySupportStopCommand(message, FRIDAY_SUPPORT_MODE_FORCE); return json(res, 200, { ok: true, friday_support_stop: 'FORCE' }); }
     if (command === '/stopdonatesupport') { await handleFridaySupportStopCommand(message, FRIDAY_SUPPORT_MODE_DONATE); return json(res, 200, { ok: true, friday_support_stop: 'DONATE' }); }
     if (command === '/stopnormalsupport' || command === '/stopsupportnormal') { await handleFridaySupportStopCommand(message, FRIDAY_SUPPORT_MODE_NORMAL); return json(res, 200, { ok: true, friday_support_stop: 'NORMAL' }); }
-    if (command === '/forcesupportdaily') { await handleDailyForceSupportCommand(message); await refreshSupportMonitorForMode('ON'); return json(res, 200, { ok: true, daily_force_support: true }); }
-    if (command === '/stopforcesupportdaily') { await handleStopDailyForceSupportCommand(message); await refreshSupportMonitorForMode('OFF'); return json(res, 200, { ok: true, daily_force_support: false }); }
     if (command === '/resetchannel') { await handleResetChannelCommand(message); return json(res, 200, { ok: true, channel_reset: true }); }
     if (command === '/totaluser') { await handleTotalUserCommand(message, context); return json(res, 200, { ok: true, stats: true }); }
     if (command === '/supporttest') { await handleSupportTestCommand(message, context); return json(res, 200, { ok: true, support_test: true }); }

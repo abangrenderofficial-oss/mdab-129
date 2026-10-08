@@ -67,14 +67,14 @@ async function getMembership(userId, channel=channelUsername()) {
   }
 }
 
-export async function sendChannelGatePrompt(chatId, channel=channelUsername()) {
+export async function sendChannelGatePrompt(chatId, channel=channelUsername(), threshold=5) {
   if (!chatId) return false;
   await sendMessage(
     chatId,
     [
       '📢 Join Official Channel Kita 🇲🇾',
       '',
-      'Premium + HQ ke-5 dah siap 🥳',
+      threshold===0?'Untuk guna bot ini, awak perlu join channel terlebih dahulu.':'Premium + HQ ke-'+threshold+' dah siap 🥳',
       `Untuk terus guna bot, boleh join ${channel} dulu?`,
       '',
       'Thank you banyak-banyak atas support korang yang tak berbelah bahagi! 🥹❤️',
@@ -104,7 +104,7 @@ async function channelGatePolicy(userId){
 
 export async function maybePromptChannelAfterSuccess(chatId, userId) {
   if (!chatId || !userId || isResetAdmin(userId)) return false;
-  const {gateRequired,channel} = await channelGatePolicy(userId);
+  const {gateRequired,channel,threshold} = await channelGatePolicy(userId);
   trace(userId, 'after_success_gate_check', { gateRequired });
   if (!gateRequired) return false;
   if (await hasJoinPromptBeenSent(userId)) return false;
@@ -113,7 +113,7 @@ export async function maybePromptChannelAfterSuccess(chatId, userId) {
   if (member !== false) return false;
 
   try {
-    await sendChannelGatePrompt(chatId,channel);
+    await sendChannelGatePrompt(chatId,channel,threshold);
     await markJoinPromptSent(userId);
     trace(userId, 'after_success_prompt', { prompted: true });
     return true;
@@ -128,7 +128,7 @@ export async function enforceChannelGateForMessage(message = {}) {
   const userId = message?.from?.id;
   const chatType = message?.chat?.type;
   if (!chatId || !userId || chatType !== 'private' || isResetAdmin(userId)) return false;
-  const {gateRequired,channel} = await channelGatePolicy(userId);
+  const {gateRequired,channel,threshold} = await channelGatePolicy(userId);
   trace(userId, 'message_gate_check', { gateRequired, chatType });
   if (!gateRequired) return false;
 
@@ -139,7 +139,7 @@ export async function enforceChannelGateForMessage(message = {}) {
   }
 
   trace(userId, 'message_gate_result', { blocked: true, membership: false });
-  await sendChannelGatePrompt(chatId,channel).catch((error) => {
+  await sendChannelGatePrompt(chatId,channel,threshold).catch((error) => {
     console.warn('[channel-gate] message gate prompt failed:', error?.message);
   });
   return true;
@@ -150,7 +150,7 @@ export async function enforceChannelGateForCallback(callbackQuery = {}) {
   const chatType = callbackQuery?.message?.chat?.type;
   const userId = callbackQuery?.from?.id;
   if (!chatId || !userId || chatType !== 'private' || isResetAdmin(userId)) return false;
-  const {gateRequired,channel} = await channelGatePolicy(userId);
+  const {gateRequired,channel,threshold} = await channelGatePolicy(userId);
   trace(userId, 'callback_gate_check', {
     gateRequired,
     chatType,
@@ -170,7 +170,7 @@ export async function enforceChannelGateForCallback(callbackQuery = {}) {
     text: 'Join channel kita dulu ya 😊',
     show_alert: false,
   }).catch(() => {});
-  await sendChannelGatePrompt(chatId,channel).catch((error) => {
+  await sendChannelGatePrompt(chatId,channel,threshold).catch((error) => {
     console.warn('[channel-gate] callback gate prompt failed:', error?.message);
   });
   return true;

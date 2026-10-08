@@ -42,6 +42,13 @@ try{
  assert(channel.includes('if(campaignSequence){')&&channel.includes('No join-channel PROMPT from an old HQ button'),'Old HQ button callbacks must never trigger mandatory-join promotion');
  assert(channel.includes('canFinishMediaXFirstHq(userId,campaignSequence,callbackQuery?.message?.date)'),'First media HQ selection must remain usable after first source');
  assert(channel.includes("action.startsWith('media:status:a1')")&&channel.includes("action.startsWith('media:status:m1')"),'Android HQ and iPhone HQ menu both remain available within first session');
+ const dpSync=await readFile('src/support/payping-bot-avatar-sync.js','utf8');
+ assert(dpSync.includes("process.env.TELEGRAM_BOT_TOKEN"),'Only MediaX own runtime token can fetch its DP');
+ assert(dpSync.includes("getUserProfilePhotos"),'Telegram photo source used');
+ assert(dpSync.includes("UPDATE payping_bots SET telegram_bot_id"),'Canonical bot username and ID synced without changing download code');
+ assert(dpSync.includes("ON CONFLICT(environment,bot_id) DO UPDATE SET telegram_avatar_data_url"),'Existing token and payment secrets must never be overwritten');
+ const runtime=await readFile('server.js','utf8');
+ assert(runtime.includes('startMediaXTelegramAvatarSync();'),'Telegram bot DP is synced asynchronously at runtime startup');
  const shared=await readFile('src/support/payping-shared-config.js','utf8');
  assert(shared.includes('export async function canFinishMediaXFirstHq'),'First media HQ permission must bind to campaign and Telegram message date');
  assert(shared.includes("source='hq_completed'"),'HQ success must close the first-session exception');

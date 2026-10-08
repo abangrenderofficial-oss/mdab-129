@@ -2,7 +2,7 @@ import { markPremiumHqCompleted, recordUsage } from '../bot/stats.js';
 import { maybePromptChannelAfterSuccess } from '../features/channel-gate.js';
 import { markFridayUsageSuccess } from './friday-access.js';
 import { markDailyForceUsageSuccess, completeFirstDailyForceHq } from './daily-force.js';
-import {recordMediaXChannelCampaignUse} from './payping-shared-config.js';
+import {recordMediaXChannelCampaignUse,completeMediaXFirstHq} from './payping-shared-config.js';
 
 export async function recordPremiumHqSuccess({
   userId,
@@ -33,6 +33,10 @@ export async function recordPremiumHqSuccess({
   const dailyMarked = await markDailyForceUsageSuccess(id).catch((error) => {
     console.warn(`[daily-force] ${label} mark failed:`, error?.message);
     return false;
+  });
+
+  await completeMediaXFirstHq(id).catch(error=>{
+    console.warn('[payping-shared] first channel HQ completion failed:',error?.message);
   });
 
   // Complete the original media session's HQ conversion, without granting

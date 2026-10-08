@@ -6,6 +6,7 @@ import { processStandardDownload } from './features/downloader.js';
 import { processStatusFromLink } from './features/status-hq.js';
 import { sendTikTokSlideshowChoice } from './features/tiktok-slideshow.js';
 import { recordPremiumHqSuccess } from './support/premium-hq-completion.js';
+import {recordMediaXChannelCampaignUse} from './support/payping-shared-config.js';
 import {
   claimFridayUsageAttempt,
   enforceFridaySupportForMessage,
@@ -63,6 +64,7 @@ async function runLinkJob({ message, context, url, platform, statusMode, fridayC
       if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
       if (dailyClaimed) await releaseDailyForceUsageAttempt(userId).catch(() => {});
     } else if (hasDownloadableMedia(result)) {
+      await recordMediaXChannelCampaignUse(userId,'social_download').catch(()=>{});
       await recordUsage(userId, 'download');
       await markFridaySuccess(userId, 'download');
       if (dailyClaimed) {

@@ -3,6 +3,7 @@ import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { sendMessage, sendSupportPromotionToChannel, telegram } from '../telegram.js';
 import { dailyForcePremiumChannelSupportText, supportCampaignText, supportMenuKeyboard } from '../features/support.js';
 import { FRIDAY_SUPPORT_MODE_OFF, getFridaySupportMode } from './friday-access.js';
+import {isPayPingSharedConfigEnabled} from './payping-shared-config.js';
 import { startPaymentFollowupScheduler } from './payment-followup.js';
 
 const STATS_FILE = String(process.env.STATS_FILE_PATH || '/data/bot-stats.json');
@@ -245,7 +246,7 @@ export async function runSupportPromotionCycle({ force = false } = {}) {
   cycleRunning = true;
   try {
     const parts = malaysiaParts();
-    const mode = await getFridaySupportMode();
+    const mode = isPayPingSharedConfigEnabled()?FRIDAY_SUPPORT_MODE_OFF:await getFridaySupportMode();
 
     let channelSent = false;
     if (force || channelTimeReached(parts)) {

@@ -6,8 +6,8 @@ let refreshTask=null;
 let lastHeartbeat=0;
 export const isPayPingSharedConfigEnabled=()=>String(process.env.PAYPING_SHARED_CONFIG_ENABLED||'').toLowerCase()==='true';
 export function currentSupportAmounts(){return isPayPingSharedConfigEnabled()?[...cache.amounts]:[...FALLBACK_AMOUNTS]}
-function validAmount(n){return Number.isFinite(n)&&n>=1&&n<=1000000&&Math.round(n*100)===n*100}
-function decodeAmounts(rows){const a=rows.filter(r=>String(r.status)==='active').map(r=>Number(r.amount_cents)/100).filter(validAmount);return [...new Set(a)].sort((a,b)=>a-b)}
+function validAmount(n){return Number.isFinite(n)&&n>=1&&n<=1000000&&Math.abs(Math.round(n*100)-n*100)<0.000001}
+export function deriveActiveMediaXAmounts(rows){const a=rows.filter(r=>String(r.status)==='active').map(r=>Number(r.amount_cents)/100).filter(validAmount);return [...new Set(a)].sort((a,b)=>a-b)}
 export async function refreshSupportAmounts(force=false){
  if(!isPayPingSharedConfigEnabled())return currentSupportAmounts();
  if(!force&&Date.now()-cache.checked<15000)return currentSupportAmounts();
@@ -16,7 +16,7 @@ export async function refreshSupportAmounts(force=false){
   const db=await getSupportDb();
   const result=await db.execute({sql:"SELECT amount_cents,status FROM payping_plans WHERE environment=? AND bot_id='mediax' ORDER BY amount_cents",args:[currentSupportEnvironment()]});
   const source=result.rows||[];
-  cache.amounts=source.length?decodeAmounts(source):[...FALLBACK_AMOUNTS];
+  cache.amounts=source.length?deriveActiveMediaXAmounts(source):[...FALLBACK_AMOUNTS];
   cache.checked=Date.now();cache.version++;
   return currentSupportAmounts();
  })().finally(()=>{refreshTask=null});

@@ -881,10 +881,13 @@ async function dueOrders(limit=20){
     WHERE o.environment=? AND o.created_at>=? AND o.created_at<=?
       AND o.status='PENDING' AND o.paid_at IS NULL
       AND s.state='CHECKOUT' AND s.payment_url LIKE 'https://%'
+      AND COALESCE(s.checkout_open_count,0)>0
+      AND s.checkout_first_opened_at IS NOT NULL
+      AND s.checkout_first_opened_at<=?
       AND COALESCE(f.state,'ACTIVE')='ACTIVE'
       AND COALESCE(f.followup_count,0)<2
       AND (COALESCE(f.followup_count,0)=0 OR f.last_followup_at<=?)
-    ORDER BY o.created_at ASC LIMIT ?`,args:[env,mode.activatedAt,cutoff,secondCutoff,Math.max(1,Math.min(Number(limit)||20,100))]});
+    ORDER BY o.created_at ASC LIMIT ?`,args:[env,mode.activatedAt,cutoff,cutoff,secondCutoff,Math.max(1,Math.min(Number(limit)||20,100))]});
   return (r.rows||[]).map(x=>({order:String(x.order_number),sequence:Number(x.followup_count||0)+1}));
 }
 async function claimAutoFollowup(order,sequence){

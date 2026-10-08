@@ -192,6 +192,16 @@ export async function enforceChannelGateForCallback(callbackQuery = {}) {
   }
 
   trace(userId, 'callback_gate_result', { blocked: true, membership: false });
+  if(campaignSequence){
+    // No join-channel PROMPT from an old HQ button. Only a second incoming
+    // source (link / gallery photo / video) can deliver the join message.
+    await telegram('answerCallbackQuery',{
+      callback_query_id:callbackQuery.id,
+      text:'Penggunaan percuma dah selesai. Hantar link atau media baharu untuk sambung.',
+      show_alert:false,
+    }).catch(()=>{});
+    return true;
+  }
   await telegram('answerCallbackQuery', {
     callback_query_id: callbackQuery.id,
     text: 'Join channel kita dulu ya 😊',

@@ -89,7 +89,7 @@ export async function processGalleryUploadWithSupport(message, context = {}) {
 
     if (completed) {
       if (claims.fridayClaimed) await markFridaySuccess(userId, isPhoto ? 'gallery photo' : 'gallery video');
-      if (claims.dailyClaimed) await markDailyForceUsageSuccess(userId);
+      if (claims.dailyClaimed) await markDailyForceUsageSuccess(userId, {allowFirstHq:true});
     } else {
       await releaseClaims(userId, claims.fridayClaimed, claims.dailyClaimed);
     }

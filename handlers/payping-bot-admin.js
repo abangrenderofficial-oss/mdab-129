@@ -3,6 +3,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 import { resolvePayPingIdentity } from '../src/payping/auth.js';
 import { currentSupportEnvironment, getSupportDb } from '../src/support/store.js';
 import { ensurePayPingCatalogSchema } from '../src/payping/catalog.js';
+import {verifyExternalTelegramBotToken as verifyToken} from '../src/telegram.js';
 
 function clean(value,max=160){return String(value??'').replace(/\u0000/g,'').trim().slice(0,max)}
 function slugify(value){
@@ -46,42 +47,6 @@ async function ensureSchema(){
     'CREATE INDEX IF NOT EXISTS idx_payping_bots_telegram_id ON payping_bots(environment, telegram_bot_id)'
   ],'write');
   return db;
-}
-async function telegramJson(token,method,data={}){
-  const r=await fetch('https://api.telegram.org/bot'+encodeURIComponent(token)+'/'+method,{
-    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data),
-    signal:AbortSignal.timeout(15000),
-  });
-  const body=await r.json().catch(()=>null);
-  if(!r.ok||!body?.ok){
-    const e=new Error(body?.description||'Telegram bot verification failed.');
-    e.code='TELEGRAM_BOT_VERIFY_FAILED';throw e;
-  }
-  return body.result;
-}
-async function avatarDataUrl(token,userId){
-  try{
-    const photos=await telegramJson(token,'getUserProfilePhotos',{user_id:userId,limit:1});
-    const sizes=photos?.photos?.[0]||[];const photo=sizes[sizes.length-1];if(!photo?.file_id)return '';
-    const file=await telegramJson(token,'getFile',{file_id:photo.file_id});if(!file?.file_path)return '';
-    const r=await fetch('https://api.telegram.org/file/bot'+encodeURIComponent(token)+'/'+file.file_path,{signal:AbortSignal.timeout(15000)});
-    if(!r.ok)return '';const type=r.headers.get('content-type')||'image/jpeg';const buf=Buffer.from(await r.arrayBuffer());
-    if(buf.length>1500000)return '';
-    return 'data:'+type+';base64,'+buf.toString('base64');
-  }catch{return ''}
-}
-async function verifyToken(token){
-  const t=clean(token,220);if(!/^\d{6,15}:[A-Za-z0-9_-]{20,}$/.test(t)){
-    const e=new Error('Format Telegram Bot Token tidak sah.');e.code='INVALID_TELEGRAM_BOT_TOKEN';throw e;
-  }
-  const me=await telegramJson(t,'getMe');
-  if(!me?.is_bot){const e=new Error('Token ini bukan Telegram bot.');e.code='NOT_A_TELEGRAM_BOT';throw e}
-  return {
-    token:t,id:String(me.id||''),username:clean(me.username,80).replace(/^@+/,''),
-    name:clean([me.first_name,me.last_name].filter(Boolean).join(' '),120)||clean(me.username,120),
-    canJoinGroups:Boolean(me.can_join_groups),supportsInlineQueries:Boolean(me.supports_inline_queries),
-    avatarDataUrl:await avatarDataUrl(t,me.id),
-  };
 }
 async function owner(req){
   const auth=await resolvePayPingIdentity(req,{allowLegacyDevice:true});

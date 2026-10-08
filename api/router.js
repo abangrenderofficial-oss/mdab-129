@@ -1,5 +1,7 @@
 import healthHandler from '../handlers/health.js';
 import payPingHomePage from '../handlers/payping-home-pwa.js';
+import payPingBotsPage from '../handlers/payping-bots-pwa.js';
+import payPingBotDetailPage from '../handlers/payping-bot-detail-pwa.js';
 import telegramHandler from '../handlers/telegram.js';
 import setupHandler from '../handlers/setup.js';
 import setupWebhookHandler from '../handlers/setup-webhook.js';
@@ -67,6 +69,8 @@ const routes = new Map([
   ['affiliate-admin-detail-page', affiliateAdminDetailPageHandler],
   ['affiliate-pwa-page', affiliatePwaPageHandler],
   ['heavy-limit', heavyLimitHandler],
+  ['payping-bots-page', payPingBotsPage],
+  ['payping-bot-detail-page', payPingBotDetailPage],
   ['payment-pwa-page', payPingHomePage],
   ['payment-pwa-manifest', paymentPwaManifestHandler],
   ['payment-pwa-sw', paymentPwaServiceWorkerHandler],

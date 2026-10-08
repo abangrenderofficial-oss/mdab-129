@@ -21,6 +21,7 @@ import { sendMessage, telegram } from '../telegram.js';
 import { sendSupportQuoteToFilter } from '../support/quote-filter.js';
 import { recordSupportAmountClick } from '../support/click-analytics.js';
 import {currentSupportAmounts,refreshSupportAmounts,isSupportAmountCurrentlyActive,isPayPingSharedConfigEnabled} from '../support/payping-shared-config.js';
+import {recordMediaXSupportPlanForOrder} from '../support/payping-order-plan.js';
 import { hasMinimumWords } from '../support/text-validation.js';
 import { notifySuccessfulSupportPayment } from '../support/payment-detail.js';
 import { notifyWebPushSupportPayment } from '../support/webpush-payment.js';
@@ -577,6 +578,8 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
       username: user.username || '',
       amount,
     });
+
+    await recordMediaXSupportPlanForOrder(orderNumber,amount);
 
     const payment = await createSupportPayment({
       amount,

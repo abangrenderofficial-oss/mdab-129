@@ -54,7 +54,7 @@ function rowToPortal(row) {
     apiTokenEnv: String(row.api_token_env || ''),
     apiSecretEnv: String(row.api_secret_env || ''),
     status: String(row.status || 'unconfigured'),
-    configured: Boolean(
+    configured: String(row.status || '').toLowerCase() === 'active' || Boolean(
       row.portal_key_env
       && String(process.env[String(row.portal_key_env)] || '').trim()
     ),

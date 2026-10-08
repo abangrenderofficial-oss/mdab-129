@@ -15,10 +15,10 @@ const must = (source, marker, label) => {
   if (!source.includes(marker)) throw new Error(`${label} missing: ${marker}`);
 };
 
-must(api, 'resolvePushDeviceOwner', 'API device auth');
+must(api, 'resolvePayPingIdentity', 'API PayPing auth');
 must(api, "action === 'withdraw'", 'API withdrawal');
 must(api, 'getAffiliateActivity', 'API activity');
-must(api, 'headers?.authorization', 'API authorization');
+must(api, 'resolvePayPingIdentity(req', 'API identity resolution');
 must(push, 'export async function resolvePushDeviceOwner', 'Device owner resolver');
 must(push, "disabled_at = ''", 'Active device guard');
 must(store, 'export async function getAffiliateActivity', 'Affiliate activity store');

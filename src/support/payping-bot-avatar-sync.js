@@ -24,8 +24,15 @@ export async function refreshMediaXTelegramAvatar(){
   if(!present.rows?.length)return {updated:false,reason:'PayPing MediaX record missing'};
   const me=await telegramCall(token,'getMe',{});
   if(!me?.is_bot||!Number.isSafeInteger(Number(me.id)))return {updated:false,reason:'Telegram bot identity unavailable'};
-  const photos=await telegramCall(token,'getUserProfilePhotos',{user_id:me.id,limit:1});
-  const sizes=photos?.photos?.[0]||[];
+  let sizes=[];
+  try{
+    const photos=await telegramCall(token,'getUserProfilePhotos',{user_id:me.id,limit:1});
+    sizes=photos?.photos?.[0]||[];
+  }catch{
+    // Even if Telegram disallows querying own bot's profile photos, update
+    // the canonical username for the public Telegram avatar fallback.
+    console.warn('[payping-avatar] Telegram photo lookup unavailable; using username fallback');
+  }
   let dataUrl='';
   if(sizes.length){
     const photo=sizes[sizes.length-1];

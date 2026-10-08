@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {isPayPingSharedConfigEnabled,currentSupportAmounts,deriveActiveMediaXAmounts} from '../src/support/payping-shared-config.js';
 import {malaysiaSupportSchedule} from '../src/support/daily-force-schedule.js';
+import {supportExpiryFromSnapshot} from '../src/support/payping-order-plan.js';
 const original=process.env.PAYPING_SHARED_CONFIG_ENABLED;
 try{
  delete process.env.PAYPING_SHARED_CONFIG_ENABLED;
@@ -14,7 +15,10 @@ try{
  assert.equal(isPayPingSharedConfigEnabled(),true);
  assert.equal(malaysiaSupportSchedule(friday).dailyForceWindowActive,true);
  assert.equal(malaysiaSupportSchedule(friday).dailyForceWindowLabel,'EVERY_DAY');
- assert.deepEqual(deriveActiveMediaXAmounts([
+ assert.equal(supportExpiryFromSnapshot('2026-01-01T00:00:00Z',30).toISOString(),'2026-01-31T00:00:00.000Z');
+ assert.equal(supportExpiryFromSnapshot('2026-01-01T00:00:00Z',0).toISOString(),'9999-12-31T23:59:59.000Z');
+ assert.equal(supportExpiryFromSnapshot('2026-01-01T00:00:00Z',null),null);
+  assert.deepEqual(deriveActiveMediaXAmounts([
    {amount_cents:1000,status:'inactive'},
    {amount_cents:2000,status:'active'},
    {amount_cents:5000,status:'active'},

@@ -185,7 +185,7 @@ export async function getDailyForceRuntimeState(date = new Date()) {
     ...mode,
     ...schedule,
     active: mode.enabled && schedule.dailyForceWindowActive,
-    pausedForFriday: mode.enabled && schedule.isFriday,
+    pausedForFriday: mode.enabled && !schedule.dailyForceWindowActive && schedule.isFriday,
   };
 }
 

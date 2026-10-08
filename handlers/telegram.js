@@ -29,6 +29,7 @@ import {
 } from '../src/features/channel-gate.js';
 import { scheduleLinkJob } from '../src/link-queue.js';
 import { handlePayPingAccountLinkStart } from '../src/features/payping-account-link.js';
+import {isPayPingSharedConfigEnabled,refreshSupportAmounts,reportPayPingSync} from '../src/support/payping-shared-config.js';
 import {
   FRIDAY_SUPPORT_MODE_DONATE,
   FRIDAY_SUPPORT_MODE_FORCE,
@@ -171,6 +172,9 @@ export default async function handler(req, res) {
     const update = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
     const decision = beginUpdate(update);
     if (!decision.accept) return json(res, 200, { ok: true, ignored: decision.reason });
+    if(isPayPingSharedConfigEnabled()){
+      try{await refreshSupportAmounts();await reportPayPingSync()}catch(e){console.warn('[payping-shared] sync refresh failed:',e.message)}
+    }
 
     const context = { baseUrl: requestBaseUrl(req), mirrorGroupId: mirrorGroupFromRequest(req) };
     const message = update?.message ?? update?.edited_message;
@@ -204,6 +208,23 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, menuadmin: true });
     }
 
+    if(isPayPingSharedConfigEnabled()){
+      if(command==='/forcesupport'||command==='/forcesupportdaily'){
+        await handleDailyForceSupportCommand(message);
+        await refreshSupportMonitorForMode('ON');
+        return json(res,200,{ok:true,force_support:'ON'});
+      }
+      if(['/normalsupport','/supportnormal','/stopforcesupport','/stopforcesupportdaily'].includes(command)){
+        await handleStopDailyForceSupportCommand(message);
+        await refreshSupportMonitorForMode('OFF');
+        return json(res,200,{ok:true,force_support:'OFF'});
+      }
+      if(['/donatesupport','/stopdonatesupport','/stopnormalsupport','/stopsupportnormal'].includes(command)){
+        if(isResetAdmin(message?.from?.id)&&message?.chat?.type==='private')
+          await sendMessage(message.chat.id,'ℹ️ Friday-specific Support Mode telah diganti dengan Force Support setiap hari. Gunakan /forcesupport atau /normalsupport.');
+        return json(res,200,{ok:true,legacy_command:true});
+      }
+    }
     if (command === '/forcesupport') { await handleFridaySupportModeCommand(message, FRIDAY_SUPPORT_MODE_FORCE); return json(res, 200, { ok: true, friday_support_mode: 'FORCE' }); }
     if (command === '/donatesupport') { await handleFridaySupportModeCommand(message, FRIDAY_SUPPORT_MODE_DONATE); return json(res, 200, { ok: true, friday_support_mode: 'DONATE' }); }
     if (command === '/normalsupport' || command === '/supportnormal') { await handleFridaySupportModeCommand(message, FRIDAY_SUPPORT_MODE_NORMAL); return json(res, 200, { ok: true, friday_support_mode: 'NORMAL' }); }

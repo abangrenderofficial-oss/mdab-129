@@ -59,6 +59,14 @@ export async function ensureSupportSchema() {
           paid_at TEXT,
           PRIMARY KEY (environment, order_number)
         )`,
+        `CREATE TABLE IF NOT EXISTS payping_bot_sync_status_v2 (
+          environment TEXT NOT NULL,
+          bot_id TEXT NOT NULL,
+          last_seen_at TEXT NOT NULL,
+          config_version TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (environment, bot_id)
+        )`,
         `CREATE TABLE IF NOT EXISTS payping_order_plan_snapshots_v2 (
           environment TEXT NOT NULL,
           order_number TEXT NOT NULL,

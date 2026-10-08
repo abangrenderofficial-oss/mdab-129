@@ -60,7 +60,7 @@ try{
  assert(!callbackSection.includes('sendDailyForceLock(chatId)'), 'No payment promotion from old HQ button callbacks; second NEW input only');
  const media=await readFile('src/bot/gated-media-flow.js','utf8');
  const link=await readFile('src/link-queue.js','utf8');
- const completion=await readFile('src/support/premium-hq-completion.js','utf8');
+
  assert(media.includes('markDailyForceUsageSuccess(userId, {allowFirstHq:true})'), 'Gallery raw media must permit its first HQ conversion');
  assert(link.includes('markDailyForceUsageSuccess(userId, {allowFirstHq:true})'), 'Downloaded link media must permit its first HQ conversion');
  assert(completion.includes('completeFirstDailyForceHq(id)'), 'First media HQ allowance closes only after successful HQ conversion');

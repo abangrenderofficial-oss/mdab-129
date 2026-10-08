@@ -119,11 +119,23 @@ export async function processMediaCallbackWithSupport(callbackQuery, context = {
   const claims = await claimBoth(userId, callbackQuery, true);
   if (claims.blocked) return true;
 
-  if (await processStatusAndroidButton(callbackQuery, context)) {
+  const androidResult = await processStatusAndroidButton(callbackQuery, context);
+  if (androidResult) {
     if (action.startsWith(MEDIA_STATUS_HQ_ANDROID)) {
-      await recordUsage(userId, 'status_hq');
-      await markFridaySuccess(userId, 'android status');
-      if (claims.dailyClaimed) await markDailyForceUsageSuccess(userId).catch(() => {});
+      if (androidResult?.androidHqCompleted) {
+        await recordPremiumHqSuccess({
+          userId,
+          chatId,
+          label: 'android hq callback',
+          completionKey: `android:callback:${String(callbackQuery?.id || '')}`,
+        });
+      } else if (androidResult?.androidHqDispatched) {
+        // Heavy Android worker reports completion through the existing signed
+        // callback only AFTER Telegram media delivery succeeds.
+      } else {
+        // A failed/invalid Android operation must not use up the free HQ try.
+        await releaseClaims(userId, claims.fridayClaimed, claims.dailyClaimed);
+      }
     }
     return true;
   }

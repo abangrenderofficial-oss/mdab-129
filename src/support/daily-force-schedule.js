@@ -1,3 +1,4 @@
+import {isPayPingSharedConfigEnabled} from './payping-shared-config.js';
 const MALAYSIA_TIMEZONE = 'Asia/Kuala_Lumpur';
 
 export function malaysiaSupportSchedule(date = new Date()) {
@@ -19,8 +20,8 @@ export function malaysiaSupportSchedule(date = new Date()) {
     weekday,
     dateKey: `${parts.year}-${parts.month}-${parts.day}`,
     isFriday,
-    dailyForceWindowActive: !isFriday,
-    dailyForceWindowLabel: isFriday ? 'PAUSED_FRIDAY' : 'SAT_THU',
+    dailyForceWindowActive: isPayPingSharedConfigEnabled() ? true : !isFriday,
+    dailyForceWindowLabel: isPayPingSharedConfigEnabled() ? 'EVERY_DAY' : (isFriday ? 'PAUSED_FRIDAY' : 'SAT_THU'),
   };
 }
 

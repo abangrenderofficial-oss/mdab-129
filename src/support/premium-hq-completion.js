@@ -1,7 +1,7 @@
 import { markPremiumHqCompleted, recordUsage } from '../bot/stats.js';
 import { maybePromptChannelAfterSuccess } from '../features/channel-gate.js';
 import { markFridayUsageSuccess } from './friday-access.js';
-import { markDailyForceUsageSuccess } from './daily-force.js';
+import { markDailyForceUsageSuccess, completeFirstDailyForceHq } from './daily-force.js';
 import {recordMediaXChannelCampaignUse} from './payping-shared-config.js';
 
 export async function recordPremiumHqSuccess({

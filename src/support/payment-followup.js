@@ -887,7 +887,19 @@ async function dueOrders(limit=20){
       AND COALESCE(f.state,'ACTIVE')='ACTIVE'
       AND COALESCE(f.followup_count,0)<2
       AND (COALESCE(f.followup_count,0)=0 OR f.last_followup_at<=?)
-    ORDER BY o.created_at ASC LIMIT ?`,args:[env,mode.activatedAt,cutoff,cutoff,secondCutoff,Math.max(1,Math.min(Number(limit)||20,100))]});
+      AND NOT EXISTS (
+        SELECT 1 FROM support_payment_followups older
+        JOIN support_orders same_user ON same_user.environment=older.environment
+          AND same_user.order_number=older.order_number
+        WHERE older.environment=o.environment
+          AND same_user.telegram_user_id=o.telegram_user_id
+          AND older.order_number<>o.order_number
+          AND (
+            older.last_followup_at>?
+            OR (older.last_delivery_status='BLOCKED' AND older.last_error_code='TELEGRAM_BOT_BLOCKED')
+          )
+      )
+    ORDER BY o.created_at ASC LIMIT ?`,args:[env,mode.activatedAt,cutoff,cutoff,secondCutoff,secondCutoff,Math.max(1,Math.min(Number(limit)||20,100))]});
   return (r.rows||[]).map(x=>({order:String(x.order_number),sequence:Number(x.followup_count||0)+1}));
 }
 async function claimAutoFollowup(order,sequence){

@@ -7,7 +7,7 @@ import {
   markJoinPromptSent,
 } from '../bot/stats.js';
 
-import {getMediaXChannelRule} from '../support/payping-shared-config.js';
+import {getMediaXChannelRule,isPayPingSharedConfigEnabled} from '../support/payping-shared-config.js';
 
 export const CHANNEL_VERIFY_CALLBACK = 'channel:verify:v1';
 
@@ -99,6 +99,9 @@ async function channelGatePolicy(userId){
     const count=await getChannelUseCount(userId);
     return {gateRequired:count>=remote.threshold,channel:remote.channel,threshold:remote.threshold};
   }
+  // One active access mode only. The original five-HQ channel gate must not
+  // run in parallel with Force Support or normal Free mode on shared PayPing.
+  if(isPayPingSharedConfigEnabled())return {gateRequired:false,channel:channelUsername(),threshold:1};
   return {gateRequired:await hasChannelGateRequired(userId),channel:channelUsername(),threshold:5};
 }
 

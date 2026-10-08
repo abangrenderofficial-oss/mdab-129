@@ -37,6 +37,15 @@ try{
  assert(channel.includes('if(isPayPingSharedConfigEnabled())return {gateRequired:false'), 'Legacy fifth-HQ gate must stay OFF during synced Force Support and Free mode');
  assert(channel.includes('if(await isDailyForceSupportEnabled())return'), 'Force Support must override a stale Free + Channel policy');
  assert(channel.includes('hasMediaXChannelCampaignUse(userId,remote.campaignSequence)'), 'Channel gate must use new campaign success records, never accumulated HQ history');
+ assert(channel.includes('if (campaignSequence) return false;'),'First successful HQ must NEVER send join-channel prompt');
+ assert(channel.includes('if(!isNewChannelUsage(message))return false;'),'Channel prompt must only appear on newly submitted link/photo/video');
+ assert(channel.includes('canFinishMediaXFirstHq(userId,campaignSequence,callbackQuery?.message?.date)'),'First media HQ selection must remain usable after first source');
+ assert(channel.includes("action.startsWith('media:status:a1')")&&channel.includes("action.startsWith('media:status:m1')"),'Android HQ and iPhone HQ menu both remain available within first session');
+ const shared=await readFile('src/support/payping-shared-config.js','utf8');
+ assert(shared.includes('export async function canFinishMediaXFirstHq'),'First media HQ permission must bind to campaign and Telegram message date');
+ assert(shared.includes("source='hq_completed'"),'HQ success must close the first-session exception');
+ assert(shared.includes("if(!isPayPingSharedConfigEnabled())return false;"),'New campaign must stay off without explicit activation');
+
  const completion=await readFile('src/support/premium-hq-completion.js','utf8');
  assert(completion.includes('recordMediaXChannelCampaignUse(id,label)'), 'A successfully delivered HQ item must count against the new campaign');
  const android=await readFile('src/features/status-hq-android.js','utf8');
@@ -65,6 +74,10 @@ try{
 
  assert(media.includes('markDailyForceUsageSuccess(userId, {allowFirstHq:true})'), 'Gallery raw media must permit its first HQ conversion');
  assert(link.includes('markDailyForceUsageSuccess(userId, {allowFirstHq:true})'), 'Downloaded link media must permit its first HQ conversion');
+ assert(media.includes("recordMediaXChannelCampaignUse(userId,isPhoto?'gallery_photo':'gallery_video')"),'Gallery first raw result must count as one full Free+Channel session');
+ assert(link.includes("recordMediaXChannelCampaignUse(userId,'social_download')"),'First delivered social media download must count as one session');
+ assert(media.includes("recordMediaXChannelCampaignUse(userId,'slideshow')"),'Slideshow final output must count after its selection');
+ assert(completion.includes('completeMediaXFirstHq(id)'), 'Only successful HQ output closes the optional first-session HQ action');
  assert(completion.includes('completeFirstDailyForceHq(id)'), 'First media HQ allowance closes only after successful HQ conversion');
  assert(daily.includes("if (!isUsageAttempt(message)) return false;"), 'Second NEW link or upload triggers the locked support reply');
  const support=await readFile('src/features/support.js','utf8');

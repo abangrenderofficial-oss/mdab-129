@@ -527,3 +527,50 @@ export function sendDownloadButton(chatId, text, url, label = '⬇️ Download')
     },
   });
 }
+
+
+/**
+ * Read-only verification for tokens supplied by PayPing bot owners.
+ * Only three Telegram Bot API methods are permitted. This never sends
+ * messages or changes channel permissions/webhooks for external bots.
+ */
+export async function verifyExternalTelegramBotToken(rawToken){
+  const token=String(rawToken||'').trim().slice(0,220);
+  if(!/^\d{6,15}:[A-Za-z0-9_-]{20,}$/.test(token)){
+    const e=new Error('Format Telegram Bot Token tidak sah.');e.code='INVALID_TELEGRAM_BOT_TOKEN';throw e;
+  }
+  async function readOnly(method,data={}){
+    if(!['getMe','getFile','getUserProfilePhotos'].includes(method))throw new Error('Read-only method not allowed');
+    const response=await fetch(DEFAULT_TELEGRAM_API_BASE+'/bot'+encodeURIComponent(token)+'/'+method,{
+      method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(data),
+      signal:AbortSignal.timeout(12000),
+    });
+    const json=await response.json().catch(()=>null);
+    if(!response.ok||!json?.ok){const e=new Error(json?.description||'Bot verification failed.');e.code='TELEGRAM_BOT_VERIFY_FAILED';throw e}
+    return json.result;
+  }
+  const me=await readOnly('getMe');
+  if(!me?.is_bot){const e=new Error('Token ini bukan Telegram bot.');e.code='NOT_A_TELEGRAM_BOT';throw e}
+  let avatarDataUrl='';
+  try{
+    const photos=await readOnly('getUserProfilePhotos',{user_id:me.id,limit:1});
+    const sizes=photos?.photos?.[0]||[],photo=sizes[sizes.length-1];
+    if(photo?.file_id){
+      const file=await readOnly('getFile',{file_id:photo.file_id});
+      if(file?.file_path&&/^[A-Za-z0-9_./-]+$/.test(file.file_path)){
+        const img=await fetch(DEFAULT_TELEGRAM_API_BASE+'/file/bot'+encodeURIComponent(token)+'/'+file.file_path,{signal:AbortSignal.timeout(12000)});
+        const type=(img.headers.get('content-type')||'').toLowerCase().split(';')[0].trim();
+        const len=Number(img.headers.get('content-length')||0);
+        if(img.ok&&['image/jpeg','image/png'].includes(type)&&len<=1500000){
+          const bytes=Buffer.from(await img.arrayBuffer());
+          if(bytes.length<=1500000)avatarDataUrl='data:'+type+';base64,'+bytes.toString('base64');
+        }
+      }
+    }
+  }catch{/* Avatar is optional; bot token verification must still succeed. */}
+  const name=String([me.first_name,me.last_name].filter(Boolean).join(' ')).trim().slice(0,120);
+  return {token,id:String(me.id||''),username:String(me.username||'').replace(/^@+/,'').slice(0,80),
+    name:name||String(me.username||'Bot').slice(0,120),
+    canJoinGroups:Boolean(me.can_join_groups),supportsInlineQueries:Boolean(me.supports_inline_queries),
+    avatarDataUrl};
+}

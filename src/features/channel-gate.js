@@ -74,8 +74,8 @@ export async function sendChannelGatePrompt(chatId, channel=channelUsername(), t
     [
       '📢 Join Official Channel Kita 🇲🇾',
       '',
-      threshold===0?'Untuk guna bot ini, awak perlu join channel terlebih dahulu.':'Premium + HQ ke-'+threshold+' dah siap 🥳',
-      `Untuk terus guna bot, boleh join ${channel} dulu?`,
+      threshold===0?'Untuk guna bot ini, awak perlu join channel terlebih dahulu.':threshold===1?'Premium + HQ / Android HQ pertama dah siap! ✅':'Premium + HQ ke-'+threshold+' dah siap 🥳',
+      `Untuk terus guna bot, awak wajib join ${channel} dulu ya.`,
       '',
       'Thank you banyak-banyak atas support korang yang tak berbelah bahagi! 🥹❤️',
       '',

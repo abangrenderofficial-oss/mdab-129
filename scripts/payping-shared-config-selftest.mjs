@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {isPayPingSharedConfigEnabled,currentSupportAmounts,deriveActiveMediaXAmounts} from '../src/support/payping-shared-config.js';
+import {isPayPingSharedConfigEnabled,currentSupportAmounts,deriveActiveMediaXAmounts,parseMediaXChannelRule} from '../src/support/payping-shared-config.js';
 import {malaysiaSupportSchedule} from '../src/support/daily-force-schedule.js';
 import {supportExpiryFromSnapshot} from '../src/support/payping-order-plan.js';
 const original=process.env.PAYPING_SHARED_CONFIG_ENABLED;
@@ -25,6 +25,13 @@ try{
    {amount_cents:3000,status:'active'},
    {amount_cents:2000,status:'active'},
  ]),[20,30,50]);
+ assert.deepEqual(parseMediaXChannelRule({mode:'free_channel',channel_id:'@channelcontoh',channel_after:5}),{mode:'free_channel',channel:'@channelcontoh',threshold:5});
+ assert.deepEqual(parseMediaXChannelRule({mode:'free_channel',channel_id:'@channelcontoh',channel_after:0}),{mode:'free_channel',channel:'@channelcontoh',threshold:0});
+ assert.equal(parseMediaXChannelRule({mode:'free',channel_id:'@channelcontoh',channel_after:5}),null);
+ assert.equal(parseMediaXChannelRule({mode:'free_channel',channel_id:'invalid-link',channel_after:5}),null);
+ const channel=await readFile('src/features/channel-gate.js','utf8');
+ assert(channel.includes('getMediaXChannelRule'), 'Shared channel config must use the original channel gate');
+ assert(channel.includes('getChatMember'), 'Original Telegram membership check must remain intact');
  const support=await readFile('src/features/support.js','utf8');
  assert(support.includes('isSupportAmountCurrentlyActive(amount)'), 'Old callback buttons must be rechecked before checkout');
  assert(support.includes('amountButtonRows(true)'), 'Telegram support button rows must use dynamic amounts');

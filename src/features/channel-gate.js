@@ -7,7 +7,7 @@ import {
   markJoinPromptSent,
 } from '../bot/stats.js';
 
-import {getMediaXChannelRule,isPayPingSharedConfigEnabled} from '../support/payping-shared-config.js';
+import {getMediaXChannelRule,hasMediaXChannelCampaignUse,isPayPingSharedConfigEnabled} from '../support/payping-shared-config.js';
 import {isDailyForceSupportEnabled} from '../support/daily-force.js';
 
 export const CHANNEL_VERIFY_CALLBACK = 'channel:verify:v1';
@@ -97,11 +97,10 @@ export async function sendChannelGatePrompt(chatId, channel=channelUsername(), t
 async function channelGatePolicy(userId){
   const remote=await getMediaXChannelRule();
   if(remote){
-    // Protect against a stale channel policy during Force Support switches.
-    // Read only when a channel rule exists; normal Force traffic adds no query.
-    if(await isDailyForceSupportEnabled())return {gateRequired:false,channel:remote.channel,threshold:remote.threshold};
-    const count=await getChannelUseCount(userId);
-    return {gateRequired:count>=remote.threshold,channel:remote.channel,threshold:remote.threshold};
+    // Force Support always wins. Campaign usage has no relation to old HQ stats.
+    if(await isDailyForceSupportEnabled())return {gateRequired:false,channel:remote.channel,threshold:1,campaignSequence:remote.campaignSequence};
+    const gateRequired=await hasMediaXChannelCampaignUse(userId,remote.campaignSequence);
+    return {gateRequired,channel:remote.channel,threshold:1,campaignSequence:remote.campaignSequence};
   }
   // One active access mode only. The original five-HQ channel gate must not
   // run in parallel with Force Support or normal Free mode on shared PayPing.
@@ -111,18 +110,18 @@ async function channelGatePolicy(userId){
 
 export async function maybePromptChannelAfterSuccess(chatId, userId) {
   if (!chatId || !userId || isResetAdmin(userId)) return false;
-  const {gateRequired,channel,threshold} = await channelGatePolicy(userId);
-  trace(userId, 'after_success_gate_check', { gateRequired });
+  const {gateRequired,channel,threshold,campaignSequence} = await channelGatePolicy(userId);
+  trace(userId, 'after_success_gate_check', { gateRequired, campaignSequence });
   if (!gateRequired) return false;
-  if (await hasJoinPromptBeenSent(userId)) return false;
+  if (!campaignSequence && await hasJoinPromptBeenSent(userId)) return false;
 
   const member = await getMembership(userId,channel);
   if (member !== false) return false;
 
   try {
     await sendChannelGatePrompt(chatId,channel,threshold);
-    await markJoinPromptSent(userId);
-    trace(userId, 'after_success_prompt', { prompted: true });
+    if(!campaignSequence)await markJoinPromptSent(userId);
+    trace(userId, 'after_success_prompt', { prompted: true,campaignSequence });
     return true;
   } catch (error) {
     console.warn('[channel-gate] threshold prompt failed:', error?.message);

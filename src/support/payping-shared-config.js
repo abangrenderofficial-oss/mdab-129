@@ -116,7 +116,7 @@ export async function setMediaXFreeAccessMode(){
  return {mode:'free'};
 }
 
-export async function setMediaXFreeChannelAccessMode(){
+export async function setMediaXFreeChannelAccessMode({dryRun=false}={}){
  if(!isPayPingSharedConfigEnabled())throw new Error('PayPing shared config belum diaktifkan.');
  const client=await getSupportDb(),environment=currentSupportEnvironment();
  const state=await client.execute({sql:"SELECT p.mode,p.channel_id,c.campaign_seq,c.channel_id campaign_channel_id FROM payping_access_policies_v2 p LEFT JOIN payping_channel_campaign_v2 c ON c.environment=p.environment AND c.bot_id=p.bot_id WHERE p.environment=? AND p.bot_id='mediax' LIMIT 1",args:[environment]});
@@ -125,6 +125,7 @@ export async function setMediaXFreeChannelAccessMode(){
  const fallback=String(process.env.REQUIRED_CHANNEL_USERNAME||'').trim();
  const channel=/^@[A-Za-z0-9_]{5,}$/.test(configured)?configured:/^@[A-Za-z0-9_]{5,}$/.test(fallback)?fallback:'';
  if(!channel)throw new Error('Set channel @username dalam PayPing → MediaX → Access Control dahulu.');
+ if(dryRun)return {mode:'free_channel',channel,ready:true};
  const changed=String(p.mode||'')!=='free_channel'||String(p.campaign_channel_id||'')!==channel||!Number(p.campaign_seq||0);
  const t=new Date().toISOString();
  const statements=[{sql:"INSERT INTO payping_access_policies_v2(environment,bot_id,mode,channel_id,channel_after,updated_at) VALUES(?,'mediax','free_channel',?,1,?) ON CONFLICT(environment,bot_id) DO UPDATE SET mode='free_channel',channel_id=excluded.channel_id,channel_after=1,updated_at=excluded.updated_at",args:[environment,channel,t]}];

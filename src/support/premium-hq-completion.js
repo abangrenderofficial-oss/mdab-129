@@ -2,6 +2,7 @@ import { markPremiumHqCompleted, recordUsage } from '../bot/stats.js';
 import { maybePromptChannelAfterSuccess } from '../features/channel-gate.js';
 import { markFridayUsageSuccess } from './friday-access.js';
 import { markDailyForceUsageSuccess } from './daily-force.js';
+import {recordMediaXChannelCampaignUse} from './payping-shared-config.js';
 
 export async function recordPremiumHqSuccess({
   userId,
@@ -17,6 +18,12 @@ export async function recordPremiumHqSuccess({
 
   await recordUsage(id, 'status_hq');
   const channelCounted = await markPremiumHqCompleted(id, completionKey);
+  // Explicitly activated Free+Channel campaign only; Force Support stays
+  // independent and historical HQ counters are never reset.
+  const campaignCounted = await recordMediaXChannelCampaignUse(id,label).catch(error=>{
+    console.warn('[payping-shared] channel campaign completion failed:',error?.message);
+    return false;
+  });
 
   const fridayMarked = await markFridayUsageSuccess(id).catch((error) => {
     console.warn(`[friday-support] ${label} mark failed:`, error?.message);
@@ -41,5 +48,6 @@ export async function recordPremiumHqSuccess({
     dailyMarked: Boolean(dailyMarked),
     channelPrompted: Boolean(channelPrompted),
     channelCounted: Boolean(channelCounted),
+    campaignCounted: Boolean(campaignCounted),
   };
 }

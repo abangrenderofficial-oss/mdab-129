@@ -198,7 +198,7 @@ export async function getDailyForceRuntimeState(date = new Date()) {
   };
 }
 
-async function setDailyForceSupportEnabled(enabled, adminUserId = '') {
+export async function setDailyForceSupportEnabled(enabled, adminUserId = '') {
   await ensureSchema();
   const db = await getSupportDb();
   const environment = currentSupportEnvironment();

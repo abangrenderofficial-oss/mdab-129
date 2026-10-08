@@ -25,19 +25,29 @@ try{
    {amount_cents:3000,status:'active'},
    {amount_cents:2000,status:'active'},
  ]),[20,30,50]);
- assert.deepEqual(parseMediaXChannelRule({mode:'free_channel',channel_id:'@channelcontoh',channel_after:5}),{mode:'free_channel',channel:'@channelcontoh',threshold:5});
- assert.deepEqual(parseMediaXChannelRule({mode:'free_channel',channel_id:'@channelcontoh',channel_after:0}),{mode:'free_channel',channel:'@channelcontoh',threshold:0});
+ assert.deepEqual(parseMediaXChannelRule({mode:'free_channel',channel_id:'@channelcontoh',channel_after:5}),{mode:'free_channel',channel:'@channelcontoh',threshold:1});
+ assert.deepEqual(parseMediaXChannelRule({mode:'free_channel',channel_id:'@channelcontoh',channel_after:0}),{mode:'free_channel',channel:'@channelcontoh',threshold:1});
  assert.equal(parseMediaXChannelRule({mode:'free',channel_id:'@channelcontoh',channel_after:5}),null);
  assert.equal(parseMediaXChannelRule({mode:'free_channel',channel_id:'invalid-link',channel_after:5}),null);
  const channel=await readFile('src/features/channel-gate.js','utf8');
  assert(channel.includes('getMediaXChannelRule'), 'Shared channel config must use the original channel gate');
  assert(channel.includes('getChatMember'), 'Original Telegram membership check must remain intact');
+ const android=await readFile('src/features/status-hq-android.js','utf8');
+ assert(android.includes('androidHqCompleted = true; // Count only after Telegram confirms successful delivery.'),'Android must count only after Telegram upload success');
+ assert(android.indexOf('await sendVideoFileUpload(')<android.indexOf('androidHqCompleted = true;'),'Android HQ cannot count before upload success');
+ assert(android.includes('completionCallbackUrl: baseUrl'),'Heavy Android must have a signed completion callback');
+ const gated=await readFile('src/bot/gated-media-flow.js','utf8');
+ assert(gated.includes('androidResult?.androidHqCompleted')&&gated.includes('await recordPremiumHqSuccess({'),'Premium & Android HQ must share one completion counter');
+ assert(gated.includes('await releaseClaims(userId, claims.fridayClaimed, claims.dailyClaimed);'),'Failed Android HQ must release access claims');
+ const workflow=await readFile('.github/workflows/heavy-status-hq.yml','utf8');
+ const androidJob=workflow.slice(workflow.indexOf('  status_hq_android:'),workflow.indexOf('  live_wallpaper:'));
+ assert(androidJob.includes('Record Android HQ delivery')&&androidJob.includes('completion_callback_url'),'Heavy Android must report only successful deliveries');
  const support=await readFile('src/features/support.js','utf8');
  assert(support.includes('isSupportAmountCurrentlyActive(amount)'), 'Old callback buttons must be rechecked before checkout');
  assert(support.includes('amountButtonRows(true)'), 'Telegram support button rows must use dynamic amounts');
  const handler=await readFile('handlers/telegram.js','utf8');
  assert(handler.includes('routeUnifiedForceCommand'), 'Old admin commands must use shared Force Support route');
- console.log('PAYPING_SHARED_CONFIG_SELFTEST_OK — all-days Force, legacy fallback, filtered amounts and callback validation');
+ console.log('PAYPING_SHARED_CONFIG_SELFTEST_OK — one successful HQ/Android HQ before channel lock, legacy fallback, safe callback and payment checks');
 }finally{
  if(original===undefined)delete process.env.PAYPING_SHARED_CONFIG_ENABLED;
  else process.env.PAYPING_SHARED_CONFIG_ENABLED=original;

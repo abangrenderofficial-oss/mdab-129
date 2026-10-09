@@ -6,6 +6,10 @@ on:
       - infra/mediax-render-standby
     paths:
       - 'src/features/status-hq.js'
+      - 'src/features/status-hq-android.js'
+      - 'src/link-queue.js'
+      - 'handlers/premium-hq-success.js'
+      - '.github/workflows/heavy-status-hq.yml'
       - 'src/heavy-worker-dispatch.js'
       - 'src/render/hq-offload-policy.js'
       - 'scripts/heavy_status_worker.py'
@@ -32,6 +36,9 @@ jobs:
       - name: Validate Render-only code
         run: |
           node --check src/features/status-hq.js
+          node --check src/features/status-hq-android.js
+          node --check src/link-queue.js
+          node --check handlers/premium-hq-success.js
           node --check src/render/hq-offload-policy.js
           node --check src/heavy-worker-dispatch.js
           python -m py_compile scripts/heavy_status_worker.py

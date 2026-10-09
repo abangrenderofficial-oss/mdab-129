@@ -59,7 +59,11 @@ export async function dispatchHeavyMediaJob({
   const owner = String(process.env.GITHUB_WORKER_OWNER || DEFAULT_OWNER).trim();
   const repo = String(process.env.GITHUB_WORKER_REPO || DEFAULT_REPO).trim();
   const workflow = String(process.env.GITHUB_WORKER_WORKFLOW || DEFAULT_WORKFLOW).trim();
-  const ref = String(process.env.GITHUB_WORKER_REF || 'main').trim();
+  // Render must run the isolated, reviewed standby-branch worker. Railway's
+  // production workflow still defaults to main and is untouched.
+  const renderWorkerRef = process.env.MEDIAX_MODE === 'active'
+    ? 'infra/mediax-render-standby' : 'main';
+  const ref = String(process.env.GITHUB_WORKER_REF || renderWorkerRef).trim();
   const endpoint = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`;
 
   const response = await fetch(endpoint, {

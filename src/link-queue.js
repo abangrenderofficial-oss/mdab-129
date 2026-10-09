@@ -43,7 +43,12 @@ async function runLinkJob({ message, context, url, platform, statusMode, fridayC
     if (!dailyClaimed && await enforceDailyForceSupportForMessage(message)) return;
 
     if (statusMode) {
-      const completed = await processStatusFromLink(chatId, url, platform, context.fence);
+      const completed = await processStatusFromLink(chatId, url, platform, context.fence, {
+        userId, baseUrl: context.baseUrl, sourceMessageId: message?.message_id,
+      });
+      // Offloaded Render HQ must be counted only after the signed worker
+      // completion callback confirms Telegram has received the video.
+      if (completed?.premiumVideoDispatched) return;
       if (completed) {
         await recordPremiumHqSuccess({
           userId,

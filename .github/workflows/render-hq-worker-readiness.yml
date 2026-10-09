@@ -15,6 +15,7 @@ on:
       - 'scripts/heavy_status_worker.py'
       - 'scripts/render-hq-routing-selftest.mjs'
       - 'scripts/render_hq_worker_selftest.py'
+      - 'scripts/render_hq_public_link_smoke.py'
       - '.github/workflows/render-hq-worker-readiness.yml'
   workflow_dispatch:
 
@@ -55,3 +56,9 @@ jobs:
           ffmpeg -version | head -n 1
       - name: Verify HQ codec, audio retention and size
         run: python scripts/render_hq_worker_selftest.py
+      - name: Optional real TikTok worker benchmark (no Telegram)
+        continue-on-error: true
+        timeout-minutes: 4
+        run: |
+          python -m pip install --disable-pip-version-check --quiet 'yt-dlp>=2026.8.1'
+          python scripts/render_hq_public_link_smoke.py

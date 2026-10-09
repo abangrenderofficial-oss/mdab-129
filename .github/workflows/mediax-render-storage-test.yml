@@ -1,0 +1,27 @@
+name: MediaX Render failover storage tests
+on:
+  push:
+    branches: [infra/mediax-render-standby]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stats-failover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install and validate
+        run: |
+          npm ci
+          node --check render/mediax-backup-entry.mjs
+          node --check src/bot/stats.js
+          node --check src/bot/stats-persistence.js
+          node scripts/mediax-stats-persistence-selftest.mjs
+          npm run check

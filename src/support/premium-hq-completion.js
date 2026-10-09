@@ -16,8 +16,29 @@ export async function recordPremiumHqSuccess({
     return { completed: false, reason: 'invalid_user' };
   }
 
-  await recordUsage(id, 'status_hq');
-  const channelCounted = await markPremiumHqCompleted(id, completionKey);
+  const normalizedCompletionKey = String(completionKey || '').trim().slice(0, 240);
+  let channelCounted;
+  if (normalizedCompletionKey) {
+    // Render worker retry: atomically record the HQ key and usage once.
+    channelCounted = await markPremiumHqCompleted(id, normalizedCompletionKey, {
+      recordCompletionUse: true,
+    });
+    if (!channelCounted) {
+      return {
+        completed: true,
+        duplicate: true,
+        channelCounted: false,
+        campaignCounted: false,
+        fridayMarked: false,
+        dailyMarked: false,
+        channelPrompted: false,
+      };
+    }
+  } else {
+    // Preserve behavior of older Telegram routes without completion keys.
+    await recordUsage(id, 'status_hq');
+    channelCounted = await markPremiumHqCompleted(id, completionKey);
+  }
   // Explicitly activated Free+Channel campaign only; Force Support stays
   // independent and historical HQ counters are never reset.
   const campaignCounted = await recordMediaXChannelCampaignUse(id,label).catch(error=>{

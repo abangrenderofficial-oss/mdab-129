@@ -130,9 +130,46 @@ def test_url_source_routing(directory):
         worker.download_tikwm_source = prev_provider
 
 
+def test_manual_private_delivery_guard(directory):
+    # Reuses the real synthetic source path with mocked getChat; no Bot API
+    # request is sent. A group destination must fail closed before generating.
+    original = (worker.SOURCE_KIND, worker.SOURCE_URL, worker.VIDEO_FILE_ID,
+                worker.CHAT_ID, worker.telegram_call, worker.set_progress)
+    source = directory / 'synthetic-private-source.bin'
+    attempts = []
+    try:
+        worker.SOURCE_KIND = 'manual_synthetic'
+        worker.SOURCE_URL = ''
+        worker.VIDEO_FILE_ID = 'SYNTHETIC_TEST_ONLY'
+        worker.CHAT_ID = 555
+        worker.set_progress = lambda _value: None
+        def mock_get_chat(method, data=None, files=None, timeout=20):
+            attempts.append(method)
+            assert method == 'getChat'
+            assert data['chat_id'] == '555'
+            return {'id': 555, 'type': 'private'}
+        worker.telegram_call = mock_get_chat
+        worker.download_source(source)
+        result = worker.probe_video(source)
+        assert result['duration'] >= 1.5 and attempts == ['getChat']
+        worker.telegram_call = lambda *_args, **_kwargs: {'id': -100555, 'type': 'supergroup'}
+        try:
+            worker.download_source(directory / 'must-not-create.bin')
+        except RuntimeError as error:
+            assert 'private Telegram chat' in str(error)
+        else:
+            raise AssertionError('Synthetic HQ must never send to group chats')
+        assert not (directory / 'must-not-create.bin').exists()
+        print('RENDER_HQ_MANUAL_PRIVATE_GUARD_OK — 2s synthetic source and no group chats')
+    finally:
+        (worker.SOURCE_KIND, worker.SOURCE_URL, worker.VIDEO_FILE_ID,
+         worker.CHAT_ID, worker.telegram_call, worker.set_progress) = original
+
+
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory(prefix="render-hq-worker-test-") as temp:
         directory = Path(temp)
         test_url_source_routing(directory)
+        test_manual_private_delivery_guard(directory)
         run_case(directory, True)
         run_case(directory, False)

@@ -5,7 +5,8 @@ import subprocess
 import tempfile
 import shutil
 import sys
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
+import ipaddress
 from pathlib import Path
 
 import requests
@@ -436,12 +437,100 @@ def send_live_photo(video_path, photo_path):
         )
 
 
+def allowed_provider_media_url(value):
+    try:
+        u = urlparse(value)
+        hostname = (u.hostname or '').lower()
+        if u.scheme not in ('https', 'http') or not hostname or u.username or u.password:
+            return False
+        if hostname == 'localhost' or hostname.endswith('.local'):
+            return False
+        try:
+            return ipaddress.ip_address(hostname).is_global
+        except ValueError:
+            return True
+    except (TypeError, ValueError):
+        return False
+
+
+def download_tikwm_source(path):
+    # TikTok often blocks GitHub/Render yt-dlp while TikWM can still serve a
+    # watermarked-free playable source. Fail over to yt-dlp if this provider fails.
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36',
+        'Accept': 'application/json',
+        'Referer': 'https://www.tikwm.com/',
+        'Origin': 'https://www.tikwm.com',
+    }
+    candidates = []
+    for method in ('GET', 'POST'):
+        try:
+            if method == 'GET':
+                resp = requests.get('https://www.tikwm.com/api/',
+                                    params={'url': SOURCE_URL, 'hd': 1},
+                                    headers=headers, timeout=(7, 15))
+            else:
+                resp = requests.post('https://www.tikwm.com/api/',
+                                     data={'url': SOURCE_URL, 'hd': 0},
+                                     headers=headers, timeout=(7, 15))
+            resp.raise_for_status()
+            payload = resp.json()
+            if payload.get('code') != 0 or not isinstance(payload.get('data'), dict):
+                continue
+            values = payload['data']
+            for key in ('hdplay', 'play'):
+                address = str(values.get(key) or '').strip()
+                if not address:
+                    continue
+                url = urljoin('https://www.tikwm.com/', address)
+                if allowed_provider_media_url(url) and url not in candidates:
+                    candidates.append(url)
+            if candidates:
+                break
+        except (requests.RequestException, ValueError) as exc:
+            print('RENDER_HQ_TIKWM_META_FAILED ' + type(exc).__name__, flush=True)
+    if not candidates:
+        raise RuntimeError('TikWM yielded no video candidates')
+    for address in candidates[:2]:
+        try:
+            with requests.get(address, stream=True,
+                              headers={**headers, 'Accept': 'video/*,*/*'},
+                              timeout=(8, 25)) as response:
+                response.raise_for_status()
+                size = 0
+                with path.open('wb') as dest:
+                    for piece in response.iter_content(chunk_size=256*1024):
+                        if not piece:
+                            continue
+                        size += len(piece)
+                        if size > MAX_INPUT_BYTES:
+                            raise RuntimeError('TikWM media exceeds 500 MB')
+                        dest.write(piece)
+                if size > 1024:
+                    print('RENDER_HQ_TIKWM_SOURCE ' + json.dumps(
+                        {'ok': True, 'bytes': size}), flush=True)
+                    return
+        except (requests.RequestException, OSError, RuntimeError) as exc:
+            print('RENDER_HQ_TIKWM_MEDIA_FAILED ' + type(exc).__name__, flush=True)
+        path.unlink(missing_ok=True)
+    raise RuntimeError('TikWM videos are not downloadable from worker IP')
+
+
 def download_public_social_source(path):
     # Resolve the user's /status link on a GitHub runner, away from Render's
     # 512 MB instance and its blocked social-video CDN routes.
     # Only approved social HTTPS hosts are accepted.
     if not allowed_source_url(SOURCE_URL):
         raise RuntimeError('Unsupported URL for Status HQ worker')
+    host = (urlparse(SOURCE_URL).hostname or '').lower()
+    if host == 'tiktok.com' or host.endswith('.tiktok.com'):
+        try:
+            download_tikwm_source(path)
+            set_progress(30)
+            return
+        except Exception as exc:
+            print('RENDER_HQ_TIKWM_FALLBACK ' + type(exc).__name__, flush=True)
+
     output_template = str(path.parent / 'source-social.%(ext)s')
     cmd = [
         sys.executable, '-m', 'yt_dlp',

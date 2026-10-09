@@ -9,3 +9,5 @@ function run(command, args) {
 // Heavy media encoding/transcoding remains isolated from this install step.
 run(process.execPath, ['scripts/install-ytdlp.mjs']);
 run('npm', ['run', 'check']);
+// Render-specific snapshot regression uses a fake DB and filesystem; never accesses production data.
+if (process.env.MEDIAX_MODE === 'standby') run(process.execPath, ['scripts/mediax-stats-persistence-selftest.mjs']);

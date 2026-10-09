@@ -54,12 +54,12 @@ for(const [path,method] of blocked){
   assert.equal(p.status,503,'bot/gateway route unexpectedly enabled: '+path);
 }
 const owner=await probe('/api/payping-bot-admin','POST','{"action":"pause_bot","botId":"mediax"}');
-assert.ok([401,403].includes(owner.status),'unauthenticated bot admin request did not fail closed: '+owner.status);
+assert.equal(owner.status,503,'bot-admin writes must be disabled until encrypted credentials migrate');
 const session=await probe('/api/payping-auth');
 assert.equal(session.status,401,'unauthenticated PayPing session must be denied');
 console.log('MEDIAX_RENDER_LIVE_WEB_PARITY_OK '+JSON.stringify({
   pagesPassed:checks.length,apiVerified:true,
-  ownerDenied:true,loginProtected:true,
+  ownerWritesLocked:true,loginProtected:true,
   telegramWebhookDisabled:true,gatewaysDisabled:true,
   note:'Unauthenticated live smoke only; payment/noti/webpush/subscription real user migration still pending',
 }));

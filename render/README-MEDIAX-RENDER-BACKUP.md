@@ -1,60 +1,89 @@
-# MediaX Render disaster-recovery standby (not live)
+# MediaX Railway -> Render standby failover runbook
 
-This is an **isolated branch** for a future Render backup. It does not modify the Railway production branch.
+Last audited: 2026-10-09. Railway is the active production bot and must NOT be deleted.
 
-## Current readiness
+## Verified environment
 
-- Source: `abangrenderofficial-oss/mdab-129`, branch `infra/mediax-render-standby`.
-- Render service: **not yet created** because the existing Render Hobby workspace returned `Hobby Tier is limited to 25 services`.
-- Main Railway service must remain the sole live Telegram webhook owner.
-- ENV and the Railway `/data` volume have **not** been copied.
+| Component | Verified state |
+| --- | --- |
+| Railway main MediaX | Online after controlled opt-in mirror rollout; one instance |
+| Render standby | Live at https://mediax-railway-backup.onrender.com |
+| Git source | Same main application server/statistics implementation as Railway, with isolated Render standby entry |
+| Telegram webhook | Still belongs exclusively to Railway |
+| Render ENV | 35/35 user-defined feature ENV names present; 9/9 critical nonempty; values are never logged |
+| Statistics | Railway mirror warmed 835 user records and 2 month buckets; Render read matching 835 / 2 from Turso |
+| Render Turso read probe | ready=true, snapshot_available (read-only) |
+| Bayarcash Render portal probe | ready=true, production portal accessible, one active payment channel (read-only) |
+| Real MediaX Render Telegram end-to-end | NOT yet tested — do not claim full functionality |
+| Existing Bayarcash in-flight callbacks and PayPing delivery on Render | NOT yet tested — do not claim full payment failover |
+| Render free tier | Can spin down after inactivity; no persistent disk and not guaranteed always-on |
 
-## Safe Render Web Service settings (once a slot is available)
+## Runtime configuration
 
-- Name: `mediax-railway-backup`
-- Repository: `abangrenderofficial-oss/mdab-129`
-- Branch: `infra/mediax-render-standby`
-- Region: Singapore; Node runtime
-- Build: `npm ci`
-- Start: `node render/mediax-backup-entry.mjs`
-- Initial environment:
-  - `MEDIAX_MODE=standby`
-  - `MEDIAX_FAILOVER_APPROVED=NO`
-  - `PUBLIC_BASE_URL=https://mediax-railway-backup.onrender.com`
-- Do not add a pre-deploy hook that registers a Telegram webhook.
-- `GET /healthz` and `GET /api/health` return HTTP 200 while standby; the JSON explicitly reports `mode: standby`, `readyForCutover: false`.
-- Never treat a standby health check as proof that MediaX can process user downloads.
+Railway retains the original persistent volume `bot-stats`, mounted at `/data`.
+The production bot has:
+- `MEDIAX_STATS_BACKEND=mirror`
+- `MEDIAX_STATS_NAMESPACE=mediax-production`
+- Its existing `STATS_FILE_PATH` and all original secrets/other ENV unchanged
 
-## ENV transfer
+Mirror mode reads/writes Railway's original `/data/bot-stats.json` as the authority, writes a one-time immutable seed backup in Turso table `mediax_statistics_seed_backup`, and updates `mediax_statistics_snapshot` on each stats mutation. Mirror outages should not stop local Railway writes. On startup, the main bot attempts to warm the mirror through its cached stats loader.
 
-Railway's connected OAuth integration returns ENV names only; 53 names were identified, but the values are inaccessible through that connection. A secure one-time bulk import in Render is sufficient for **persisting** those values; automatic sync is not required unless values change later.
+Render standby configuration:
+- `MEDIAX_MODE=standby`
+- `MEDIAX_FAILOVER_APPROVED=NO`
+- `MEDIAX_STATS_BACKEND=turso`
+- `MEDIAX_STATS_NAMESPACE=mediax-production`
+- `PUBLIC_BASE_URL=https://mediax-railway-backup.onrender.com`
+- critical Railway feature secrets copied directly into Render Environment; never paste them into GitHub or chat
+- start command `node render/mediax-backup-entry.mjs` and build command `npm ci`
 
-Get the values from an authorized Railway export or console and paste them **directly** into the Render Environment bulk editor. Do **not** send the .env file through chat, logs, GitHub, or a public URL.
+Render standby exposes:
+- `GET /healthz`: 200 only proves passive server is awake.
+- `GET /readyz`: 200 only when a valid Turso stats snapshot is readable. It does not prove all media/payment integrations work.
+- `GET /api/health`: health of the passive server, not an active Telegram processor.
 
-Important: preserve Render's `PUBLIC_BASE_URL`, `PORT`, `MEDIAX_MODE`, and `MEDIAX_FAILOVER_APPROVED`. The `STATS_FILE_PATH` and other Railway volume paths must be reconsidered on Render. Do not copy Railway-generated platform variables.
+In standby, Telegram/webhook/download/payment endpoints are unavailable and no bot schedulers start. A Bayarcash **read-only** portal diagnostic runs at startup, without creating transactions.
 
-Critical for failover: Telegram token/webhook secret, Turso URL/token, setup secret, Bayarcash credentials, PayPing/shared config and all other bot-specific feature values. Compare **keys and nonsecret readiness flags only**; never echo secret values in logs. Sealed Railway secrets may require reentry from their original issuing service.
+## Keep both services while Railway trial lasts
 
-## Persistent data
+- DO NOT remove Railway or detach its `/data` volume.
+- DO NOT enable Render while Railway is accepting Telegram updates.
+- DO NOT run two independent active Telegram service instances, because timers, outgoing messages, callback processing and state updates could duplicate.
+- Periodically inspect Railway logs for `mirror sync unavailable` and Render logs for `MEDIAX_RENDER_STATS_READINESS` and `MEDIAX_RENDER_BAYARCASH_READINESS`.
+- Render Free can cold start after 15 minutes of idle time; it is not an always-on guarantee.
 
-Railway MediaX has a 256 MB volume `bot-stats` mounted at `/data`. Deploying identical source on Render does **not** clone this volume. Confirm which on-disk state is non-reconstructible; take a safe backup and restore or migrate it to a durable data store before promising full failover. Turso is external and may be reused with appropriate access.
+## Preconditions for full replacement
 
-## UptimeRobot
+1. Confirm the latest Railway and Render stats snapshot user counts and monthly counts are equal; do not cut over with stale/missing data.
+2. Confirm a current real media link from TikTok, Instagram, Threads, YouTube, and gallery -> Status HQ can be processed on Render (during a scheduled controlled trial).
+3. Verify Render's external dependencies at real runtime: yt-dlp, ffmpeg/Chromium, remote workers, GitHub Actions heavy-worker access, Telegram upload size/timeouts, PayPing shared config.
+4. Review and test Bayarcash callback and return URLs (generated from `PUBLIC_BASE_URL` for new intents). In-flight Railway checkout intents may still callback to the Railway URL. Verify payment reconciliation, notifications and affiliate posting.
+5. Confirm actual Telegram group video monitoring, channel-gating counts, forced support rules, and administrative commands.
+6. Verify Render compute and cold-start behavior against expected production traffic.
+7. Confirm there is a rollback plan: Railway code and persistent data remain intact.
 
-Create separate HTTP(s) monitors:
-- Primary: `https://bottelett-reels-thread-yt-production.up.railway.app/api/health`
-- Render standby (when created): `https://mediax-railway-backup.onrender.com/healthz`
+## Controlled cutover — NOT executed yet
 
-Standby health is NOT a signal that the Telegram bot has failed over. Enable email/Telegram outage notifications. Render Free can spin down, delaying cold start.
+Only when the primary must be retired:
+1. Schedule a quiet change window, reconcile the last Railway stats mirror, finish/monitor in-flight payment transactions.
+2. Stop Railway runtime **without deleting the Railway project, volumes or secrets**. Verify it is not processing updates.
+3. In Render Environment confirm the Turso snapshot is valid and set:
+   - `MEDIAX_MODE=active`
+   - `MEDIAX_FAILOVER_APPROVED=YES_RAILWAY_STOPPED`
+   - retain `MEDIAX_STATS_BACKEND=turso` and the Render `PUBLIC_BASE_URL`
+4. Deploy Render. The entry refuses activation without approval, required secrets, Render hostname and a readable Turso snapshot. It checks its local HTTP app before changing Telegram's webhook.
+5. Confirm Telegram `getWebhookInfo` points to `https://mediax-railway-backup.onrender.com/api/telegram` (with existing mirror_group retained).
+6. Run real functional regression tests for media, Status HQ, support/payment, PayPing, affiliates and monitoring, and reconfigure any third-party integrations still pointing to the Railway hostname.
 
-## Controlled manual cutover (after testing)
+## Rollback
 
-1. Check Render ENV, build, URL, storage and external callback dependencies.
-2. Stop or disconnect the Railway primary from Telegram updates. Ensure one webhook owner only.
-3. Confirm Railway is actually stopped, and that any scheduled background workers won't duplicate side effects.
-4. Set `MEDIAX_MODE=active` and `MEDIAX_FAILOVER_APPROVED=YES_RAILWAY_STOPPED` on Render, leaving `PUBLIC_BASE_URL` pointing to its Render hostname.
-5. Deploy Render. The entry verifies required ENV and its own local HTTP health before running the existing Telegram webhook-registration script.
-6. Confirm Telegram webhook, test one supported media link, Status HQ, user access control, PayPing webhook/callback handling, and data persistence. Update third-party callback URLs where necessary.
-7. For failback, reverse the process safely; do NOT operate both active instances concurrently.
+- If Railway mirror writes cause unexpected delays or errors, set Railway `MEDIAX_STATS_BACKEND=file`; its original `/data/bot-stats.json` remains the authority and unchanged in format. Do not delete the Turso backup.
+- If the Render cutover fails, first stop Render's active bot, then restore Railway primary and re-register its original webhook. Avoid simultaneous active primary instances.
+- If Render processed new user stats after cutover, reconcile them back into Railway storage before resuming Railway; simply reverting the webhook without reconciling risks counter rollback.
 
-Do not claim 100% failover readiness before completing and testing ENV, storage, payment callbacks, and a cutover rehearsal.
+## Open blockers before claiming 100% replacement
+
+- End-to-end media / Status HQ on Render infrastructure not proven.
+- Real Bayarcash callback -> PayPing -> Telegram notifications and affiliate accounting after cutover not proven.
+- Pending payments created with Railway callback URLs must be handled.
+- Render Free is not guaranteed equivalent to Railway in uptime, compute, or persistent local filesystem.

@@ -60,6 +60,10 @@ def test_url_source_routing(directory):
     output = directory / 'source-social.mp4'
     output.write_bytes(b'synthetic-video-test-bytes')
     prev_url, prev_run, prev_progress = worker.SOURCE_URL, worker.run, worker.set_progress
+    prev_provider = worker.download_tikwm_source
+    assert not worker.allowed_provider_media_url('http://127.0.0.1/admin')
+    assert not worker.allowed_provider_media_url('http://169.254.169.254/latest/meta-data')
+    assert worker.allowed_provider_media_url('https://v16.tiktokcdn.com/video.mp4')
     called = []
     try:
         worker.SOURCE_URL = 'https://vt.tiktok.com/ZSqqYxc13/'
@@ -70,12 +74,23 @@ def test_url_source_routing(directory):
             return SimpleNamespace(stdout=str(output) + '\\n')
         worker.run = fake_run
         worker.set_progress = lambda _value: None
+        def mock_provider_failure(_path):
+            raise RuntimeError('mocked provider failure (no network)')
+        worker.download_tikwm_source = mock_provider_failure
         worker.download_public_social_source(path)
         assert path.read_bytes() == b'synthetic-video-test-bytes'
         assert called and called[0][1] == 420
-        print('RENDER_HQ_URL_WORKER_SELFTEST_OK — URL validation and mocked GitHub worker source download')
+        # TikWM success should avoid yt-dlp entirely.
+        worker.download_tikwm_source = lambda dst: dst.write_bytes(b'synthetic-provider-media-bytes')
+        called.clear()
+        path.unlink()
+        worker.download_public_social_source(path)
+        assert path.read_bytes() == b'synthetic-provider-media-bytes'
+        assert not called
+        print('RENDER_HQ_URL_WORKER_SELFTEST_OK — URL validation, provider-first and yt-dlp fallback, all mocked')
     finally:
         worker.SOURCE_URL, worker.run, worker.set_progress = prev_url, prev_run, prev_progress
+        worker.download_tikwm_source = prev_provider
 
 
 if __name__ == "__main__":

@@ -130,7 +130,19 @@ async function probePaymentPortal() {
   }
 }
 
-if (mode !== "active") {
+if (mode === "web_only") {
+  // Independent PayPing/affiliate web origin while Railway retains Telegram
+  // and all Bayarcash transaction callbacks. No webhook registration occurs.
+  if (!renderBaseUrlCorrect) throw new Error("web_only requires the Render PUBLIC_BASE_URL");
+  if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
+    throw new Error("web_only requires shared Turso credentials");
+  }
+  if (process.env.MEDIAX_FAILOVER_APPROVED === "YES_RAILWAY_STOPPED") {
+    throw new Error("web_only must not be combined with Telegram failover approval");
+  }
+  await import("../server.js");
+  console.log("MEDIAX_RENDER_WEB_ONLY_ENTRY_READY — Telegram webhook unchanged; Bayarcash callbacks disabled");
+} else if (mode !== "active") {
   const server = http.createServer(async (req, res) => {
     const pathname = new URL(req.url || "/", "http://localhost").pathname;
     const good = req.method === "GET" || req.method === "HEAD";

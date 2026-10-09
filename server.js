@@ -5,6 +5,9 @@ import healthHandler from './handlers/health.js';
 import payPingHomePage from './handlers/payping-home-pwa.js';
 import payPingBotsPage from './handlers/payping-bots-pwa.js';
 import payPingBotDetailPage from './handlers/payping-bot-detail-pwa.js';
+import payPingAddBotPage from './handlers/payping-add-bot-pwa.js';
+import payPingBotAdminHandler from './handlers/payping-bot-admin.js';
+import heavyLimitHandler from './handlers/heavy-limit.js';
 import telegramHandler from './handlers/telegram.js';
 import setupHandler from './handlers/setup.js';
 import setupWebhookHandler from './handlers/setup-webhook.js';
@@ -70,6 +73,8 @@ const routes = new Map([
   ['/api/content-bridge/verify', contentBridgeVerifyHandler],
   ['/api/payment-push', paymentPushHandler],
   ['/api/payping-data', payPingDataHandler],
+  ['/api/payping-bot-admin', payPingBotAdminHandler],
+  ['/api/heavy-limit', heavyLimitHandler],
   ['/api/payping-auth', payPingAuthHandler],
   ['/api/payping-settings', payPingSettingsHandler],
   ['/ar-payment/login', payPingLoginPage],
@@ -96,6 +101,8 @@ const routes = new Map([
   ['/ar-payment/affiliate/', affiliatePwaPageHandler],
   ['/ar-payment/bots', payPingBotsPage],
   ['/ar-payment/bots/', payPingBotsPage],
+  ['/ar-payment/bots/add', payPingAddBotPage],
+  ['/ar-payment/bots/add/', payPingAddBotPage],
   ['/ar-payment/bot', payPingBotDetailPage],
   ['/ar-payment/bot/', payPingBotDetailPage],
   ['/ar-payment', payPingHomePage],

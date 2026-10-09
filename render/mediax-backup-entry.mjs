@@ -62,12 +62,71 @@ console.log("MEDIAX_BACKUP_READINESS_AUDIT", JSON.stringify({
 // Read-only parity check. This prints ENV *names*, never secret values.
 // Standby still cannot process Telegram/media/payment events.
 
+// Snapshot probe is read-only and does not register Telegram webhooks or write to Turso.
+let snapshotProbe = {checkedAt: 0, result: {ready: false, reason: "not_checked"}};
+async function probeStatsSnapshot(force = false) {
+  if (!force && Date.now() - snapshotProbe.checkedAt < 30_000) return snapshotProbe.result;
+  let db;
+  let result;
+  try {
+    if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
+      result = {ready: false, reason: "missing_database_configuration"};
+    } else {
+      const { createClient } = await import("@libsql/client");
+      db = createClient({
+        url: process.env.TURSO_DATABASE_URL,
+        authToken: process.env.TURSO_AUTH_TOKEN,
+      });
+      const rows = await db.execute({
+        sql: "SELECT payload_json, updated_at FROM mediax_statistics_snapshot WHERE namespace = ?",
+        args: [process.env.MEDIAX_STATS_NAMESPACE || "mediax-production"],
+      });
+      if (!rows.rows.length) {
+        result = {ready: false, reason: "snapshot_not_seeded"};
+      } else {
+        const snapshot = JSON.parse(String(rows.rows[0].payload_json));
+        const valid = snapshot && typeof snapshot === "object"
+          && snapshot.users && typeof snapshot.users === "object" && !Array.isArray(snapshot.users)
+          && snapshot.monthlyDownloads && typeof snapshot.monthlyDownloads === "object"
+          && !Array.isArray(snapshot.monthlyDownloads);
+        result = valid
+          ? {ready: true, reason: "snapshot_available", updatedAt: String(rows.rows[0].updated_at)}
+          : {ready: false, reason: "invalid_snapshot"};
+      }
+    }
+  } catch {
+    result = {ready: false, reason: "database_unavailable_or_snapshot_table_missing"};
+  } finally {
+    try { db?.close(); } catch {}
+  }
+  snapshotProbe = {checkedAt: Date.now(), result};
+  return result;
+}
+
+
 
 if (mode !== "active") {
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     const pathname = new URL(req.url || "/", "http://localhost").pathname;
     const good = req.method === "GET" || req.method === "HEAD";
     const allowed = ["/", "/healthz", "/api/health"].includes(pathname);
+    if (good && pathname === "/readyz") {
+      const stats = await probeStatsSnapshot();
+      res.writeHead(stats.ready ? 200 : 503, {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      if (req.method === "HEAD") return res.end();
+      return res.end(JSON.stringify({
+        ok: stats.ready,
+        service: "mediax-railway-backup",
+        mode: "standby",
+        statsReady: stats.ready,
+        statsReason: stats.reason,
+        telegramWebhookActive: false,
+        readyForCutover: false
+      }));
+    }
     const healthy = good && allowed;
     res.writeHead(healthy ? 200 : 503, {
       "content-type": "application/json; charset=utf-8",
@@ -80,7 +139,11 @@ if (mode !== "active") {
       }));
     } else res.end();
   });
-  server.listen(port, host, () => console.log("MediaX standby health endpoint listening at /healthz"));
+  server.listen(port, host, () => {
+    console.log("MediaX standby health endpoint listening at /healthz");
+    void probeStatsSnapshot(true).then((stats) =>
+      console.log("MEDIAX_RENDER_STATS_READINESS", JSON.stringify(stats)));
+  });
 } else {
   if (process.env.MEDIAX_FAILOVER_APPROVED !== "YES_RAILWAY_STOPPED") {
     throw new Error("FAIL CLOSED: explicit failover approval required. Do not run Railway and Render Telegram updates simultaneously.");
@@ -100,6 +163,14 @@ if (mode !== "active") {
     throw new Error("PUBLIC_BASE_URL must point to the new Render backup hostname");
   }
 
+  // Never activate a Render instance with empty or ephemeral /data counters.
+  if (process.env.MEDIAX_STATS_BACKEND !== "turso") {
+    throw new Error("FAIL CLOSED: MEDIAX_STATS_BACKEND=turso is required for Render activation");
+  }
+  const statsReady = await probeStatsSnapshot(true);
+  if (!statsReady.ready) {
+    throw new Error("FAIL CLOSED: Turso statistics snapshot is not ready");
+  }
   await import("../server.js");
   const deadline = Date.now() + 20_000;
   let ready = false;

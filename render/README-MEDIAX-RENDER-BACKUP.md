@@ -87,3 +87,23 @@ Only when the primary must be retired:
 - Real Bayarcash callback -> PayPing -> Telegram notifications and affiliate accounting after cutover not proven.
 - Pending payments created with Railway callback URLs must be handled.
 - Render Free is not guaranteed equivalent to Railway in uptime, compute, or persistent local filesystem.
+
+
+## 2026-10-09 Render Status HQ CPU offload (branch-only)
+
+The full local TikTok HQ smoke on Render Free failed its 8-minute safety deadline. It resolved the media, but direct CDN download returned HTTP 403 and local fallback/encoding never completed. The one-second synthetic FFmpeg encode passed. **Do not assume the local HQ path will be production-ready on Render Free.**
+
+Render-only code now offloads **all Telegram video file_id Premium+ HQ and Android HQ buttons** when `MEDIAX_MODE=active` to the existing GitHub Actions heavy worker. Telegram's `video.file_id` is reused so the expensive media download/HEVC or H.264 encode does not run inside Render's 512 MB web service. For the direct `/status <social-link>` command (no Telegram video file_id), the Render branch supports a validated HTTPS social URL source, processed by the GitHub runner; no raw file is processed by Render itself. Railway's default behavior is unchanged.
+
+The Render action dispatcher chooses GitHub ref `infra/mediax-render-standby` for active Render, otherwise `main`, and the worker's signed completion callback points to Render `/api/premium-hq-success`. Usage is counted only after successful delivery; duplicate callback keys remain supported. The worker validates HEVC/AAC codec, source audio preservation, pixel format, and a 47 MB safety output bound before sending HQ. URL inputs are restricted to approved social HTTPS hostnames to block internal/SSRF destinations.
+
+Offline GitHub Actions workflow `render-hq-worker-readiness.yml` passed:
+- Render versus Railway selection and GitHub dispatch arguments, using mocked fetch only
+- Unsafe URL rejection, source URL worker routing and cleanly downloaded file path (mocked)
+- Synthetic two-second HEVC HQ transcode with AAC preserved
+- Synthetic video without audio stays silent, with codec/output limits validated
+
+**This is NOT a live Telegram or complete user-quality test.** No GitHub workflow was dispatched against real Telegram video file_ids during standby. GitHub worker secrets (`TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `TELEGRAM_BOT_TOKEN`) and action permission, MTProto retrieval, queue latency, callback signature, video upload and fidelity are still unproven for the Render branch. The original source-first local path may preserve more quality than a Telegram video file_id copy; compare actual output visually before declaring parity. For `/status <link>`, yt-dlp may itself be blocked by social platforms on GitHub runners; real source URL tests are required.
+
+Do not set `MEDIAX_MODE=active` or `MEDIAX_FAILOVER_APPROVED=YES_RAILWAY_STOPPED` just to test HQ. A real smoke requires a controlled cutover window or a separate authorized test bot, otherwise two active runtimes can duplicate messages. Existing standby `MEDIAX_RENDER_STATUS_HQ_SMOKE=0` remains disabled.
+

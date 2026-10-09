@@ -51,6 +51,8 @@ jobs:
           node --check src/heavy-worker-dispatch.js
           python -m py_compile scripts/heavy_status_worker.py
           python -m py_compile scripts/render_hq_worker_selftest.py
+      - name: Install Node runtime dependencies for isolated stats test
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Verify Render worker routing without external traffic
         run: node scripts/render-hq-routing-selftest.mjs
       - name: Verify signed callback and duplicate usage in isolated file

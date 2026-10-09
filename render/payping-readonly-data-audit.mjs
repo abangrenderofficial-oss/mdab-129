@@ -1,7 +1,7 @@
 // Read-only Turso summary. No data rows, tokens, email addresses or user IDs
 // are logged or returned. Useful to ensure Render can see existing PayPing data.
 import { createClient } from '@libsql/client';
-import { createECDH } from 'node:crypto';
+import { createECDH, createHash, createDecipheriv } from 'node:crypto';
 
 const url=String(process.env.TURSO_DATABASE_URL||'').trim();
 const authToken=String(process.env.TURSO_AUTH_TOKEN||'').trim();
@@ -17,6 +17,7 @@ const tables=[
   ['dailyStats','payping_daily_stats',true],
 ];
 const results={};
+const botCredentialAudit={storedRows:0,decryptableRows:0};
 let configured=Boolean(url&&authToken);
 let readable=false;
 if(configured){
@@ -34,6 +35,40 @@ if(configured){
       }
     }
     readable=Object.values(results).every(x=>Number.isSafeInteger(x));
+    // Verify whether Render can decrypt encrypted bot credentials that Vercel
+    // previously stored, without sending tokens, reading Telegram or printing
+    // any ciphertext/plaintext.
+    try{
+      const keyString=String(
+        process.env.PAYPING_BOT_ENCRYPTION_KEY
+        || process.env.SETUP_SECRET
+        || process.env.TELEGRAM_WEBHOOK_SECRET
+        || '',
+      ).trim().slice(0,1000);
+      const records=await db.execute({
+        sql:"SELECT telegram_token_ciphertext FROM payping_bot_secrets WHERE environment = ? AND telegram_token_ciphertext <> '' LIMIT 50",
+        args:[env],
+      });
+      botCredentialAudit.storedRows=records.rows?.length||0;
+      if(keyString){
+        const key=createHash('sha256').update('payping-bot-secret-v1:'+keyString).digest();
+        for(const record of records.rows||[]){
+          try{
+            const pieces=String(record.telegram_token_ciphertext||'').split('.');
+            if(pieces.length!==4||pieces[0]!=='v1')continue;
+            const decrypt=createDecipheriv('aes-256-gcm',key,Buffer.from(pieces[1],'base64url'));
+            decrypt.setAuthTag(Buffer.from(pieces[2],'base64url'));
+            const plaintext=Buffer.concat([
+              decrypt.update(Buffer.from(pieces[3],'base64url')),
+              decrypt.final(),
+            ]);
+            if(plaintext.length>12)botCredentialAudit.decryptableRows++;
+          }catch{}
+        }
+      }
+    }catch{
+      botCredentialAudit.queryUnavailable=true;
+    }
   }finally{
     try{db.close()}catch{}
   }
@@ -58,5 +93,6 @@ console.log('MEDIAX_RENDER_PAYPING_PUSH_KEYPAIR',JSON.stringify({
 
 console.log('MEDIAX_RENDER_PAYPING_DB_READINESS',JSON.stringify({
   configured,readable,environment:env,counts:results,
+  botCredentialAudit,
   note:'Read-only aggregate snapshot. Counts do not establish Vercel parity or verified logins/payments',
 }));

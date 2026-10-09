@@ -2,15 +2,16 @@
 // Turso writes, payment intents or external callbacks.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { unlink } from 'node:fs/promises';
 import { resolveMedia } from '../src/bot/media-resolver.js';
 import ffmpegPath from 'ffmpeg-static';
 const execFileAsync = promisify(execFile);
 const started = Date.now();
 const cases = [
-  ['tiktok', 'https://vt.tiktok.com/ZSqqYxc13/'],
-  ['instagram', 'https://www.instagram.com/reel/DdVLsscjj2o/'],
-  ['threads', 'https://www.threads.com/share/BALVYg5Lmq/'],
-  ['youtube', 'https://youtu.be/RKdxQwnRRqw'],
+  ['instagram', 'https://www.instagram.com/reel/DdVLsscjj2o/?stkn=MXV3a2hncmE3cWZheQ=='],
+  ['threads', 'https://www.threads.com/share/BAS3TS_OHB/'],
+  ['threads', 'https://www.threads.com/share/_6cMYsy0h/'],
+  ['youtube', 'https://youtu.be/RKdxQwnRRqw?si=GJX9HDe4OBsxwBYQ'],
 ];
 function log(name, data) { console.log(name, JSON.stringify(data)); }
 async function binaryProbe(label, binary, args, ms=12000) {
@@ -23,6 +24,20 @@ const binaries = [];
 binaries.push(await binaryProbe('ffmpeg',ffmpegPath,['-version']));
 binaries.push(await binaryProbe('yt-dlp','./bin/yt-dlp',['--version']));
 log('MEDIAX_RENDER_BINARIES', {results:binaries});
+// Real one-second H.264/AAC encode. No user media or Telegram involved.
+const videoPath='/tmp/mediax-standby-encode-'+process.pid+'.mp4';
+try {
+  await execFileAsync(ffmpegPath,[
+    '-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=black:s=320x180:r=15',
+    '-f','lavfi','-i','sine=frequency=440:sample_rate=44100',
+    '-t','1','-c:v','libx264','-preset','ultrafast','-c:a','aac',
+    '-b:a','96k','-movflags','+faststart','-y',videoPath
+  ],{timeout:20000,maxBuffer:200000});
+  log('MEDIAX_RENDER_ENCODE',{ok:true,videoCodec:'h264',audioCodec:'aac',durationSeconds:1});
+} catch(err) {
+  log('MEDIAX_RENDER_ENCODE',{ok:false,reason:String(err.code||err.message).slice(0,180)});
+} finally { await unlink(videoPath).catch(()=>{}); }
+
 const results=[];
 for(const [platform,url] of cases) {
   const time=Date.now();
@@ -47,6 +62,6 @@ log('MEDIAX_RENDER_MEDIA_AUDIT',{
   failed:results.filter(r=>!r.ok).map(r=>r.platform),
   binariesPass:binaries.filter(r=>r.ok).length,
   durationMs:Date.now()-started,
-  note:'standby diagnostics only; no Telegram sending or HQ encoding',
+  note:'standby diagnostics only; 1-second synthetic H264/AAC encode, no Telegram sending or user video conversion',
 });
 process.exit(0);

@@ -39,30 +39,33 @@ if(configured){
     // previously stored, without sending tokens, reading Telegram or printing
     // any ciphertext/plaintext.
     try{
-      const keyString=String(
+      const keyStrings=[...new Set([
         process.env.PAYPING_BOT_ENCRYPTION_KEY
-        || process.env.SETUP_SECRET
-        || process.env.TELEGRAM_WEBHOOK_SECRET
-        || '',
-      ).trim().slice(0,1000);
+          || process.env.SETUP_SECRET
+          || process.env.TELEGRAM_WEBHOOK_SECRET,
+        process.env.PAYPING_BOT_LEGACY_ENCRYPTION_KEY,
+      ].map(x=>String(x||'').trim().slice(0,1000)).filter(Boolean))];
       const records=await db.execute({
         sql:"SELECT telegram_token_ciphertext FROM payping_bot_secrets WHERE environment = ? AND telegram_token_ciphertext <> '' LIMIT 50",
         args:[env],
       });
       botCredentialAudit.storedRows=records.rows?.length||0;
-      if(keyString){
-        const key=createHash('sha256').update('payping-bot-secret-v1:'+keyString).digest();
-        for(const record of records.rows||[]){
+      for(const record of records.rows||[]){
+        const pieces=String(record.telegram_token_ciphertext||'').split('.');
+        if(pieces.length!==4||pieces[0]!=='v1')continue;
+        for(const secret of keyStrings){
           try{
-            const pieces=String(record.telegram_token_ciphertext||'').split('.');
-            if(pieces.length!==4||pieces[0]!=='v1')continue;
+            const key=createHash('sha256').update('payping-bot-secret-v1:'+secret).digest();
             const decrypt=createDecipheriv('aes-256-gcm',key,Buffer.from(pieces[1],'base64url'));
             decrypt.setAuthTag(Buffer.from(pieces[2],'base64url'));
             const plaintext=Buffer.concat([
               decrypt.update(Buffer.from(pieces[3],'base64url')),
               decrypt.final(),
             ]);
-            if(plaintext.length>12)botCredentialAudit.decryptableRows++;
+            if(plaintext.length>12){
+              botCredentialAudit.decryptableRows++;
+              break;
+            }
           }catch{}
         }
       }

@@ -142,6 +142,8 @@ if (mode === "web_only") {
   }
   await import("../server.js");
   console.log("MEDIAX_RENDER_WEB_ONLY_ENTRY_READY — Telegram webhook unchanged; Bayarcash callbacks disabled");
+  void import("./payping-readonly-data-audit.mjs")
+    .catch(() => console.warn("MEDIAX_RENDER_PAYPING_DB_READINESS unavailable"));
 } else if (mode !== "active") {
   const server = http.createServer(async (req, res) => {
     const pathname = new URL(req.url || "/", "http://localhost").pathname;

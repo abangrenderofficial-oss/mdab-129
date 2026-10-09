@@ -134,7 +134,37 @@ async function prepareStatusFromTelegramFile(fileId, { galleryCompatible = false
   return prepared;
 }
 
-export async function processStatusFromLink(chatId, url, platform, fence = null) {
+export async function processStatusFromLink(chatId, url, platform, fence = null, metadata = {}) {
+  // /status <link> has no Telegram video file_id yet. Keep the existing
+  // Railway command unchanged; active Render uses a URL-only GitHub job.
+  if (process.env.MEDIAX_MODE === 'active') {
+    if (cancelled(fence)) return false;
+    if (!heavyWorkerConfigured()) {
+      await sendMessage(chatId, '❌ Status HQ worker belum tersedia. Cuba semula kemudian.').catch(() => {});
+      return false;
+    }
+    const progressMessage = await startHeavyStatusProgress(chatId);
+    try {
+      const baseUrl = String(metadata.baseUrl || process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+      await dispatchHeavyMediaJob({
+        chatId,
+        userId: metadata.userId || 0,
+        videoFileId: '',
+        sourceUrl: url,
+        action: 'status_hq',
+        sourceKind: 'url',
+        progressMessageId: progressMessage?.message_id || 0,
+        sourceMessageId: metadata.sourceMessageId || 0,
+        completionCallbackUrl: baseUrl ? baseUrl + '/api/premium-hq-success' : '',
+      });
+      return { premiumVideoDispatched: true };
+    } catch (error) {
+      console.error('[status-hq/render-url] dispatch failed:', error?.code, error?.message);
+      await removeHeavyProgress(chatId, progressMessage?.message_id || 0);
+      await sendMessage(chatId, '❌ Status HQ worker tak dapat dimulakan. Cuba semula kemudian.').catch(() => {});
+      return false;
+    }
+  }
   let prepared = null;
   const progress = await startStatusProgress(chatId);
   try {

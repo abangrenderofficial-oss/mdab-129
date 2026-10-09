@@ -1,9 +1,15 @@
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { createStatsPersistence } from './stats-persistence.js';
 import { sendMessage, telegram } from '../telegram.js';
 
 const EVENT_TYPES = new Set(['download', 'status_hq', 'live_wallpaper']);
 const STATS_FILE = String(process.env.STATS_FILE_PATH || '/data/bot-stats.json');
 const STATS_VERSION = 2;
+const STATS_BACKEND = String(process.env.MEDIAX_STATS_BACKEND || 'file').trim().toLowerCase();
+const alternateStorage = STATS_BACKEND === 'file' ? null : createStatsPersistence({
+  filePath: STATS_FILE, backend: STATS_BACKEND,
+});
 const CHANNEL_GATE_COUNTER_VERSION = 3;
 export const CHANNEL_GATE_THRESHOLD = 5;
 export const PREMIUM_HQ_CHANNEL_GATE_THRESHOLD = CHANNEL_GATE_THRESHOLD;
@@ -35,35 +41,41 @@ function normalizeState(raw) {
   };
 }
 
-const statsPersistence = createStatsPersistence({ filePath: STATS_FILE });
-
 async function loadState() {
   if (!statePromise) {
-    statePromise = statsPersistence.load()
-      .then((raw) => raw == null ? emptyState() : normalizeState(raw))
-      .catch((error) => { statePromise = null; throw error; });
+    statePromise = (async () => {
+      if (alternateStorage) {
+        try { return normalizeState(await alternateStorage.load()); }
+        catch (error) { statePromise = null; throw error; }
+      }
+      try {
+        const text = await readFile(STATS_FILE, 'utf8');
+        return normalizeState(JSON.parse(text));
+      } catch (error) {
+        if (error?.code !== 'ENOENT') console.warn('[stats] load failed:', error?.message);
+        return emptyState();
+      }
+    })();
   }
   return statePromise;
 }
 
 async function persistState(state) {
-  await statsPersistence.persist(state);
+  if (alternateStorage) return alternateStorage.persist(state);
+  await mkdir(path.dirname(STATS_FILE), { recursive: true });
+  const temp = `${STATS_FILE}.${process.pid}.tmp`;
+  await writeFile(temp, `${JSON.stringify(state)}\n`, 'utf8');
+  await rename(temp, STATS_FILE);
 }
 
 function mutate(mutator) {
-  const pending = writeQueue.catch(() => {}).then(async () => {
+  writeQueue = writeQueue.then(async () => {
     const state = await loadState();
     mutator(state);
-    try {
-      await persistState(state);
-    } catch (error) {
-      statePromise = null;
-      throw error;
-    }
-  });
-  writeQueue = pending.catch((error) => {
+    await persistState(state);
+  }).catch((error) => {
+    if (alternateStorage && STATS_BACKEND === 'turso') statePromise = null;
     console.error('[stats] write failed:', error?.message);
-    if (statsPersistence.backend === 'turso') throw error;
   });
   return writeQueue;
 }

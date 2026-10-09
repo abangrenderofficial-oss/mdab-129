@@ -4,6 +4,7 @@ on:
     branches: [infra/mediax-render-standby]
     paths:
       - 'scripts/render-live-web-parity-smoke.mjs'
+      - 'scripts/render-vercel-push-public-compare.mjs'
       - '.github/workflows/render-live-web-parity.yml'
   workflow_dispatch:
 permissions:
@@ -19,3 +20,5 @@ jobs:
           node-version: '24'
       - name: Smoke Render web-only PayPing origin and deny bot/gateway routes
         run: node scripts/render-live-web-parity-smoke.mjs
+      - name: Compare Vercel and Render public Push VAPID configuration
+        run: node scripts/render-vercel-push-public-compare.mjs

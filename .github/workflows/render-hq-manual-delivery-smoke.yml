@@ -1,0 +1,39 @@
+name: MediaX Render HQ manual private Telegram send
+on:
+  workflow_dispatch:
+    inputs:
+      chat_id:
+        description: Your private Telegram numeric chat ID (for the owner's existing MediaX chat only)
+        required: true
+        type: string
+      approval:
+        description: Enter SEND_TEST_TO_MY_PRIVATE_CHAT to authorize one synthetic test video
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  private-telegram-hq-delivery:
+    if: ${{ inputs.approval == 'SEND_TEST_TO_MY_PRIVATE_CHAT' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+      TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+      HQ_TEST_PRIVATE_CHAT_ID: ${{ inputs.chat_id }}
+      HQ_TEST_APPROVAL: ${{ inputs.approval }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install FFmpeg and existing worker Python runtime
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y ffmpeg
+          fi
+          python -m pip install --disable-pip-version-check --quiet 'kurigram[fast]==2.2.26' requests
+      - name: Send ONE synthetic HQ video to the authorized private chat
+        run: python scripts/render_hq_telegram_delivery_smoke.py

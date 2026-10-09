@@ -20,14 +20,22 @@ function encrypt(value){
   const encrypted=Buffer.concat([cipher.update(Buffer.from(String(value||''),'utf8')),cipher.final()]);
   return ['v1',iv.toString('base64url'),cipher.getAuthTag().toString('base64url'),encrypted.toString('base64url')].join('.');
 }
-function decrypt(payload){
+export function decryptPayPingBotSecret(payload){
   const p=String(payload||'').split('.');if(p.length!==4||p[0]!=='v1')return '';
-  try{
-    const d=createDecipheriv('aes-256-gcm',key(),Buffer.from(p[1],'base64url'));
-    d.setAuthTag(Buffer.from(p[2],'base64url'));
-    return Buffer.concat([d.update(Buffer.from(p[3],'base64url')),d.final()]).toString('utf8');
-  }catch{return ''}
+  // Optional legacy key for Vercel-encrypted credentials. Do not rewrite rows.
+  const primary=clean(process.env.PAYPING_BOT_ENCRYPTION_KEY||process.env.SETUP_SECRET||process.env.TELEGRAM_WEBHOOK_SECRET,1000);
+  const legacy=clean(process.env.PAYPING_BOT_LEGACY_ENCRYPTION_KEY,1000);
+  for(const secret of [...new Set([primary,legacy].filter(Boolean))]){
+    try{
+      const k=createHash('sha256').update('payping-bot-secret-v1:'+secret).digest();
+      const d=createDecipheriv('aes-256-gcm',k,Buffer.from(p[1],'base64url'));
+      d.setAuthTag(Buffer.from(p[2],'base64url'));
+      return Buffer.concat([d.update(Buffer.from(p[3],'base64url')),d.final()]).toString('utf8');
+    }catch{}
+  }
+  return '';
 }
+const decrypt=decryptPayPingBotSecret;
 async function ensureSchema(){
   await ensurePayPingCatalogSchema();
   const db=await getSupportDb();

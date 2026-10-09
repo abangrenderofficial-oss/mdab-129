@@ -90,7 +90,7 @@ async function probeStatsSnapshot(force = false) {
           && snapshot.monthlyDownloads && typeof snapshot.monthlyDownloads === "object"
           && !Array.isArray(snapshot.monthlyDownloads);
         result = valid
-          ? {ready: true, reason: "snapshot_available", updatedAt: String(rows.rows[0].updated_at)}
+          ? {ready: true, reason: "snapshot_available", updatedAt: String(rows.rows[0].updated_at), userRecords: Object.keys(snapshot.users).length, monthBuckets: Object.keys(snapshot.monthlyDownloads).length}
           : {ready: false, reason: "invalid_snapshot"};
       }
     }
@@ -109,6 +109,26 @@ async function probeStatsSnapshot(force = false) {
 }
 
 
+
+// Safe standby payment verification: query only Bayarcash portal metadata.
+// Never create payment intents, register callbacks or send Telegram updates here.
+async function probePaymentPortal() {
+  try {
+    const { isBayarcashConfigured, getBayarcashPortalDiagnostic } =
+      await import("../src/payments/bayarcash.js");
+    if (!isBayarcashConfigured()) return {ready: false, reason: "credentials_missing"};
+    const portal = await getBayarcashPortalDiagnostic();
+    return {
+      ready: portal.paymentChannels.length > 0,
+      reason: portal.paymentChannels.length ? "portal_accessible" : "no_payment_channels",
+      sandbox: Boolean(portal.sandbox),
+      channelCount: portal.paymentChannels.length,
+    };
+  } catch (error) {
+    const code = String(error?.code || "").replace(/[^A-Z0-9_]/g, "").slice(0, 64);
+    return {ready: false, reason: code || "portal_request_failed"};
+  }
+}
 
 if (mode !== "active") {
   const server = http.createServer(async (req, res) => {
@@ -148,6 +168,8 @@ if (mode !== "active") {
     console.log("MediaX standby health endpoint listening at /healthz");
     void probeStatsSnapshot(true).then((stats) =>
       console.log("MEDIAX_RENDER_STATS_READINESS", JSON.stringify(stats)));
+    void probePaymentPortal().then((payment) =>
+      console.log("MEDIAX_RENDER_BAYARCASH_READINESS", JSON.stringify(payment)));
   });
 } else {
   if (process.env.MEDIAX_FAILOVER_APPROVED !== "YES_RAILWAY_STOPPED") {

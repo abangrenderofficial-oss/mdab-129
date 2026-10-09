@@ -16,7 +16,9 @@ const readinessRequired = [
   "BAYARCASH_PORTAL_KEY",
 ];
 const readinessMissing = readinessRequired.filter((key) => !String(process.env[key] || "").trim());
-const renderBaseUrlCorrect = String(process.env.PUBLIC_BASE_URL || "").replace(/\\/$/, "")
+const rawRenderBaseUrl = String(process.env.PUBLIC_BASE_URL || "").trim();
+const renderBaseUrlCorrect = (rawRenderBaseUrl.endsWith("/")
+  ? rawRenderBaseUrl.slice(0, -1) : rawRenderBaseUrl)
   === "https://mediax-railway-backup.onrender.com";
 console.log("MEDIAX_BACKUP_READINESS_AUDIT", JSON.stringify({
   present: readinessRequired.length - readinessMissing.length,

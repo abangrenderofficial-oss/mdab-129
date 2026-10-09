@@ -24,4 +24,9 @@ jobs:
           node --check src/bot/stats.js
           node --check src/bot/stats-persistence.js
           node scripts/mediax-stats-persistence-selftest.mjs
+          node --check server.js
+          node --check src/render/web-only-routes.js
+          node --check scripts/render-web-only-selftest.mjs
+          node scripts/render-vercel-route-parity-selftest.mjs
+          node scripts/render-web-only-selftest.mjs
           npm run check

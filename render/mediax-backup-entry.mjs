@@ -4,6 +4,36 @@ import { spawnSync } from "node:child_process";
 const mode = String(process.env.MEDIAX_MODE || "standby").toLowerCase();
 const port = Number(process.env.PORT || 10000);
 const host = "0.0.0.0";
+const readinessRequired = [
+  "TELEGRAM_BOT_TOKEN",
+  "TELEGRAM_WEBHOOK_SECRET",
+  "TURSO_DATABASE_URL",
+  "TURSO_AUTH_TOKEN",
+  "SETUP_SECRET",
+  "GITHUB_ACTIONS_TOKEN",
+  "BAYARCASH_API_SECRET_KEY",
+  "BAYARCASH_API_TOKEN",
+  "BAYARCASH_PORTAL_KEY",
+];
+const readinessMissing = readinessRequired.filter((key) => !String(process.env[key] || "").trim());
+const renderBaseUrlCorrect = String(process.env.PUBLIC_BASE_URL || "").replace(/\\/$/, "")
+  === "https://mediax-railway-backup.onrender.com";
+console.log("MEDIAX_BACKUP_READINESS_AUDIT", JSON.stringify({
+  present: readinessRequired.length - readinessMissing.length,
+  required: readinessRequired.length,
+  missingNames: readinessMissing,
+  renderBaseUrlCorrect,
+  mode,
+  failoverApprovalDisabled: process.env.MEDIAX_FAILOVER_APPROVED !== "YES_RAILWAY_STOPPED",
+  statsFilePath: String(process.env.STATS_FILE_PATH || "/data/bot-stats.json").startsWith("/data/")
+    ? "/data (not verified persistent on Render)"
+    : "custom (not verified persistent)",
+  persistentVolumeMigrationVerified: false,
+  thirdPartyCallbacksVerified: false,
+}));
+// Read-only parity check. This prints ENV *names*, never secret values.
+// Standby still cannot process Telegram/media/payment events.
+
 
 if (mode !== "active") {
   const server = http.createServer((req, res) => {

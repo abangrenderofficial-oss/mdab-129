@@ -107,3 +107,10 @@ Offline GitHub Actions workflow `render-hq-worker-readiness.yml` passed:
 
 Do not set `MEDIAX_MODE=active` or `MEDIAX_FAILOVER_APPROVED=YES_RAILWAY_STOPPED` just to test HQ. A real smoke requires a controlled cutover window or a separate authorized test bot, otherwise two active runtimes can duplicate messages. Existing standby `MEDIAX_RENDER_STATUS_HQ_SMOKE=0` remains disabled.
 
+
+
+### Additional live external-network finding
+
+The GitHub runner's optional public TikTok URL smoke on 2026-10-09 **FAILED**: TikWM metadata requests returned HTTP errors and yt-dlp exited non-zero (using the `vt.tiktok.com/ZSqqYxc13/` sample). This is separate from the successful **offline** synthetic HEVC/AAC/audio tests and routing assertions. The URL-only `/status <link>` worker is implemented but **not production-ready** until a real URL can consistently download from a GitHub worker. Do not rely on the workflow's green conclusion for URL tests: the one-off public-network step was intentionally `continue-on-error`. To avoid consuming GitHub Actions minutes, this optional network step runs only via manual `workflow_dispatch`.
+
+For active Render failover, Premium HQ and Android HQ buttons should use existing Telegram `file_id` transfer to the heavy worker rather than social CDN URL re-download from Render Free. Real MTProto media fetch, sendVideo, signed callback and real output fidelity remain unverified while Render is standby. Never represent this as 100% parity with Railway until a controlled end-to-end test passes.

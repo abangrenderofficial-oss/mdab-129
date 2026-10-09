@@ -1,0 +1,46 @@
+name: MediaX Render HQ worker readiness
+
+on:
+  push:
+    branches:
+      - infra/mediax-render-standby
+    paths:
+      - 'src/features/status-hq.js'
+      - 'src/heavy-worker-dispatch.js'
+      - 'src/render/hq-offload-policy.js'
+      - 'scripts/heavy_status_worker.py'
+      - 'scripts/render-hq-routing-selftest.mjs'
+      - 'scripts/render_hq_worker_selftest.py'
+      - '.github/workflows/render-hq-worker-readiness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  render-hq-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate Render-only code
+        run: |
+          node --check src/features/status-hq.js
+          node --check src/render/hq-offload-policy.js
+          node --check src/heavy-worker-dispatch.js
+          python -m py_compile scripts/heavy_status_worker.py
+          python -m py_compile scripts/render_hq_worker_selftest.py
+      - name: Verify Render worker routing without external traffic
+        run: node scripts/render-hq-routing-selftest.mjs
+      - name: Prepare isolated encoder test
+        run: |
+          python -m pip install --disable-pip-version-check --quiet 'kurigram[fast]==2.2.26' requests
+          ffmpeg -version | head -n 1
+      - name: Verify HQ codec, audio retention and size
+        run: python scripts/render_hq_worker_selftest.py

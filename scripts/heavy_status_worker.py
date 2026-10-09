@@ -351,6 +351,40 @@ def encode_live_wallpaper(input_path, video_path, photo_path, probe):
     )
 
 
+
+def validate_premium_status_output(source_path, output_path):
+    # Fail closed before Telegram send: preserve source audio and enforce HQ codec.
+    def streams(path):
+        result = run([
+            'ffprobe', '-v', 'error', '-show_entries',
+            'stream=codec_type,codec_name,pix_fmt', '-of', 'json', str(path)
+        ], timeout=60)
+        return json.loads(result.stdout or '{}').get('streams') or []
+
+    original = streams(source_path)
+    encoded = streams(output_path)
+    video = next((stream for stream in encoded if stream.get('codec_type') == 'video'), None)
+    if not video or video.get('codec_name') != 'hevc':
+        raise RuntimeError('Premium HQ output missing HEVC video track')
+    if video.get('pix_fmt') not in ('yuv420p', 'yuv420p10le'):
+        raise RuntimeError('Premium HQ output pixel format is not iPhone compatible')
+    source_audio = any(stream.get('codec_type') == 'audio' for stream in original)
+    output_audio = next((stream for stream in encoded if stream.get('codec_type') == 'audio'), None)
+    if source_audio and not output_audio:
+        raise RuntimeError('Premium HQ audio was lost during encoding')
+    if output_audio and output_audio.get('codec_name') != 'aac':
+        raise RuntimeError('Premium HQ audio codec is not AAC')
+    if not output_path.exists() or output_path.stat().st_size > int(47 * MB):
+        raise RuntimeError('Premium HQ output exceeds Telegram-safe size')
+    print('RENDER_HQ_WORKER_VALIDATION ' + json.dumps({
+        'ok': True, 'videoCodec': 'hevc',
+        'pixelFormat': video.get('pix_fmt'),
+        'sourceHasAudio': source_audio,
+        'outputHasAudio': bool(output_audio),
+        'sizeMb': round(output_path.stat().st_size / MB, 2),
+    }), flush=True)
+
+
 def send_status_video(path, android=False):
     metadata = probe_video(path)
     data = {
@@ -432,6 +466,7 @@ def main():
             set_progress(42)
             output = temp / 'status-hq.mp4'
             encode_status(source, output, probe, android=False)
+            validate_premium_status_output(source, output)
             set_progress(88)
             set_progress(100)
             send_status_video(output, android=False)

@@ -29,4 +29,5 @@ jobs:
           node --check scripts/render-web-only-selftest.mjs
           node scripts/render-vercel-route-parity-selftest.mjs
           node scripts/render-web-only-selftest.mjs
+          node scripts/render-payping-bot-key-compat-selftest.mjs
           npm run check

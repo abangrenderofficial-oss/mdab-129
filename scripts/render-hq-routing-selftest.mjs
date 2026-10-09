@@ -31,6 +31,7 @@ try {
     assert.equal(payload.ref,'infra/mediax-render-standby');
     assert.equal(payload.inputs.action,'status_hq');
     assert.equal(payload.inputs.source_kind,'link');
+    assert.equal(payload.inputs.source_url,'');
     assert.equal(payload.inputs.video_file_id,'tg-fileid-123');
     assert.equal(payload.inputs.user_id,'555');
     assert.equal(payload.inputs.chat_id,'555');
@@ -44,6 +45,29 @@ try {
   });
   assert.equal(result,true);
   assert.equal(calls,1);
+  globalThis.fetch=async(_url,opts)=>{
+    calls++;
+    const payload=JSON.parse(opts.body);
+    assert.equal(payload.ref,'infra/mediax-render-standby');
+    assert.equal(payload.inputs.video_file_id,'');
+    assert.equal(payload.inputs.source_kind,'url');
+    assert.equal(payload.inputs.source_url,'https://www.youtube.com/watch?v=Ftffph3fVEs');
+    return {status:204};
+  };
+  await dispatchHeavyMediaJob({
+    chatId:555,userId:555,sourceUrl:'https://www.youtube.com/watch?v=Ftffph3fVEs',
+    action:'status_hq',sourceMessageId:22,
+  });
+  assert.equal(calls,2);
+  await assert.rejects(
+    dispatchHeavyMediaJob({chatId:555,userId:555,sourceUrl:'http://127.0.0.1/admin'}),
+    {code:'HEAVY_WORKER_URL_DENIED'},
+  );
+  await assert.rejects(
+    dispatchHeavyMediaJob({chatId:555,userId:555,sourceUrl:'https://youtube.com.evil.example/watch?v=123'}),
+    {code:'HEAVY_WORKER_URL_DENIED'},
+  );
+  assert.equal(calls,2,'invalid URL must never dispatch');
   process.env.MEDIAX_MODE='standby';
   globalThis.fetch=async(_url,opts)=>{
     calls++;
@@ -56,8 +80,8 @@ try {
     chatId:555,userId:555,videoFileId:'tg-gallery-id',
     action:'status_hq',sourceKind:'gallery',
   });
-  assert.equal(calls,2);
-  console.log('RENDER_HQ_ROUTING_SELFTEST_OK — active Render offloads link video, backup worker ref, Railway legacy behavior and no remote calls');
+  assert.equal(calls,3);
+  console.log('RENDER_HQ_ROUTING_SELFTEST_OK — active Render offloads button, Android and /status URL; URL allowlist; backup worker ref; Railway preserved');
 } finally {
   globalThis.fetch=oldFetch;
   if (originalMode===undefined) delete process.env.MEDIAX_MODE; else process.env.MEDIAX_MODE=originalMode;

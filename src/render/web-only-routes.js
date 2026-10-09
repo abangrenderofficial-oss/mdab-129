@@ -22,8 +22,12 @@ export function isWebOnlyRequestAllowed(pathname, method) {
     return routes.has(path);
   }
   if (verb !== 'POST') return false;
-  // Handler-level identity checks remain required on every POST, exactly as on Vercel.
-  // Telegram/webhook, setup, payment gateway and signed HQ callback endpoints stay disabled.
+  // Encrypted bot credentials cannot be modified until legacy ciphertext is
+  // verified readable on Render. This flag defaults OFF for safe Vercel migration.
+  if (path === '/api/payping-bot-admin' &&
+      process.env.MEDIAX_RENDER_BOT_WRITE_ENABLED !== '1') return false;
+  // Handler-level identity checks remain required on every other POST.
+  // Telegram/webhook, gateway and signed HQ callback endpoints stay disabled.
   return routes.has(path) && !['/api/health', '/api/heavy-limit'].includes(path);
 }
 

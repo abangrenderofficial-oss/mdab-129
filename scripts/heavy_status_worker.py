@@ -507,6 +507,10 @@ def download_tikwm_source(path):
                             raise RuntimeError('TikWM media exceeds 500 MB')
                         dest.write(piece)
                 if size > 1024:
+                    # Guard against anti-bot HTML responses that return HTTP 200.
+                    if 'text/html' in str(response.headers.get('content-type') or '').lower():
+                        raise RuntimeError('TikWM returned HTML instead of a video')
+                    probe_video(path)
                     print('RENDER_HQ_TIKWM_SOURCE ' + json.dumps(
                         {'ok': True, 'bytes': size}), flush=True)
                     return

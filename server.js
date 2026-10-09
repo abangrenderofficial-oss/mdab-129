@@ -20,6 +20,7 @@ import contentBridgeVerifyHandler from './handlers/content-bridge-verify.js';
 import paymentPushHandler from './handlers/payment-push.js';
 import payPingDataHandler from './handlers/payping-data.js';
 import {startMediaXTelegramAvatarSync} from './src/support/payping-bot-avatar-sync.js';
+import { warmMirrorStatsOnStartup } from './src/bot/stats.js';
 import payPingAuthHandler from './handlers/payping-auth.js';
 import payPingLoginPage from './handlers/payping-login-pwa.js';
 import payPingRegisterPage from './handlers/payping-register-pwa.js';
@@ -221,6 +222,12 @@ const server = http.createServer(async (req, res) => {
 const port = Number(process.env.PORT || 3000);
 server.listen(port, '0.0.0.0', () => {
   console.log(`Downloader bot listening on 0.0.0.0:${port}`);
+  if (String(process.env.MEDIAX_STATS_BACKEND || '').trim() === 'mirror') {
+    void warmMirrorStatsOnStartup()
+      .then((result) => console.log('MEDIAX_STATS_MIRROR_STARTUP', JSON.stringify(result)))
+      .catch((error) => console.error('MEDIAX_STATS_MIRROR_STARTUP_FAILED', error?.message));
+  }
+
   console.log('[bayarcash] runtime', {
     environment: isBayarcashSandbox() ? 'sandbox' : 'production',
     configured: isBayarcashConfigured(),

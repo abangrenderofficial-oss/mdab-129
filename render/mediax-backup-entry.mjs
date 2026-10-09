@@ -1,5 +1,5 @@
 import http from "node:http";
-import { spawnSync } from "node:child_process";
+import { spawnSync, spawn } from "node:child_process";
 
 const mode = String(process.env.MEDIAX_MODE || "standby").toLowerCase();
 const port = Number(process.env.PORT || 10000);
@@ -170,6 +170,25 @@ if (mode !== "active") {
       console.log("MEDIAX_RENDER_STATS_READINESS", JSON.stringify(stats)));
     void probePaymentPortal().then((payment) =>
       console.log("MEDIAX_RENDER_BAYARCASH_READINESS", JSON.stringify(payment)));
+    if (process.env.MEDIAX_RENDER_MEDIA_SMOKE === "1") {
+      // Run as a separate, killable process. The HTTP health endpoint is not blocked.
+      const smoke = spawn(process.execPath, ["render/standby-media-smoke.mjs"], {
+        stdio: "inherit", env: process.env,
+      });
+      const killer = setTimeout(() => {
+        console.warn("MEDIAX_RENDER_MEDIA_AUDIT_TIMEOUT — 4 minute safety limit");
+        smoke.kill("SIGTERM");
+      }, 240_000);
+      killer.unref();
+      smoke.on("exit", (code, signal) => {
+        clearTimeout(killer);
+        console.log("MEDIAX_RENDER_MEDIA_AUDIT_PROCESS", JSON.stringify({code,signal}));
+      });
+      smoke.on("error", (error) => {
+        clearTimeout(killer);
+        console.error("MEDIAX_RENDER_MEDIA_AUDIT_PROCESS_ERROR", error.code || "spawn_failed");
+      });
+    }
   });
 } else {
   if (process.env.MEDIAX_FAILOVER_APPROVED !== "YES_RAILWAY_STOPPED") {

@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { unlink } from 'node:fs/promises';
 import { resolveMedia } from '../src/bot/media-resolver.js';
+import { parseYouTubeFree } from '../src/youtube-free.js';
 import ffmpegPath from 'ffmpeg-static';
 const execFileAsync = promisify(execFile);
 const started = Date.now();
@@ -28,6 +29,30 @@ async function probeHttp(label, url) {
 }
 await probeHttp('instagram_page','https://www.instagram.com/reel/DdVLsscjj2o/');
 await probeHttp('weirddl_info','https://weirddl.sbs/api/info?url=https%3A%2F%2Fyoutu.be%2FRKdxQwnRRqw');
+try {
+  const fallback = await parseYouTubeFree('https://www.youtube.com/watch?v=RKdxQwnRRqw');
+  const candidate = fallback?.videos?.find(x=>x?.url);
+  log('MEDIAX_RENDER_YOUTUBE_DIRECT_FALLBACK',{
+    ok: Boolean(candidate), candidateCount:fallback?.videos?.length||0,
+    source:candidate?.source||null,
+  });
+  if(candidate?.url) {
+    try {
+      const r=await fetch(candidate.url,{
+        signal:AbortSignal.timeout(12000),
+        headers:{'range':'bytes=0-1023','user-agent':'Mozilla/5.0'},
+      });
+      log('MEDIAX_RENDER_YOUTUBE_STREAM',{
+        httpStatus:r.status,ok:r.ok,contentType:String(r.headers.get('content-type')||'').slice(0,80),
+      });
+      await r.body?.cancel().catch(()=>{});
+    } catch(e){
+      log('MEDIAX_RENDER_YOUTUBE_STREAM',{ok:false,error:String(e?.name||'fetch_failed')});
+    }
+  }
+} catch(error) {
+  log('MEDIAX_RENDER_YOUTUBE_DIRECT_FALLBACK',{ok:false,reason:safeError(error)});
+}
 
 function log(name, data) { console.log(name, JSON.stringify(data)); }
 async function binaryProbe(label, binary, args, ms=12000) {

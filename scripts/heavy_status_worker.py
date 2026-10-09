@@ -3,6 +3,9 @@ import math
 import os
 import subprocess
 import tempfile
+import shutil
+import sys
+from urllib.parse import urlparse
 from pathlib import Path
 
 import requests
@@ -14,6 +17,7 @@ API_ID = int(os.environ.get('TELEGRAM_API_ID', '0') or 0)
 API_HASH = os.environ.get('TELEGRAM_API_HASH', '').strip()
 CHAT_ID = int(os.environ.get('HEAVY_CHAT_ID', '0') or 0)
 VIDEO_FILE_ID = os.environ.get('HEAVY_VIDEO_FILE_ID', '').strip()
+SOURCE_URL = os.environ.get('HEAVY_SOURCE_URL', '').strip()
 FILE_SIZE = int(os.environ.get('HEAVY_FILE_SIZE', '0') or 0)
 ACTION = os.environ.get('HEAVY_ACTION', 'status_hq').strip() or 'status_hq'
 PROGRESS_MESSAGE_ID = int(os.environ.get('HEAVY_PROGRESS_MESSAGE_ID', '0') or 0)
@@ -21,6 +25,19 @@ SOURCE_MESSAGE_ID = int(os.environ.get('HEAVY_SOURCE_MESSAGE_ID', '0') or 0)
 MAX_INPUT_MB = int(os.environ.get('HEAVY_VIDEO_MAX_MB', '250') or 250)
 MAX_INPUT_BYTES = MAX_INPUT_MB * MB
 BOT_API_BASE = os.environ.get('TELEGRAM_API_BASE_URL', 'https://api.telegram.org').rstrip('/')
+
+
+def allowed_source_url(url):
+    try:
+        parsed = urlparse(str(url or ''))
+        host = (parsed.hostname or '').lower()
+        trusted = ('tiktok.com', 'instagram.com', 'threads.com', 'threads.net',
+                   'youtube.com', 'youtu.be', 'twitter.com', 'x.com')
+        return (parsed.scheme == 'https' and not parsed.username and
+                not parsed.password and parsed.port is None and len(url) <= 1500 and
+                any(host == d or host.endswith('.' + d) for d in trusted))
+    except (ValueError, TypeError):
+        return False
 
 
 def require_config():
@@ -33,8 +50,10 @@ def require_config():
         missing.append('TELEGRAM_API_HASH')
     if not CHAT_ID:
         missing.append('HEAVY_CHAT_ID')
-    if not VIDEO_FILE_ID:
-        missing.append('HEAVY_VIDEO_FILE_ID')
+    if not VIDEO_FILE_ID and not SOURCE_URL:
+        missing.append('HEAVY_VIDEO_FILE_ID or HEAVY_SOURCE_URL')
+    if SOURCE_URL and not allowed_source_url(SOURCE_URL):
+        raise RuntimeError('Unsupported source URL for heavy worker')
     if missing:
         raise RuntimeError('Missing required configuration: ' + ', '.join(missing))
     if FILE_SIZE > MAX_INPUT_BYTES:
@@ -417,8 +436,41 @@ def send_live_photo(video_path, photo_path):
         )
 
 
+def download_public_social_source(path):
+    # Resolve the user's /status link on a GitHub runner, away from Render's
+    # 512 MB instance and its blocked social-video CDN routes.
+    # Only approved social HTTPS hosts are accepted.
+    if not allowed_source_url(SOURCE_URL):
+        raise RuntimeError('Unsupported URL for Status HQ worker')
+    output_template = str(path.parent / 'source-social.%(ext)s')
+    cmd = [
+        sys.executable, '-m', 'yt_dlp',
+        '--no-playlist', '--no-warnings', '--no-progress',
+        '--js-runtimes', 'node', '--remote-components', 'ejs:github',
+        '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+        '--merge-output-format', 'mp4',
+        '-o', output_template,
+        '--print', 'after_move:filepath',
+        '--', SOURCE_URL,
+    ]
+    result = run(cmd, timeout=420)
+    filenames = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    candidates = ([Path(filenames[-1])] if filenames else [])
+    candidates += list(path.parent.glob('source-social.*'))
+    selected = next((file for file in candidates if file.is_file() and file.stat().st_size), None)
+    if not selected:
+        raise RuntimeError('yt-dlp worker produced no playable source video')
+    if selected.stat().st_size > MAX_INPUT_BYTES:
+        raise RuntimeError('Public source exceeds heavy worker size limit')
+    shutil.move(str(selected), str(path))
+    set_progress(30)
+
+
 def download_source(path):
     set_progress(5)
+    if SOURCE_URL:
+        download_public_social_source(path)
+        return
     app = Client('heavy_media_worker', api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True)
     with app:
         downloaded = app.download_media(VIDEO_FILE_ID, file_name=str(path))

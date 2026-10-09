@@ -1,0 +1,21 @@
+name: MediaX Render live PayPing web-only parity
+on:
+  push:
+    branches: [infra/mediax-render-standby]
+    paths:
+      - 'scripts/render-live-web-parity-smoke.mjs'
+      - '.github/workflows/render-live-web-parity.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live-web-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Smoke Render web-only PayPing origin and deny bot/gateway routes
+        run: node scripts/render-live-web-parity-smoke.mjs

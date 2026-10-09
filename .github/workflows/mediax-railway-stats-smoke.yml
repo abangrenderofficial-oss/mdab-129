@@ -22,7 +22,7 @@ jobs:
         with:
           node-version: '24'
       - name: Install without postinstall network probes
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        run: npm install --ignore-scripts --no-audit --no-fund
       - name: Verify untouched production defaults and JS syntax
         run: |
           node --check src/bot/stats.js

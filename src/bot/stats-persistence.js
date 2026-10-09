@@ -6,6 +6,7 @@ import path from 'node:path';
  * MediaX statistics storage.
  *
  * file (default): original Railway behaviour; no production changes.
+ * mirror: Railway local file remains authoritative; shadow-copy snapshots to Turso.
  * turso: durable shared storage for a controlled Railway -> Render migration.
  * Only Railway may seed Turso using the local /data file; Render must NEVER
  * bootstrap a missing record to an empty state.
@@ -21,8 +22,8 @@ export function createStatsPersistence({
   fs = { mkdir, readFile, rename, writeFile },
 } = {}) {
   if (!filePath) throw new Error('Stats filePath is required');
-  if (!['file', 'turso'].includes(backend)) throw new Error('Invalid MEDIAX_STATS_BACKEND');
-  if (backend === 'turso' && (!url || !authToken)) throw new Error('Turso statistics ENV is missing');
+  if (!['file', 'mirror', 'turso'].includes(backend)) throw new Error('Invalid MEDIAX_STATS_BACKEND');
+  if (backend !== 'file' && (!url || !authToken)) throw new Error('Turso statistics ENV is missing');
   if (backend === 'turso' && seedFromFile && process.env.MEDIAX_MODE === 'active') {
     throw new Error('Seeding from Render active runtime is forbidden');
   }
@@ -67,8 +68,37 @@ export function createStatsPersistence({
     }
     return raw;
   }
+  async function shadowSync(state) {
+    const c = await ensureSchema();
+    // First-run immutable backup for rollback if the primary file changes.
+    await c.execute(`CREATE TABLE IF NOT EXISTS mediax_statistics_seed_backup (
+      namespace TEXT PRIMARY KEY,
+      payload_json TEXT NOT NULL,
+      saved_at TEXT NOT NULL
+    )`);
+    const now = new Date().toISOString();
+    const value = JSON.stringify(validate(state));
+    await c.execute({
+      sql: 'INSERT OR IGNORE INTO mediax_statistics_seed_backup(namespace, payload_json, saved_at) VALUES (?, ?, ?)',
+      args: [namespace, value, now],
+    });
+    await c.execute({
+      sql: `INSERT INTO mediax_statistics_snapshot(namespace, payload_json, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(namespace) DO UPDATE SET payload_json = excluded.payload_json, updated_at = excluded.updated_at`,
+      args: [namespace, value, now],
+    });
+  }
   async function load() {
     if (backend === 'file') return readLocal();
+    if (backend === 'mirror') {
+      const local = await readLocal();
+      if (!local) throw new Error('Railway statistics file missing; refusing to mirror an empty snapshot');
+      validate(local);
+      try { await shadowSync(local); }
+      catch (error) { console.warn('[stats] mirror sync unavailable:', error?.message); }
+      return local;
+    }
     const c = await ensureSchema();
     const get = () => c.execute({
       sql: 'SELECT payload_json FROM mediax_statistics_snapshot WHERE namespace = ?',
@@ -94,6 +124,12 @@ export function createStatsPersistence({
   async function persist(state) {
     validate(state);
     if (backend === 'file') return writeLocal(state);
+    if (backend === 'mirror') {
+      await writeLocal(state); // Railway writes stay authoritative even if Turso fails.
+      try { await shadowSync(state); }
+      catch (error) { console.warn('[stats] mirror sync unavailable:', error?.message); }
+      return;
+    }
     const c = await ensureSchema();
     await c.execute({
       sql: `UPDATE mediax_statistics_snapshot

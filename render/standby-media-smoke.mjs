@@ -9,10 +9,26 @@ const execFileAsync = promisify(execFile);
 const started = Date.now();
 const cases = [
   ['instagram', 'https://www.instagram.com/reel/DdVLsscjj2o/?stkn=MXV3a2hncmE3cWZheQ=='],
-  ['threads', 'https://www.threads.com/share/BAS3TS_OHB/'],
-  ['threads', 'https://www.threads.com/share/_6cMYsy0h/'],
   ['youtube', 'https://youtu.be/RKdxQwnRRqw?si=GJX9HDe4OBsxwBYQ'],
 ];
+function safeError(error) {
+  return String(error?.message || error || 'unknown')
+    .replace(/https?:\/\/[^\s"']+/g, '[url-redacted]')
+    .replace(/(?:token|secret|apikey|password|authorization)[=:]\S+/gi, '[secret-redacted]')
+    .replace(/\s+/g, ' ').slice(0, 440);
+}
+async function probeHttp(label, url) {
+  try {
+    const r=await fetch(url,{signal:AbortSignal.timeout(9000),headers:{'user-agent':'Mozilla/5.0','accept':'application/json,text/html'}});
+    log('MEDIAX_RENDER_UPSTREAM',{label,status:r.status,ok:r.ok,finalHost:new URL(r.url).hostname});
+    await r.body?.cancel().catch(()=>{});
+  } catch(e) {
+    log('MEDIAX_RENDER_UPSTREAM',{label,ok:false,reason:String(e?.name||'fetch_failed').slice(0,90)});
+  }
+}
+await probeHttp('instagram_page','https://www.instagram.com/reel/DdVLsscjj2o/');
+await probeHttp('weirddl_info','https://weirddl.sbs/api/info?url=https%3A%2F%2Fyoutu.be%2FRKdxQwnRRqw');
+
 function log(name, data) { console.log(name, JSON.stringify(data)); }
 async function binaryProbe(label, binary, args, ms=12000) {
   try {
@@ -53,7 +69,7 @@ for(const [platform,url] of cases) {
     const result={platform,ok,elapsedMs:Date.now()-time,counts,...(!ok?{reason:'no_media_resolved'}:{})};
     results.push(result);log('MEDIAX_RENDER_RESOLVER',result);
   } catch(err) {
-    const result={platform,ok:false,elapsedMs:Date.now()-time,reason:String(err?.code||err?.message||'unknown').slice(0,220)};
+    const result={platform,ok:false,elapsedMs:Date.now()-time,reason:String(err?.code||'unknown').slice(0,100),detail:safeError(err)};
     results.push(result);log('MEDIAX_RENDER_RESOLVER',result);
   }
 }

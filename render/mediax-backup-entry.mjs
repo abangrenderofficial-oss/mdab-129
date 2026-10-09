@@ -94,8 +94,13 @@ async function probeStatsSnapshot(force = false) {
           : {ready: false, reason: "invalid_snapshot"};
       }
     }
-  } catch {
-    result = {ready: false, reason: "database_unavailable_or_snapshot_table_missing"};
+  } catch (error) {
+    const message = String(error?.message || "").toLowerCase();
+    const reason = message.includes("no such table") ? "snapshot_table_missing"
+      : (message.includes("unauthorized") || message.includes("401") || message.includes("403"))
+        ? "database_auth_failed"
+      : "database_query_failed";
+    result = {ready: false, reason};
   } finally {
     try { db?.close(); } catch {}
   }

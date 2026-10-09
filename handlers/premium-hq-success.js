@@ -11,6 +11,11 @@ function positiveId(value) {
   return Number.isSafeInteger(id) && id > 0 ? id : 0;
 }
 
+function signedChatId(value) {
+  const id = Number(value || 0);
+  return Number.isSafeInteger(id) && id !== 0 ? id : 0;
+}
+
 function validSignature(provided, expected) {
   const left = Buffer.from(String(provided || '').trim().toLowerCase(), 'utf8');
   const right = Buffer.from(String(expected || '').trim().toLowerCase(), 'utf8');
@@ -28,7 +33,7 @@ export default async function handler(req, res) {
   if (!token) return json(res, 503, { ok: false, error: 'bot_token_missing' });
 
   const body = req.body && typeof req.body === 'object' ? req.body : {};
-  const chatId = positiveId(body.chat_id);
+  const chatId = signedChatId(body.chat_id);
   const userId = positiveId(body.user_id);
   const event = String(body.event || '').trim();
   const completionKey = String(body.completion_key || '').trim().slice(0, 240);

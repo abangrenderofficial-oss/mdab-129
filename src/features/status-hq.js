@@ -193,6 +193,15 @@ export async function processStatusButton(callbackQuery, context = {}) {
   const heavyCandidate = hqRoute.offload;
   if (!chatId) return true;
 
+  if (hqRoute.oversized) {
+    await telegram('answerCallbackQuery', {
+      callback_query_id: callbackQuery.id,
+      text: 'Video melebihi had 200 MB untuk Status HQ.',
+      show_alert: true,
+    }).catch(() => {});
+    return true;
+  }
+
   // Render's free instance must never fall back to its CPU-bound local encoder
   // for a video button without a Telegram file_id. Ask for a fresh video instead.
   if (hqRoute.requiresVideo) {

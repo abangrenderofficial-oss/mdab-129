@@ -1,0 +1,26 @@
+name: MediaX Render worker Telegram credential probe
+on:
+  push:
+    branches:
+      - infra/mediax-render-standby
+    paths:
+      - 'scripts/render-hq-telegram-readiness.mjs'
+      - '.github/workflows/render-telegram-readiness.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  read-only-worker-bot-auth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+      TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify GitHub worker bot identity and existing webhook (read only)
+        run: node scripts/render-hq-telegram-readiness.mjs

@@ -16,6 +16,32 @@ const readinessRequired = [
   "BAYARCASH_PORTAL_KEY",
 ];
 const readinessMissing = readinessRequired.filter((key) => !String(process.env[key] || "").trim());
+
+// Railway user-defined feature keys only; exclude its generated RAILWAY_*,
+// source build settings and local volume paths. Never print ENV values.
+const railwayFeatureKeys = [
+  "AFFILIATE_COMMISSION_PERCENT", "AFFILIATE_HOLD_DAYS", "AFFILIATE_MIN_WITHDRAW_RM",
+  "BAYARCASH_API_SECRET_KEY", "BAYARCASH_API_TOKEN", "BAYARCASH_PAYER_EMAIL",
+  "BAYARCASH_PORTAL_KEY", "BAYARCASH_SANDBOX", "BAYARCASH_SANDBOX_API_SECRET_KEY",
+  "BAYARCASH_SANDBOX_API_TOKEN", "BAYARCASH_SANDBOX_PORTAL_KEY",
+  "BOT_OWNER_ID", "CHANNEL_GATE_TRACE_USER_ID", "CONTENT_BRIDGE_SECRET",
+  "CONTENT_MANAGER_URL", "DAILY_FORCE_REPAIR_USER_IDS", "DOWNLOADER_TIMEOUT_MS",
+  "GITHUB_ACTIONS_TOKEN", "HEAVY_VIDEO_MAX_MB", "INSTAGRAM_MUX_SMOKE_URL",
+  "INSTAGRAM_STORY_SMOKE_URL", "NTFY_PAYMENT_TOPIC", "PAYPING_SHARED_CONFIG_ENABLED",
+  "SETUP_SECRET", "STATUS_HQ_SELFTEST_ENABLED", "STATUS_HQ_SELFTEST_URL",
+  "TELEGRAM_BOT_TOKEN", "TELEGRAM_WEBHOOK_SECRET", "TURSO_AUTH_TOKEN",
+  "TURSO_DATABASE_URL", "UPDATE_DEDUPE_TTL_MS", "UPDATE_STALE_AFTER_MS",
+  "WEBPUSH_VAPID_PRIVATE_KEY", "WEBPUSH_VAPID_PUBLIC_KEY", "WEBPUSH_VAPID_SUBJECT",
+];
+const featureMissingKeys = railwayFeatureKeys.filter((key) =>
+  !Object.prototype.hasOwnProperty.call(process.env, key));
+console.log("MEDIAX_BACKUP_FEATURE_ENV_PARITY", JSON.stringify({
+  keyCount: railwayFeatureKeys.length,
+  presentCount: railwayFeatureKeys.length - featureMissingKeys.length,
+  missingNames: featureMissingKeys,
+  note: "Presence check only; external authorization and runtime functionality not validated",
+}));
+
 const rawRenderBaseUrl = String(process.env.PUBLIC_BASE_URL || "").trim();
 const renderBaseUrlCorrect = (rawRenderBaseUrl.endsWith("/")
   ? rawRenderBaseUrl.slice(0, -1) : rawRenderBaseUrl)

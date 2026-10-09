@@ -41,6 +41,10 @@ jobs:
       - name: Prepare isolated encoder test
         run: |
           python -m pip install --disable-pip-version-check --quiet 'kurigram[fast]==2.2.26' requests
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y ffmpeg
+          fi
           ffmpeg -version | head -n 1
       - name: Verify HQ codec, audio retention and size
         run: python scripts/render_hq_worker_selftest.py

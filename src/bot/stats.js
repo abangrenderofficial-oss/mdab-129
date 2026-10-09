@@ -256,6 +256,19 @@ export async function markJoinPromptSent(userId) {
   return true;
 }
 
+// Called only when Railway explicitly enables MEDIAX_STATS_BACKEND=mirror.
+// It loads the existing /data snapshot and seeds Turso before the first user request.
+// Production's default file mode and Render's standby mode never execute this.
+export async function warmMirrorStatsOnStartup() {
+  if (STATS_BACKEND !== 'mirror') return {attempted:false};
+  const state = await loadState();
+  return {
+    attempted: true,
+    userRecords: Object.keys(state.users || {}).length,
+    monthBuckets: Object.keys(state.monthlyDownloads || {}).length,
+  };
+}
+
 export async function getUsageStats() {
   await writeQueue;
   const state = await loadState();

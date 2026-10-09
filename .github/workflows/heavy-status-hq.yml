@@ -13,8 +13,14 @@ on:
         default: '0'
         type: string
       video_file_id:
-        description: Telegram Bot API video file_id
-        required: true
+        description: Telegram Bot API video file_id (optional for approved /status source URL)
+        required: false
+        default: ''
+        type: string
+      source_url:
+        description: Public HTTPS social media URL for Render /status offload (no secrets)
+        required: false
+        default: ''
         type: string
       file_size:
         description: Source video size in bytes
@@ -65,6 +71,7 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       HEAVY_CHAT_ID: ${{ inputs.chat_id }}
       HEAVY_VIDEO_FILE_ID: ${{ inputs.video_file_id }}
+      HEAVY_SOURCE_URL: ${{ inputs.source_url }}
       HEAVY_FILE_SIZE: ${{ inputs.file_size }}
       HEAVY_ACTION: status_hq
       HEAVY_SOURCE_KIND: ${{ inputs.source_kind }}
@@ -90,8 +97,8 @@ jobs:
           fi
           ffmpeg -version | head -n 1
 
-      - name: Install MTProto client
-        run: python -m pip install --disable-pip-version-check --quiet 'kurigram[fast]==2.2.26' requests
+      - name: Install MTProto client and optional URL resolver
+        run: python -m pip install --disable-pip-version-check --quiet 'kurigram[fast]==2.2.26' requests 'yt-dlp>=2026.8.1'
 
       - name: Process Status HQ
         shell: bash
@@ -113,7 +120,7 @@ jobs:
           python scripts/heavy_status_worker.py
 
       - name: Record Premium HQ delivery
-        if: ${{ success() && inputs.completion_callback_url != '' && inputs.user_id != '0' }}
+        if: ${{ success() && inputs.source_kind != 'manual_synthetic' && inputs.completion_callback_url != '' && inputs.user_id != '0' }}
         shell: bash
         env:
           COMPLETION_CALLBACK_URL: ${{ inputs.completion_callback_url }}
@@ -174,7 +181,7 @@ jobs:
         run: python scripts/heavy_status_android_worker.py
 
       - name: Record Android HQ delivery
-        if: ${{ success() && inputs.completion_callback_url != '' && inputs.user_id != '0' }}
+        if: ${{ success() && inputs.source_kind != 'manual_synthetic' && inputs.completion_callback_url != '' && inputs.user_id != '0' }}
         shell: bash
         env:
           COMPLETION_CALLBACK_URL: ${{ inputs.completion_callback_url }}

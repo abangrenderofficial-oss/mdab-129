@@ -182,7 +182,7 @@ export async function hasChannelGateRequired(userId) {
   return (await getChannelUseCount(userId)) >= CHANNEL_GATE_THRESHOLD;
 }
 
-export async function markPremiumHqCompleted(userId, completionKey = '') {
+export async function markPremiumHqCompleted(userId, completionKey = '', { recordCompletionUse = false } = {}) {
   const key = validUserKey(userId);
   if (!key) return false;
 
@@ -217,6 +217,12 @@ export async function markPremiumHqCompleted(userId, completionKey = '') {
 
     if (counted) {
       user.premiumHqCompletedCount = Math.max(0, Number(user.premiumHqCompletedCount || 0)) + 1;
+      if (recordCompletionUse) {
+        // One mutation: Telegram worker callback retries cannot double count HQ
+        // or skip marking usage between two separately persisted writes.
+        user.statusHq = true;
+        user.completedUse = true;
+      }
     }
     user.premiumHqCompleted = user.channelUseCount >= PREMIUM_HQ_CHANNEL_GATE_THRESHOLD;
   });

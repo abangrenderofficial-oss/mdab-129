@@ -171,7 +171,30 @@ async function resolveInstagram(url) {
     return resolveInstagramStory(url);
   }
 
-  const media = await parseMedia(url);
+  let media;
+  try {
+    media = await parseMedia(url);
+  } catch (sourceError) {
+    // Render data-centre IPs can return Instagram metadata with zero directly
+    // usable yt-dlp formats. In that one case, attempt the existing merged MP4
+    // provider instead of failing before the ordinary provider fallback.
+    if (sourceError?.code !== 'NO_MEDIA') throw sourceError;
+    try {
+      const merged = await resolveInstagramProviderVideo(url);
+      if (merged?.url) {
+        console.info('[instagram-resolver] Render no-formats fallback recovered merged video');
+        return {
+          platform: 'Instagram', canonicalUrl: url,
+          title: 'Instagram Reel', thumbnail: '', images: [],
+          videos: [{ ...merged, hasAudio: true }], audios: [],
+        };
+      }
+    } catch (providerError) {
+      console.warn('[instagram-resolver] no-formats provider fallback failed:',
+        providerError?.code || providerError?.name || 'provider_unavailable');
+    }
+    throw sourceError;
+  }
   const canonicalUrl = media?.canonicalUrl || url;
   const videos = Array.isArray(media?.videos) ? media.videos.filter((item) => item?.url) : [];
   const existingAudios = Array.isArray(media?.audios)

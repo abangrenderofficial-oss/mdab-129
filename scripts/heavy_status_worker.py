@@ -3,6 +3,10 @@ import math
 import os
 import subprocess
 import tempfile
+import shutil
+import sys
+from urllib.parse import urlparse, urljoin
+import ipaddress
 from pathlib import Path
 
 import requests
@@ -14,6 +18,8 @@ API_ID = int(os.environ.get('TELEGRAM_API_ID', '0') or 0)
 API_HASH = os.environ.get('TELEGRAM_API_HASH', '').strip()
 CHAT_ID = int(os.environ.get('HEAVY_CHAT_ID', '0') or 0)
 VIDEO_FILE_ID = os.environ.get('HEAVY_VIDEO_FILE_ID', '').strip()
+SOURCE_URL = os.environ.get('HEAVY_SOURCE_URL', '').strip()
+SOURCE_KIND = os.environ.get('HEAVY_SOURCE_KIND', 'link').strip()
 FILE_SIZE = int(os.environ.get('HEAVY_FILE_SIZE', '0') or 0)
 ACTION = os.environ.get('HEAVY_ACTION', 'status_hq').strip() or 'status_hq'
 PROGRESS_MESSAGE_ID = int(os.environ.get('HEAVY_PROGRESS_MESSAGE_ID', '0') or 0)
@@ -21,6 +27,19 @@ SOURCE_MESSAGE_ID = int(os.environ.get('HEAVY_SOURCE_MESSAGE_ID', '0') or 0)
 MAX_INPUT_MB = int(os.environ.get('HEAVY_VIDEO_MAX_MB', '250') or 250)
 MAX_INPUT_BYTES = MAX_INPUT_MB * MB
 BOT_API_BASE = os.environ.get('TELEGRAM_API_BASE_URL', 'https://api.telegram.org').rstrip('/')
+
+
+def allowed_source_url(url):
+    try:
+        parsed = urlparse(str(url or ''))
+        host = (parsed.hostname or '').lower()
+        trusted = ('tiktok.com', 'instagram.com', 'threads.com', 'threads.net',
+                   'youtube.com', 'youtu.be', 'twitter.com', 'x.com')
+        return (parsed.scheme == 'https' and not parsed.username and
+                not parsed.password and parsed.port is None and len(url) <= 1500 and
+                any(host == d or host.endswith('.' + d) for d in trusted))
+    except (ValueError, TypeError):
+        return False
 
 
 def require_config():
@@ -33,8 +52,13 @@ def require_config():
         missing.append('TELEGRAM_API_HASH')
     if not CHAT_ID:
         missing.append('HEAVY_CHAT_ID')
-    if not VIDEO_FILE_ID:
-        missing.append('HEAVY_VIDEO_FILE_ID')
+    if SOURCE_KIND == 'manual_synthetic':
+        if (VIDEO_FILE_ID != 'SYNTHETIC_TEST_ONLY' or SOURCE_URL or ACTION != 'status_hq' or CHAT_ID <= 0):
+            raise RuntimeError('Manual synthetic HQ requires private chat ID, synthetic sentinel and status_hq action')
+    elif not VIDEO_FILE_ID and not SOURCE_URL:
+        missing.append('HEAVY_VIDEO_FILE_ID or HEAVY_SOURCE_URL')
+    if SOURCE_URL and not allowed_source_url(SOURCE_URL):
+        raise RuntimeError('Unsupported source URL for heavy worker')
     if missing:
         raise RuntimeError('Missing required configuration: ' + ', '.join(missing))
     if FILE_SIZE > MAX_INPUT_BYTES:
@@ -58,6 +82,8 @@ def telegram_call(method, data=None, files=None, timeout=180):
 
 
 def status_caption():
+    if SOURCE_KIND == 'manual_synthetic':
+        return '🧪 MediaX Render HQ test — video sintetik 2 saat (tiada data pengguna).'
     try:
         me = telegram_call('getMe', timeout=30) or {}
         username = str(me.get('username') or '').strip().lstrip('@')
@@ -351,6 +377,40 @@ def encode_live_wallpaper(input_path, video_path, photo_path, probe):
     )
 
 
+
+def validate_premium_status_output(source_path, output_path):
+    # Fail closed before Telegram send: preserve source audio and enforce HQ codec.
+    def streams(path):
+        result = run([
+            'ffprobe', '-v', 'error', '-show_entries',
+            'stream=codec_type,codec_name,pix_fmt', '-of', 'json', str(path)
+        ], timeout=60)
+        return json.loads(result.stdout or '{}').get('streams') or []
+
+    original = streams(source_path)
+    encoded = streams(output_path)
+    video = next((stream for stream in encoded if stream.get('codec_type') == 'video'), None)
+    if not video or video.get('codec_name') != 'hevc':
+        raise RuntimeError('Premium HQ output missing HEVC video track')
+    if video.get('pix_fmt') not in ('yuv420p', 'yuv420p10le'):
+        raise RuntimeError('Premium HQ output pixel format is not iPhone compatible')
+    source_audio = any(stream.get('codec_type') == 'audio' for stream in original)
+    output_audio = next((stream for stream in encoded if stream.get('codec_type') == 'audio'), None)
+    if source_audio and not output_audio:
+        raise RuntimeError('Premium HQ audio was lost during encoding')
+    if output_audio and output_audio.get('codec_name') != 'aac':
+        raise RuntimeError('Premium HQ audio codec is not AAC')
+    if not output_path.exists() or output_path.stat().st_size > int(47 * MB):
+        raise RuntimeError('Premium HQ output exceeds Telegram-safe size')
+    print('RENDER_HQ_WORKER_VALIDATION ' + json.dumps({
+        'ok': True, 'videoCodec': 'hevc',
+        'pixelFormat': video.get('pix_fmt'),
+        'sourceHasAudio': source_audio,
+        'outputHasAudio': bool(output_audio),
+        'sizeMb': round(output_path.stat().st_size / MB, 2),
+    }), flush=True)
+
+
 def send_status_video(path, android=False):
     metadata = probe_video(path)
     data = {
@@ -383,8 +443,146 @@ def send_live_photo(video_path, photo_path):
         )
 
 
+def allowed_provider_media_url(value):
+    try:
+        u = urlparse(value)
+        hostname = (u.hostname or '').lower()
+        if u.scheme not in ('https', 'http') or not hostname or u.username or u.password:
+            return False
+        if hostname == 'localhost' or hostname.endswith('.local'):
+            return False
+        try:
+            return ipaddress.ip_address(hostname).is_global
+        except ValueError:
+            return True
+    except (TypeError, ValueError):
+        return False
+
+
+def download_tikwm_source(path):
+    # TikTok often blocks GitHub/Render yt-dlp while TikWM can still serve a
+    # watermarked-free playable source. Fail over to yt-dlp if this provider fails.
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36',
+        'Accept': 'application/json',
+        'Referer': 'https://www.tikwm.com/',
+        'Origin': 'https://www.tikwm.com',
+    }
+    candidates = []
+    for method in ('GET', 'POST'):
+        try:
+            if method == 'GET':
+                resp = requests.get('https://www.tikwm.com/api/',
+                                    params={'url': SOURCE_URL, 'hd': 1},
+                                    headers=headers, timeout=(7, 15))
+            else:
+                resp = requests.post('https://www.tikwm.com/api/',
+                                     data={'url': SOURCE_URL, 'hd': 0},
+                                     headers=headers, timeout=(7, 15))
+            resp.raise_for_status()
+            payload = resp.json()
+            if payload.get('code') != 0 or not isinstance(payload.get('data'), dict):
+                continue
+            values = payload['data']
+            for key in ('hdplay', 'play'):
+                address = str(values.get(key) or '').strip()
+                if not address:
+                    continue
+                url = urljoin('https://www.tikwm.com/', address)
+                if allowed_provider_media_url(url) and url not in candidates:
+                    candidates.append(url)
+            if candidates:
+                break
+        except (requests.RequestException, ValueError) as exc:
+            print('RENDER_HQ_TIKWM_META_FAILED ' + type(exc).__name__, flush=True)
+    if not candidates:
+        raise RuntimeError('TikWM yielded no video candidates')
+    for address in candidates[:2]:
+        try:
+            with requests.get(address, stream=True,
+                              headers={**headers, 'Accept': 'video/*,*/*'},
+                              timeout=(8, 25)) as response:
+                response.raise_for_status()
+                size = 0
+                with path.open('wb') as dest:
+                    for piece in response.iter_content(chunk_size=256*1024):
+                        if not piece:
+                            continue
+                        size += len(piece)
+                        if size > MAX_INPUT_BYTES:
+                            raise RuntimeError('TikWM media exceeds 500 MB')
+                        dest.write(piece)
+                if size > 1024:
+                    # Guard against anti-bot HTML responses that return HTTP 200.
+                    if 'text/html' in str(response.headers.get('content-type') or '').lower():
+                        raise RuntimeError('TikWM returned HTML instead of a video')
+                    probe_video(path)
+                    print('RENDER_HQ_TIKWM_SOURCE ' + json.dumps(
+                        {'ok': True, 'bytes': size}), flush=True)
+                    return
+        except (requests.RequestException, OSError, RuntimeError) as exc:
+            print('RENDER_HQ_TIKWM_MEDIA_FAILED ' + type(exc).__name__, flush=True)
+        path.unlink(missing_ok=True)
+    raise RuntimeError('TikWM videos are not downloadable from worker IP')
+
+
+def download_public_social_source(path):
+    # Resolve the user's /status link on a GitHub runner, away from Render's
+    # 512 MB instance and its blocked social-video CDN routes.
+    # Only approved social HTTPS hosts are accepted.
+    if not allowed_source_url(SOURCE_URL):
+        raise RuntimeError('Unsupported URL for Status HQ worker')
+    host = (urlparse(SOURCE_URL).hostname or '').lower()
+    if host == 'tiktok.com' or host.endswith('.tiktok.com'):
+        try:
+            download_tikwm_source(path)
+            set_progress(30)
+            return
+        except Exception as exc:
+            print('RENDER_HQ_TIKWM_FALLBACK ' + type(exc).__name__, flush=True)
+
+    output_template = str(path.parent / 'source-social.%(ext)s')
+    cmd = [
+        sys.executable, '-m', 'yt_dlp',
+        '--no-playlist', '--no-warnings', '--no-progress',
+        '--js-runtimes', 'node', '--remote-components', 'ejs:github',
+        '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+        '--merge-output-format', 'mp4',
+        '-o', output_template,
+        '--print', 'after_move:filepath',
+        '--', SOURCE_URL,
+    ]
+    result = run(cmd, timeout=420)
+    filenames = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    candidates = ([Path(filenames[-1])] if filenames else [])
+    candidates += list(path.parent.glob('source-social.*'))
+    selected = next((file for file in candidates if file.is_file() and file.stat().st_size), None)
+    if not selected:
+        raise RuntimeError('yt-dlp worker produced no playable source video')
+    if selected.stat().st_size > MAX_INPUT_BYTES:
+        raise RuntimeError('Public source exceeds heavy worker size limit')
+    shutil.move(str(selected), str(path))
+    set_progress(30)
+
+
 def download_source(path):
     set_progress(5)
+    if SOURCE_KIND == 'manual_synthetic':
+        chat = telegram_call('getChat', {'chat_id': str(CHAT_ID)}, timeout=20)
+        if chat.get('type') != 'private' or int(chat.get('id') or 0) != CHAT_ID:
+            raise RuntimeError('Manual synthetic test is permitted only for an existing private Telegram chat')
+        run([
+            'ffmpeg','-hide_banner','-loglevel','error','-y',
+            '-f','lavfi','-i','testsrc2=size=320x180:rate=15',
+            '-f','lavfi','-i','sine=frequency=440:sample_rate=44100',
+            '-t','2','-c:v','libx264','-preset','ultrafast',
+            '-c:a','aac','-f','mp4',str(path),
+        ], timeout=45)
+        set_progress(30)
+        return
+    if SOURCE_URL:
+        download_public_social_source(path)
+        return
     app = Client('heavy_media_worker', api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True)
     with app:
         downloaded = app.download_media(VIDEO_FILE_ID, file_name=str(path))
@@ -432,6 +630,7 @@ def main():
             set_progress(42)
             output = temp / 'status-hq.mp4'
             encode_status(source, output, probe, android=False)
+            validate_premium_status_output(source, output)
             set_progress(88)
             set_progress(100)
             send_status_video(output, android=False)

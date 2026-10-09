@@ -11,6 +11,7 @@ import {
   galleryMediaMeta,
 } from '../bot/media-actions.js';
 import { localMediaLane } from '../bot/job-lanes.js';
+import { decideStatusHqOffload } from '../render/hq-offload-policy.js';
 import { removeHeavyProgress, startHeavyStatusProgress, startStatusProgress } from '../bot/progress.js';
 import { statusAndroidVideoCaption } from '../bot/status-caption.js';
 
@@ -49,7 +50,16 @@ export async function processStatusAndroidButton(callbackQuery, context = {}) {
   const gallery = galleryMediaMeta(action, MEDIA_STATUS_HQ_ANDROID);
   const sourceUrl = gallery ? '' : callbackSourceUrl(action, MEDIA_STATUS_HQ_ANDROID, caption);
   const fileSize = Number(video?.file_size || gallery?.fileSize || 0);
-  const heavyCandidate = Boolean(gallery && videoFileId && shouldUseHeavyWorker({ file_size: fileSize }));
+  const originalHeavyCandidate = Boolean(gallery && videoFileId && shouldUseHeavyWorker({ file_size: fileSize }));
+  const hqRoute = decideStatusHqOffload({
+    mode: process.env.MEDIAX_MODE,
+    videoFileId,
+    gallery: Boolean(gallery),
+    fileSize,
+    galleryHeavyCandidate: originalHeavyCandidate,
+    maxBytes: heavyVideoLimitBytes(),
+  });
+  const heavyCandidate = hqRoute.offload;
   if (!chatId) return true;
 
   if (!videoFileId) {
@@ -102,9 +112,9 @@ export async function processStatusAndroidButton(callbackQuery, context = {}) {
         videoFileId,
         fileSize,
         action: 'status_hq_android',
-        sourceKind: 'gallery',
+        sourceKind: gallery ? 'gallery' : 'link',
         progressMessageId: progressMessage?.message_id || 0,
-        sourceMessageId: gallery.sourceMessageId,
+        sourceMessageId: gallery?.sourceMessageId || callbackQuery?.message?.message_id || 0,
         completionCallbackUrl: baseUrl ? `${baseUrl}/api/premium-hq-success` : '',
       });
       return {androidHqDispatched:true};

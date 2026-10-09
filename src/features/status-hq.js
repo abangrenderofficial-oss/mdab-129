@@ -16,6 +16,7 @@ import {
   galleryMediaMeta,
 } from '../bot/media-actions.js';
 import { localMediaLane } from '../bot/job-lanes.js';
+import { decideStatusHqOffload } from '../render/hq-offload-policy.js';
 import { removeHeavyProgress, startHeavyStatusProgress, startImageStatusProgress, startStatusProgress } from '../bot/progress.js';
 import { sendDocumentFileUpload } from '../bot/telegram-document.js';
 import { statusImageCaption, statusVideoCaption } from '../bot/status-caption.js';
@@ -133,7 +134,37 @@ async function prepareStatusFromTelegramFile(fileId, { galleryCompatible = false
   return prepared;
 }
 
-export async function processStatusFromLink(chatId, url, platform, fence = null) {
+export async function processStatusFromLink(chatId, url, platform, fence = null, metadata = {}) {
+  // /status <link> has no Telegram video file_id yet. Keep the existing
+  // Railway command unchanged; active Render uses a URL-only GitHub job.
+  if (process.env.MEDIAX_MODE === 'active') {
+    if (cancelled(fence)) return false;
+    if (!heavyWorkerConfigured()) {
+      await sendMessage(chatId, '❌ Status HQ worker belum tersedia. Cuba semula kemudian.').catch(() => {});
+      return false;
+    }
+    const progressMessage = await startHeavyStatusProgress(chatId);
+    try {
+      const baseUrl = String(metadata.baseUrl || process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+      await dispatchHeavyMediaJob({
+        chatId,
+        userId: metadata.userId || 0,
+        videoFileId: '',
+        sourceUrl: url,
+        action: 'status_hq',
+        sourceKind: 'url',
+        progressMessageId: progressMessage?.message_id || 0,
+        sourceMessageId: metadata.sourceMessageId || 0,
+        completionCallbackUrl: baseUrl ? baseUrl + '/api/premium-hq-success' : '',
+      });
+      return { premiumVideoDispatched: true };
+    } catch (error) {
+      console.error('[status-hq/render-url] dispatch failed:', error?.code, error?.message);
+      await removeHeavyProgress(chatId, progressMessage?.message_id || 0);
+      await sendMessage(chatId, '❌ Status HQ worker tak dapat dimulakan. Cuba semula kemudian.').catch(() => {});
+      return false;
+    }
+  }
   let prepared = null;
   const progress = await startStatusProgress(chatId);
   try {
@@ -179,8 +210,38 @@ export async function processStatusButton(callbackQuery, context = {}) {
   const instagramStorySource = sourcePlatform === 'instagram' && isInstagramStoryUrl(sourceUrl);
   const gallery = galleryMediaMeta(action, MEDIA_STATUS_HQ);
   const fileSize = Number(video?.file_size || gallery?.fileSize || 0);
-  const heavyCandidate = Boolean(!isImage && gallery && videoFileId && shouldUseHeavyWorker({ file_size: fileSize }));
+  const originalHeavyCandidate = Boolean(!isImage && gallery && videoFileId && shouldUseHeavyWorker({ file_size: fileSize }));
+  const hqRoute = decideStatusHqOffload({
+    mode: process.env.MEDIAX_MODE,
+    isImage,
+    videoFileId,
+    gallery: Boolean(gallery),
+    fileSize,
+    galleryHeavyCandidate: originalHeavyCandidate,
+    maxBytes: heavyVideoLimitBytes(),
+  });
+  const heavyCandidate = hqRoute.offload;
   if (!chatId) return true;
+
+  if (hqRoute.oversized) {
+    await telegram('answerCallbackQuery', {
+      callback_query_id: callbackQuery.id,
+      text: 'Video melebihi had 200 MB untuk Status HQ.',
+      show_alert: true,
+    }).catch(() => {});
+    return true;
+  }
+
+  // Render's free instance must never fall back to its CPU-bound local encoder
+  // for a video button without a Telegram file_id. Ask for a fresh video instead.
+  if (hqRoute.requiresVideo) {
+    await telegram('answerCallbackQuery', {
+      callback_query_id: callbackQuery.id,
+      text: 'Status HQ memerlukan video Telegram. Sila hantar semula video atau link.',
+      show_alert: true,
+    }).catch(() => {});
+    return true;
+  }
 
   if (gallery && fileSize > heavyVideoLimitBytes()) {
     await telegram('answerCallbackQuery', {
@@ -223,9 +284,9 @@ export async function processStatusButton(callbackQuery, context = {}) {
         videoFileId,
         fileSize,
         action: 'status_hq',
-        sourceKind: 'gallery',
+        sourceKind: gallery ? 'gallery' : 'link',
         progressMessageId: progressMessage?.message_id || 0,
-        sourceMessageId: gallery.sourceMessageId,
+        sourceMessageId: gallery?.sourceMessageId || callbackQuery?.message?.message_id || 0,
         completionCallbackUrl: baseUrl ? `${baseUrl}/api/premium-hq-success` : '',
       });
       return { premiumVideoDispatched: true };

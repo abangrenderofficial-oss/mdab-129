@@ -25,10 +25,25 @@ export function shouldUseHeavyWorker(video = {}) {
   return fileSize > threshold;
 }
 
+function allowedPublicMediaUrl(raw) {
+  try {
+    const url = new URL(String(raw || '').trim());
+    if (url.protocol !== 'https:' || url.username || url.password || url.port) return false;
+    if (String(raw).length > 1500) return false;
+    const host = url.hostname.toLowerCase();
+    const domains = [
+      'tiktok.com', 'instagram.com', 'threads.com', 'threads.net',
+      'youtube.com', 'youtu.be', 'twitter.com', 'x.com',
+    ];
+    return domains.some(domain => host === domain || host.endsWith('.' + domain));
+  } catch { return false; }
+}
+
 export async function dispatchHeavyMediaJob({
   chatId,
   userId = 0,
   videoFileId,
+  sourceUrl = '',
   fileSize = 0,
   action = 'status_hq',
   sourceKind = 'link',
@@ -43,9 +58,15 @@ export async function dispatchHeavyMediaJob({
     throw error;
   }
 
-  if (!chatId || !videoFileId) {
-    const error = new Error('Heavy-media worker requires chatId and videoFileId.');
+  const isUrlSource = String(sourceUrl || '').trim().length > 0;
+  if (!chatId || (!videoFileId && !isUrlSource)) {
+    const error = new Error('Heavy-media worker requires chatId and a Telegram video file or social media URL.');
     error.code = 'HEAVY_WORKER_BAD_INPUT';
+    throw error;
+  }
+  if (isUrlSource && !allowedPublicMediaUrl(sourceUrl)) {
+    const error = new Error('Heavy worker source URL must be a supported public HTTPS social media link.');
+    error.code = 'HEAVY_WORKER_URL_DENIED';
     throw error;
   }
 
@@ -59,7 +80,11 @@ export async function dispatchHeavyMediaJob({
   const owner = String(process.env.GITHUB_WORKER_OWNER || DEFAULT_OWNER).trim();
   const repo = String(process.env.GITHUB_WORKER_REPO || DEFAULT_REPO).trim();
   const workflow = String(process.env.GITHUB_WORKER_WORKFLOW || DEFAULT_WORKFLOW).trim();
-  const ref = String(process.env.GITHUB_WORKER_REF || 'main').trim();
+  // Render must run the isolated, reviewed standby-branch worker. Railway's
+  // production workflow still defaults to main and is untouched.
+  const ref = process.env.MEDIAX_MODE === 'active'
+    ? String(process.env.MEDIAX_RENDER_WORKER_REF || 'infra/mediax-render-standby').trim()
+    : String(process.env.GITHUB_WORKER_REF || 'main').trim();
   const endpoint = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`;
 
   const response = await fetch(endpoint, {
@@ -76,10 +101,11 @@ export async function dispatchHeavyMediaJob({
       inputs: {
         chat_id: String(chatId),
         user_id: String(Math.max(0, Number(userId) || 0)),
-        video_file_id: String(videoFileId),
+        video_file_id: String(videoFileId || ''),
+        source_url: isUrlSource ? String(sourceUrl).trim() : '',
         file_size: String(size),
         action: String(action || 'status_hq'),
-        source_kind: String(sourceKind === 'gallery' ? 'gallery' : 'link'),
+        source_kind: String(isUrlSource ? 'url' : sourceKind === 'gallery' ? 'gallery' : 'link'),
         progress_message_id: String(Math.max(0, Number(progressMessageId) || 0)),
         source_message_id: String(Math.max(0, Number(sourceMessageId) || 0)),
         completion_callback_url: String(completionCallbackUrl || '').trim(),

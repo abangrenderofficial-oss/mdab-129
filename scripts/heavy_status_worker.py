@@ -19,6 +19,7 @@ API_HASH = os.environ.get('TELEGRAM_API_HASH', '').strip()
 CHAT_ID = int(os.environ.get('HEAVY_CHAT_ID', '0') or 0)
 VIDEO_FILE_ID = os.environ.get('HEAVY_VIDEO_FILE_ID', '').strip()
 SOURCE_URL = os.environ.get('HEAVY_SOURCE_URL', '').strip()
+SOURCE_KIND = os.environ.get('HEAVY_SOURCE_KIND', 'link').strip()
 FILE_SIZE = int(os.environ.get('HEAVY_FILE_SIZE', '0') or 0)
 ACTION = os.environ.get('HEAVY_ACTION', 'status_hq').strip() or 'status_hq'
 PROGRESS_MESSAGE_ID = int(os.environ.get('HEAVY_PROGRESS_MESSAGE_ID', '0') or 0)
@@ -51,7 +52,10 @@ def require_config():
         missing.append('TELEGRAM_API_HASH')
     if not CHAT_ID:
         missing.append('HEAVY_CHAT_ID')
-    if not VIDEO_FILE_ID and not SOURCE_URL:
+    if SOURCE_KIND == 'manual_synthetic':
+        if (VIDEO_FILE_ID != 'SYNTHETIC_TEST_ONLY' or SOURCE_URL or ACTION != 'status_hq' or CHAT_ID <= 0):
+            raise RuntimeError('Manual synthetic HQ requires private chat ID, synthetic sentinel and status_hq action')
+    elif not VIDEO_FILE_ID and not SOURCE_URL:
         missing.append('HEAVY_VIDEO_FILE_ID or HEAVY_SOURCE_URL')
     if SOURCE_URL and not allowed_source_url(SOURCE_URL):
         raise RuntimeError('Unsupported source URL for heavy worker')
@@ -78,6 +82,8 @@ def telegram_call(method, data=None, files=None, timeout=180):
 
 
 def status_caption():
+    if SOURCE_KIND == 'manual_synthetic':
+        return '🧪 MediaX Render HQ test — video sintetik 2 saat (tiada data pengguna).'
     try:
         me = telegram_call('getMe', timeout=30) or {}
         username = str(me.get('username') or '').strip().lstrip('@')
@@ -561,6 +567,19 @@ def download_public_social_source(path):
 
 def download_source(path):
     set_progress(5)
+    if SOURCE_KIND == 'manual_synthetic':
+        chat = telegram_call('getChat', {'chat_id': str(CHAT_ID)}, timeout=20)
+        if chat.get('type') != 'private' or int(chat.get('id') or 0) != CHAT_ID:
+            raise RuntimeError('Manual synthetic test is permitted only for an existing private Telegram chat')
+        run([
+            'ffmpeg','-hide_banner','-loglevel','error','-y',
+            '-f','lavfi','-i','testsrc2=size=320x180:rate=15',
+            '-f','lavfi','-i','sine=frequency=440:sample_rate=44100',
+            '-t','2','-c:v','libx264','-preset','ultrafast',
+            '-c:a','aac','-f','mp4',str(path),
+        ], timeout=45)
+        set_progress(30)
+        return
     if SOURCE_URL:
         download_public_social_source(path)
         return

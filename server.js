@@ -1,4 +1,6 @@
 import http from 'node:http';
+import { isWebOnlyRequestAllowed } from './src/render/web-only-routes.js';
+const RENDER_WEB_ONLY = process.env.MEDIAX_MODE === 'web_only';
 import { URL } from 'node:url';
 
 import healthHandler from './handlers/health.js';
@@ -197,6 +199,12 @@ const server = http.createServer(async (req, res) => {
     const host = req.headers.host || `127.0.0.1:${process.env.PORT || 3000}`;
     const url = new URL(req.url || '/', `http://${host}`);
 
+    if (RENDER_WEB_ONLY && !isWebOnlyRequestAllowed(url.pathname, req.method)) {
+      return res.status(503).json({
+        ok: false, error: 'render_web_only_bot_endpoints_disabled',
+      });
+    }
+    // PayPing page access does not trigger the Telegram scheduler or gateway handlers.
     req.query = parseQuery(url);
     req.body = await parseBody(req);
 
@@ -204,11 +212,17 @@ const server = http.createServer(async (req, res) => {
       return res.status(200).json({
         ok: true,
         service: 'telegram-social-downloader',
-        runtime: 'railway-node',
+        runtime: RENDER_WEB_ONLY ? 'render-web-only' : 'railway-node',
         architecture: 'isolated-features-v1',
       });
     }
 
+    if (RENDER_WEB_ONLY && url.pathname === '/healthz') {
+      return res.status(200).json({ok:true,mode:'web_only',telegramWebhookActive:false});
+    }
+    if (RENDER_WEB_ONLY && url.pathname === '/readyz') {
+      return res.status(200).json({ok:true,mode:'web_only',runtimeReady:true,externalPaymentsVerified:false});
+    }
     const handler = routes.get(url.pathname);
     if (!handler) {
       return res.status(404).json({ ok: false, error: 'not_found' });
@@ -229,6 +243,10 @@ const server = http.createServer(async (req, res) => {
 const port = Number(process.env.PORT || 3000);
 server.listen(port, '0.0.0.0', () => {
   console.log(`Downloader bot listening on 0.0.0.0:${port}`);
+  if (RENDER_WEB_ONLY) {
+    console.log('MEDIAX_RENDER_WEB_ONLY_READY — PayPing routes enabled; Telegram/webhook, payment callback and bot schedulers disabled');
+    return;
+  }
   if (String(process.env.MEDIAX_STATS_BACKEND || '').trim() === 'mirror') {
     void warmMirrorStatsOnStartup()
       .then((result) => console.log('MEDIAX_STATS_MIRROR_STARTUP', JSON.stringify(result)))

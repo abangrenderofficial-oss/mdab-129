@@ -170,6 +170,25 @@ if (mode !== "active") {
       console.log("MEDIAX_RENDER_STATS_READINESS", JSON.stringify(stats)));
     void probePaymentPortal().then((payment) =>
       console.log("MEDIAX_RENDER_BAYARCASH_READINESS", JSON.stringify(payment)));
+    if (process.env.MEDIAX_RENDER_STATUS_HQ_SMOKE === "1") {
+      // Real TikTok source -> production HQ encoder, without Telegram or webhook.
+      const hqTest = spawn(process.execPath, ["render/standby-status-hq-smoke.mjs"], {
+        stdio: "inherit", env: process.env,
+      });
+      const hqKiller = setTimeout(() => {
+        console.warn("MEDIAX_RENDER_HQ_E2E_TIMEOUT — 8 minute safety limit");
+        hqTest.kill("SIGTERM");
+      }, 480_000);
+      hqKiller.unref();
+      hqTest.on("exit", (code, signal) => {
+        clearTimeout(hqKiller);
+        console.log("MEDIAX_RENDER_HQ_PROCESS", JSON.stringify({ code, signal }));
+      });
+      hqTest.on("error", (error) => {
+        clearTimeout(hqKiller);
+        console.error("MEDIAX_RENDER_HQ_PROCESS_ERROR", String(error?.code || "spawn_failed"));
+      });
+    }
     if (process.env.MEDIAX_RENDER_MEDIA_SMOKE === "1") {
       // Run as a separate, killable process. The HTTP health endpoint is not blocked.
       const smoke = spawn(process.execPath, ["render/standby-media-smoke.mjs"], {

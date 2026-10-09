@@ -57,6 +57,9 @@ jobs:
       - name: Verify HQ codec, audio retention and size
         run: python scripts/render_hq_worker_selftest.py
       - name: Optional real TikTok worker benchmark (no Telegram)
+        # A public TikTok sample is blocked from GitHub-runner IPs. Do not
+        # repeatedly consume Actions minutes during ordinary branch deploys.
+        if: github.event_name == 'workflow_dispatch'
         continue-on-error: true
         timeout-minutes: 4
         run: |

@@ -47,8 +47,40 @@ def run_case(directory, with_audio):
     }), flush=True)
 
 
+def test_url_source_routing(directory):
+    assert worker.allowed_source_url('https://vt.tiktok.com/ZSqqYxc13/')
+    assert worker.allowed_source_url('https://www.youtube.com/watch?v=Ftffph3fVEs')
+    assert not worker.allowed_source_url('http://vt.tiktok.com/test')
+    assert not worker.allowed_source_url('https://localhost/private')
+    assert not worker.allowed_source_url('https://youtube.com.evil.org/test')
+    assert not worker.allowed_source_url('file:///etc/passwd')
+
+    from types import SimpleNamespace
+    path = directory / 'source-url-worker.bin'
+    output = directory / 'source-social.mp4'
+    output.write_bytes(b'synthetic-video-test-bytes')
+    prev_url, prev_run, prev_progress = worker.SOURCE_URL, worker.run, worker.set_progress
+    called = []
+    try:
+        worker.SOURCE_URL = 'https://vt.tiktok.com/ZSqqYxc13/'
+        def fake_run(cmd, timeout=0):
+            called.append((cmd, timeout))
+            assert '--' in cmd and cmd[-1] == worker.SOURCE_URL
+            assert '-m' in cmd and 'yt_dlp' in cmd
+            return SimpleNamespace(stdout=str(output) + '\\n')
+        worker.run = fake_run
+        worker.set_progress = lambda _value: None
+        worker.download_public_social_source(path)
+        assert path.read_bytes() == b'synthetic-video-test-bytes'
+        assert called and called[0][1] == 420
+        print('RENDER_HQ_URL_WORKER_SELFTEST_OK — URL validation and mocked GitHub worker source download')
+    finally:
+        worker.SOURCE_URL, worker.run, worker.set_progress = prev_url, prev_run, prev_progress
+
+
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory(prefix="render-hq-worker-test-") as temp:
         directory = Path(temp)
+        test_url_source_routing(directory)
         run_case(directory, True)
         run_case(directory, False)

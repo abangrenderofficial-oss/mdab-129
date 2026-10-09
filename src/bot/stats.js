@@ -1,5 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import path from 'node:path';
+import { createStatsPersistence } from './stats-persistence.js';
 import { sendMessage, telegram } from '../telegram.js';
 
 const EVENT_TYPES = new Set(['download', 'status_hq', 'live_wallpaper']);
@@ -36,35 +35,35 @@ function normalizeState(raw) {
   };
 }
 
+const statsPersistence = createStatsPersistence({ filePath: STATS_FILE });
+
 async function loadState() {
   if (!statePromise) {
-    statePromise = (async () => {
-      try {
-        const text = await readFile(STATS_FILE, 'utf8');
-        return normalizeState(JSON.parse(text));
-      } catch (error) {
-        if (error?.code !== 'ENOENT') console.warn('[stats] load failed:', error?.message);
-        return emptyState();
-      }
-    })();
+    statePromise = statsPersistence.load()
+      .then((raw) => raw == null ? emptyState() : normalizeState(raw))
+      .catch((error) => { statePromise = null; throw error; });
   }
   return statePromise;
 }
 
 async function persistState(state) {
-  await mkdir(path.dirname(STATS_FILE), { recursive: true });
-  const temp = `${STATS_FILE}.${process.pid}.tmp`;
-  await writeFile(temp, `${JSON.stringify(state)}\n`, 'utf8');
-  await rename(temp, STATS_FILE);
+  await statsPersistence.persist(state);
 }
 
 function mutate(mutator) {
-  writeQueue = writeQueue.then(async () => {
+  const pending = writeQueue.catch(() => {}).then(async () => {
     const state = await loadState();
     mutator(state);
-    await persistState(state);
-  }).catch((error) => {
+    try {
+      await persistState(state);
+    } catch (error) {
+      statePromise = null;
+      throw error;
+    }
+  });
+  writeQueue = pending.catch((error) => {
     console.error('[stats] write failed:', error?.message);
+    if (statsPersistence.backend === 'turso') throw error;
   });
   return writeQueue;
 }

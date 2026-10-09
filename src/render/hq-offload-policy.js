@@ -21,7 +21,7 @@ export function decideStatusHqOffload({
     reason: galleryHeavyCandidate ? 'legacy_gallery_heavy' : 'railway_local',
   };
   if (isImage) return { offload: false, requiresVideo: false, reason: 'image_local' };
-  if (oversized) return { offload: false, requiresVideo: false, reason: 'oversized' };
+  if (oversized) return { offload: false, requiresVideo: false, oversized: true, reason: 'oversized' };
   if (!videoReady) return {
     offload: false, requiresVideo: true, reason: 'telegram_video_file_id_missing',
   };

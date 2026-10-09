@@ -1,10 +1,15 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { createStatsPersistence } from './stats-persistence.js';
 import { sendMessage, telegram } from '../telegram.js';
 
 const EVENT_TYPES = new Set(['download', 'status_hq', 'live_wallpaper']);
 const STATS_FILE = String(process.env.STATS_FILE_PATH || '/data/bot-stats.json');
 const STATS_VERSION = 2;
+const STATS_BACKEND = String(process.env.MEDIAX_STATS_BACKEND || 'file').trim().toLowerCase();
+const alternateStorage = STATS_BACKEND === 'file' ? null : createStatsPersistence({
+  filePath: STATS_FILE, backend: STATS_BACKEND,
+});
 const CHANNEL_GATE_COUNTER_VERSION = 3;
 export const CHANNEL_GATE_THRESHOLD = 5;
 export const PREMIUM_HQ_CHANNEL_GATE_THRESHOLD = CHANNEL_GATE_THRESHOLD;
@@ -39,6 +44,10 @@ function normalizeState(raw) {
 async function loadState() {
   if (!statePromise) {
     statePromise = (async () => {
+      if (alternateStorage) {
+        try { return normalizeState(await alternateStorage.load()); }
+        catch (error) { statePromise = null; throw error; }
+      }
       try {
         const text = await readFile(STATS_FILE, 'utf8');
         return normalizeState(JSON.parse(text));
@@ -52,6 +61,7 @@ async function loadState() {
 }
 
 async function persistState(state) {
+  if (alternateStorage) return alternateStorage.persist(state);
   await mkdir(path.dirname(STATS_FILE), { recursive: true });
   const temp = `${STATS_FILE}.${process.pid}.tmp`;
   await writeFile(temp, `${JSON.stringify(state)}\n`, 'utf8');
@@ -64,6 +74,7 @@ function mutate(mutator) {
     mutator(state);
     await persistState(state);
   }).catch((error) => {
+    if (alternateStorage && STATS_BACKEND === 'turso') statePromise = null;
     console.error('[stats] write failed:', error?.message);
   });
   return writeQueue;

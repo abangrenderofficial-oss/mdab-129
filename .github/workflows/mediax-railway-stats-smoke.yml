@@ -1,0 +1,33 @@
+name: MediaX Railway Stats Migration Safety
+on:
+  push:
+    branches: [infra/mediax-railway-turso-stats]
+  pull_request:
+    paths:
+      - 'src/bot/stats*'
+      - 'scripts/mediax-stats-persistence-selftest.mjs'
+      - '.github/workflows/mediax-railway-stats-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-stats:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install without postinstall network probes
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Verify untouched production defaults and JS syntax
+        run: |
+          node --check src/bot/stats.js
+          node --check src/bot/stats-persistence.js
+          node scripts/mediax-stats-persistence-selftest.mjs
+          node scripts/check-feature-boundaries.mjs
+          node scripts/channel-security-selftest.mjs
+          node scripts/group-owner-only-selftest.mjs

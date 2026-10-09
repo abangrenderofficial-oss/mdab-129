@@ -114,3 +114,21 @@ Do not set `MEDIAX_MODE=active` or `MEDIAX_FAILOVER_APPROVED=YES_RAILWAY_STOPPED
 The GitHub runner's optional public TikTok URL smoke on 2026-10-09 **FAILED**: TikWM metadata requests returned HTTP errors and yt-dlp exited non-zero (using the `vt.tiktok.com/ZSqqYxc13/` sample). This is separate from the successful **offline** synthetic HEVC/AAC/audio tests and routing assertions. The URL-only `/status <link>` worker is implemented but **not production-ready** until a real URL can consistently download from a GitHub worker. Do not rely on the workflow's green conclusion for URL tests: the one-off public-network step was intentionally `continue-on-error`. To avoid consuming GitHub Actions minutes, this optional network step runs only via manual `workflow_dispatch`.
 
 For active Render failover, Premium HQ and Android HQ buttons should use existing Telegram `file_id` transfer to the heavy worker rather than social CDN URL re-download from Render Free. Real MTProto media fetch, sendVideo, signed callback and real output fidelity remain unverified while Render is standby. Never represent this as 100% parity with Railway until a controlled end-to-end test passes.
+
+
+## Safe GitHub worker Telegram validation while Render stays standby (2026-10-09)
+
+Read-only GitHub Actions tests (no sends): `render-telegram-readiness.yml` confirmed Telegram Bot API `getMe` succeeds, production webhook stays at Railway and **not Render**, and the real GitHub runner MTProto bot session authorizes successfully. The `render-hq-worker-readiness.yml` job also checks the exact `sendVideo` request via a mocked Telegram transport, signed callbacks, tampering, exactly-once HQ counters in temporary storage, and real two-second HEVC/AAC synthetic transcoding.
+
+Optional manual private-chat delivery validation uses the **existing** workflow `m129-a` (`.github/workflows/heavy-status-hq.yml`), which exists on GitHub's default branch. An owner with repository access can choose `infra/mediax-render-standby` under **Run workflow**, then specify:
+- `chat_id`: owner's existing MediaX private numeric chat ID (usually `BOT_OWNER_ID`, never a group ID)
+- `video_file_id`: `SYNTHETIC_TEST_ONLY`
+- `source_kind`: `manual_synthetic`
+- `action`: `status_hq`
+- `user_id`: `0`
+- `completion_callback_url`: blank
+- Other fields remain defaults.
+
+The workflow will verify `getChat` reports a private chat, produce a **synthetic two-second source with audio** on GitHub, encode it with the real HQ worker, validate its output, then call Telegram `sendVideo` **once** to that private chat. Caption clearly marks the video as a test. In manual_synthetic mode **all signed completion callbacks are disabled** so neither Railway statistics nor Render Turso/support state changes. The worker never reads Telegram user videos in this mode. This manual test is **not yet executed** and requires owner's deliberate run, with the correct private chat ID.
+
+Do **not** select the default `main` branch for the manual synthetic test; main doesn't contain its private-chat protections. Do **not** change the Telegram webhook or Render's `MEDIAX_MODE=standby`.

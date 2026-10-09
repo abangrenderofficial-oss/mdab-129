@@ -42,6 +42,10 @@ try {
     assert.equal(r.status,200,'web page missing '+path+' (response '+r.body.slice(0,120)+')');
     assert.ok(r.body.toLowerCase().includes(pattern.toLowerCase()),'wrong payload '+path);
   }
+  const locked=await request('/api/payping-bot-admin',{
+    method:'POST',headers:{'content-type':'application/json'},body:'{"action":"create_bot"}',
+  });
+  assert.equal(locked.status,503,'unverified bot encryption must lock admin writes');
   const limit=await request('/api/heavy-limit');
   assert.equal(limit.status,200);
   assert.equal(JSON.parse(limit.body).heavy_video_limit_mb,200);

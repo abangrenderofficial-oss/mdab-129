@@ -1,0 +1,37 @@
+name: MediaX Render backup npm lockfile
+on:
+  push:
+    branches:
+      - infra/mediax-render-standby
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  lockfile:
+    if: github.ref == 'refs/heads/infra/mediax-render-standby'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Generate lockfile if missing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -f package-lock.json; then
+            echo "Lockfile exists; no action needed."
+            exit 0
+          fi
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          test -s package-lock.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "chore(render): generate MediaX standby npm package lock"
+          git push origin HEAD:infra/mediax-render-standby

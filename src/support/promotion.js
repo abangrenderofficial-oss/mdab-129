@@ -215,16 +215,19 @@ async function botUsername() {
   return cachedBotUsername;
 }
 
-async function sendPrivatePromotion(userId) {
-  await sendMessage(userId, supportCampaignText(), {
+async function sendPrivatePromotion(userId, weekday) {
+  await sendMessage(userId, supportCampaignText({ isFriday: weekday === 'Fri', audience: 'private' }), {
     reply_markup: supportMenuKeyboard(),
   });
 }
 
-async function sendChannelPromotion(channel) {
+async function sendChannelPromotion(channel, weekday) {
   const username = await botUsername();
   const url = username ? `https://t.me/${username}?start=support` : '';
-  await sendSupportPromotionToChannel(channel, dailyForcePremiumChannelSupportText(), {
+  const message = weekday === 'Fri'
+    ? supportCampaignText({ isFriday: true, audience: 'channel' })
+    : dailyForcePremiumChannelSupportText();
+  await sendSupportPromotionToChannel(channel, message, {
     ...(url ? {
       reply_markup: {
         inline_keyboard: [[{ text: '❤️ Support Bot', url }]],
@@ -233,7 +236,7 @@ async function sendChannelPromotion(channel) {
   });
 }
 
-async function deliverChannelDaily(dateKey) {
+async function deliverChannelDaily(dateKey, weekday) {
   const target = await promotionalChannelTarget();
   if(!target){
     if(lastMissingChannelWarning!==dateKey){
@@ -245,7 +248,7 @@ async function deliverChannelDaily(dateKey) {
   const periodKey = `channel-daily:${dateKey}`;
   if (!(await claimPromotionSlot('CHANNEL', target, periodKey))) return false;
   try {
-    await sendChannelPromotion(target);
+    await sendChannelPromotion(target, weekday);
     await markDelivery('CHANNEL', target, periodKey, 'SENT');
     console.log('[support-promo] channel sent', { target, periodKey });
     return true;
@@ -256,7 +259,7 @@ async function deliverChannelDaily(dateKey) {
   }
 }
 
-async function deliverPrivatePromotion({ dateKey }) {
+async function deliverPrivatePromotion({ dateKey, weekday }) {
   const users = await trackedUserIds();
   let sent = 0;
   let skipped = 0;
@@ -276,7 +279,7 @@ async function deliverPrivatePromotion({ dateKey }) {
         skipped += 1;
         continue;
       }
-      await sendPrivatePromotion(userId);
+      await sendPrivatePromotion(userId, weekday);
       await markDelivery('PRIVATE', userId, periodKey, 'SENT');
       sent += 1;
     } catch (error) {
@@ -301,7 +304,7 @@ export async function runSupportPromotionCycle({ force = false } = {}) {
 
     let channelSent = false;
     if (force || parts.due) {
-      channelSent = await deliverChannelDaily(parts.dateKey);
+      channelSent = await deliverChannelDaily(parts.dateKey, parts.weekday);
     }
 
     let privateResult = {

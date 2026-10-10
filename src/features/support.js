@@ -82,22 +82,24 @@ export function dailyForcePremiumChannelSupportText() {
   ].join('\n');
 }
 
-export function supportCampaignText() {
+export function supportCampaignText({ isFriday = true, audience = 'private' } = {}) {
+  const channel = audience === 'channel';
+  const recipient = channel ? 'korang' : 'awak';
   return [
-    'Salam JUMAAT , Yaum Al - Mubarak 🌙',
+    ...(isFriday ? ['Salam JUMAAT, Yaum Al-Mubarak 🌙', ''] : []),
+    channel ? 'Hi, korang!' : 'Hi, awak!',
+    `Macam mana pengalaman ${recipient} guna bot ni, best tak? Best kan WhatsApp dah Premium, boleh post HD ✨`,
     '',
-    'Hi, Semua!',
-    'Macam mana pengalaman korang guna bot ni, best tak? Bestkan Whatsapp Dah Premium boleh post HD ✨',
-    '',
-    '❌No more watermark,',
-    '❌No more terpaksa download apps baru, ❌No more tambah komitmen bulanan subsription 💸!',
+    '❌ No more watermark,',
+    '❌ No more terpaksa download apps baru,',
+    '❌ No more tambah komitmen bulanan subscription 💸!',
     '',
     'Bot ni adalah hak milik kita semua 🤍🇲🇾',
-    'Sayangnya bot ni boleh mati bila2 masa, if kita tak mampu bayarkan kos sewa server.',
+    'Sayangnya bot ni boleh mati bila2 masa kalau kita tak mampu bayarkan kos sewa server.',
     '',
-    'Jd kalau korang suka bot ni, jom kita sama2 support bg bot ni always hidup. ❤️',
+    `Jadi kalau ${recipient} suka bot ni, jom kita sama2 support supaya bot ni terus hidup. ❤️`,
     '',
-    'Setahun Sekali Sahaja Support Pun Boleh ,',
+    'Setahun sekali support pun boleh.',
     'Terima kasih orang baik 🙇🏻✨',
   ].join('\n');
 }

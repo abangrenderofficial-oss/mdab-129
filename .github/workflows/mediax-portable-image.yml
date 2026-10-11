@@ -1,0 +1,60 @@
+name: MediaX portable image QA (no production deploy)
+
+on:
+  push:
+    branches: [prepare-portable-deploy]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - package.json
+      - server.js
+      - 'scripts/**'
+      - .github/workflows/mediax-portable-image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  docker-build-test-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build portable image and run media QA during build
+        run: docker build --progress=plain -t mediax-portable:test .
+      - name: Smoke test read-only localhost preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name mediax-preview -p 127.0.0.1:18080:3000 -e MEDIAX_PREVIEW_MODE=true mediax-portable:test
+          ready=0
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:18080/api/health >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          test "$ready" = 1
+          status=$(curl -sS -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:18080/api/telegram)
+          test "$status" = 403
+      - name: Preview logs
+        if: always()
+        run: docker logs mediax-preview || true
+      - name: Publish tested image (not a server deployment)
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          image="ghcr.io/abangrenderofficial-oss/mdab-129"
+          tag="portable-${GITHUB_SHA:0:12}"
+          docker tag mediax-portable:test "$image:$tag"
+          docker tag mediax-portable:test "$image:portable-ready"
+          docker push "$image:$tag"
+          docker push "$image:portable-ready"
+          echo "PREPARED_IMAGE=$image:$tag" >> "$GITHUB_STEP_SUMMARY"

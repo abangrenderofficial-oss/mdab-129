@@ -13,7 +13,7 @@ Run on your own laptop or in Antigravity's terminal:
     docker build -t mediax-ready .
     docker run --rm -p 3000:3000 -e MEDIAX_PREVIEW_MODE=true mediax-ready
 
-IMPORTANT: preview mode requires starting the app without production credentials. Do not point a local bot at the live Telegram webhook or live Bayarcash account. For static inspection without the bot running, read the HTML and JS source.
+IMPORTANT: preview mode requires starting the app WITHOUT production credentials; preflight refuses Telegram, Turso, worker and Bayarcash live secrets in preview. POST operations are read-only blocked. Do not point a local bot at the live Telegram webhook or live Bayarcash account.
 
 ## New production server
 1. Deploy the Dockerfile as a **single service/replica** with a publicly accessible HTTPS domain. HTTPS is required for Telegram webhook.
@@ -26,7 +26,7 @@ IMPORTANT: preview mode requires starting the app without production credentials
    - WEBPUSH_VAPID_PUBLIC_KEY; WEBPUSH_VAPID_PRIVATE_KEY if PayPing browser push is needed.
 4. Optional existing tuned encoding settings in .env.example can be copied without modification. Do not introduce extra CRF, scaling, bitrate, resolution or compression overrides during migration.
 5. The container starts only when runtime/binary checks pass. Confirm GET https://YOUR-DOMAIN/api/health has `ok: true`.
-6. **Cutover**: stop the old MediaX production instance's scheduled jobs, then activate Telegram webhook at the new domain exactly once using POST /api/setup-webhook with HTTP Authorization: Bearer <SETUP_SECRET>. This call uses drop_pending_updates=true in the existing handler, so there is a risk of pending updates being discarded at cutover; schedule when queue is empty. Do not have two active production instances sharing the same bot token and scheduled jobs.
+6. **Cutover**: stop the old MediaX production instance's scheduled jobs, then run `node scripts/activate-webhook-no-drop.mjs` **once** in the new container with production ENV. This switches Telegram to the new HTTPS URL with `drop_pending_updates=false` (unlike the older setup endpoint). Do not have two active production instances sharing the same bot token and scheduled jobs.
 7. Test /start and private test downloads on a test bot first, then validate production with a fresh public link from each provider, Status HQ, gallery compression and Live Wallpaper. Check videos are not stretched, sound survives, and file sizes comply with Telegram limits.
 8. If something fails, revert Telegram webhook to the original domain and restore the old instance. Do not change or wipe Turso data.
 

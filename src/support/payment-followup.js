@@ -16,9 +16,9 @@ import {refreshSupportAmounts} from './payping-shared-config.js';
 const FIRST_FOLLOWUP_MS = 15 * 60 * 1000;
 const SECOND_FOLLOWUP_MS = 8 * 60 * 60 * 1000;
 const CHECK_INTERVAL_MS = 60 * 1000;
-const MAX_FOLLOWUPS = 2;
+const MAX_FOLLOWUPS = 1;
 const AFFILIATE_FOLLOWUP_COOLDOWN_MS = 8 * 60 * 60 * 1000;
-const AFFILIATE_MAX_FOLLOWUPS = 2;
+const AFFILIATE_MAX_FOLLOWUPS = 1;
 const FINAL_ORDER_STATUSES = new Set([
   'PAID',
   'FAILED',
@@ -101,6 +101,12 @@ export async function ensurePaymentFollowupSchema() {
           claimed_at TEXT NOT NULL,
           state TEXT NOT NULL DEFAULT 'sending',
           PRIMARY KEY(environment,order_number,sequence_no)
+        )`,
+        `CREATE TABLE IF NOT EXISTS support_manual_followup_claims_v4 (
+          environment TEXT NOT NULL,
+          order_number TEXT NOT NULL,
+          claimed_at TEXT NOT NULL,
+          PRIMARY KEY(environment,order_number)
         )`,
         `CREATE TABLE IF NOT EXISTS support_affiliate_followups (
           environment TEXT NOT NULL,
@@ -593,11 +599,34 @@ async function recordAffiliateFollowupSent(orderNumber, affiliateUserId) {
   });
 }
 
+// A durable claim is recorded before calling Telegram. A timeout may still have
+// delivered the message, so never auto-retry a claimed order.
+async function claimManualFollowup(orderNumber) {
+  await ensurePaymentFollowupSchema();
+  const db = await getSupportDb();
+  const env = currentSupportEnvironment();
+  const result = await db.execute({
+    sql: `INSERT OR IGNORE INTO support_manual_followup_claims_v4(environment,order_number,claimed_at)
+      SELECT ?,?,? WHERE NOT EXISTS (
+        SELECT 1 FROM support_payment_followups
+        WHERE environment=? AND order_number=?
+          AND (followup_count>=1 OR last_delivery_status='SENT')
+      )`,
+    args: [env,String(orderNumber),new Date().toISOString(),env,String(orderNumber)],
+  });
+  return Number(result.rowsAffected||0)===1;
+}
+
 export async function sendPaymentFollowup(orderNumber, {
   manual = false,
   actorRole = 'owner',
   actorUserId = '',
 } = {}) {
+  if (!manual || String(actorRole || '').toLowerCase() !== 'owner') {
+    const error = new Error('Hanya admin boleh tekan Follow Up di PayPing Transaction Detail.');
+    error.code = 'PAYMENT_FOLLOWUP_FORBIDDEN';
+    throw error;
+  }
   await ensureFollowupRow(orderNumber);
   let row = await orderContext(orderNumber);
   if (!row) {
@@ -607,7 +636,7 @@ export async function sendPaymentFollowup(orderNumber, {
   }
 
   const state = String(row.followup_state || 'ACTIVE').toUpperCase();
-  const affiliateActor = manual && String(actorRole || '').toLowerCase() === 'affiliate';
+  const affiliateActor = false; // Follow-up messages are strictly owner/admin initiated.
   if (affiliateActor) {
     if (state === 'REVIEW') {
       const error = new Error('Payment ini sedang dalam review. Follow-up dihentikan sementara.');
@@ -653,8 +682,18 @@ export async function sendPaymentFollowup(orderNumber, {
   if (!row?.telegram_user_id) {
     return { sent: false, reason: 'missing_user', followup: await getPaymentFollowupInfo(orderNumber) };
   }
-  if (!manual && !row?.payment_url) {
+  if (!row?.payment_url && String(row.status || '').toUpperCase() === 'PENDING') {
     return { sent: false, reason: 'missing_payment_url', followup: await getPaymentFollowupInfo(orderNumber) };
+  }
+  if (Number(row.followup_count||0) >= MAX_FOLLOWUPS) {
+    const error = new Error('Follow-up untuk transaksi ini sudah dihantar sekali.');
+    error.code = 'PAYMENT_FOLLOWUP_LIMIT';
+    throw error;
+  }
+  if (!await claimManualFollowup(orderNumber)) {
+    const error = new Error('Follow-up sudah diproses atau pernah dicuba untuk transaksi ini.');
+    error.code = 'PAYMENT_FOLLOWUP_LIMIT';
+    throw error;
   }
 
   let sent;
@@ -799,6 +838,16 @@ export async function cancelPaymentFollowupByUser(orderNumber, userId) {
   return getPaymentFollowupInfo(orderNumber);
 }
 
+async function manualFollowupClaimed(orderNumber) {
+  await ensurePaymentFollowupSchema();
+  const db = await getSupportDb();
+  const r = await db.execute({
+    sql: 'SELECT 1 FROM support_manual_followup_claims_v4 WHERE environment=? AND order_number=? LIMIT 1',
+    args: [currentSupportEnvironment(),String(orderNumber)],
+  });
+  return Boolean(r.rows?.length);
+}
+
 export async function getPaymentFollowupInfo(orderNumber, {
   viewerRole = 'owner',
   viewerUserId = '',
@@ -824,7 +873,10 @@ export async function getPaymentFollowupInfo(orderNumber, {
   const affiliateOwnsReferral = !affiliateViewer
     || String(row.referrer_user_id || '') === String(viewerUserId || '');
   const affiliateReady = !affiliateNext || new Date(affiliateNext).getTime() <= Date.now();
-  const baseCanFollowUp = String(row.status || '').toUpperCase() !== 'PAID' && state !== 'REVIEW';
+  const baseCanFollowUp = String(row.status || '').toUpperCase() !== 'PAID'
+    && state !== 'REVIEW'
+    && ownerCount < MAX_FOLLOWUPS
+    && !(await manualFollowupClaimed(orderNumber));
 
   return {
     state,
@@ -863,9 +915,12 @@ export async function autoFollowupRollout(){
   await ensurePaymentFollowupSchema();
   const db=await getSupportDb(),env=currentSupportEnvironment();
   const t=new Date().toISOString();
-  await db.execute({sql:"INSERT OR IGNORE INTO support_auto_followup_rollout_v3(environment,enabled,activated_at,updated_at) VALUES(?,1,?,?)",args:[env,t,t]});
-  const r=await db.execute({sql:"SELECT enabled,activated_at FROM support_auto_followup_rollout_v3 WHERE environment=? LIMIT 1",args:[env]});
-  return {enabled:Number(r.rows?.[0]?.enabled||0)===1,activatedAt:String(r.rows?.[0]?.activated_at||t)};
+  await db.execute({
+    sql:`INSERT INTO support_auto_followup_rollout_v3(environment,enabled,activated_at,updated_at)
+      VALUES(?,0,?,?) ON CONFLICT(environment) DO UPDATE SET enabled=0,updated_at=excluded.updated_at`,
+    args:[env,t,t],
+  });
+  return {enabled:false,activatedAt:t};
 }
 
 async function dueOrders(limit=20){
@@ -913,51 +968,10 @@ async function finishAutoClaim(order,sequence,status){
  await db.execute({sql:"UPDATE support_auto_followup_claims_v3 SET state=? WHERE environment=? AND order_number=? AND sequence_no=?",args:[status,currentSupportEnvironment(),order,sequence]});
 }
 export async function runPaymentFollowupCycle(){
- if(cycleRunning)return {skipped:true,reason:'already_running'};
- cycleRunning=true;
- const result={skipped:false,candidates:0,sent:0,resolved:0,failed:0};
- try{
-   const candidates=await dueOrders(20);
-   result.candidates=candidates.length;
-   for(const {order,sequence} of candidates){
-     if(!await claimAutoFollowup(order,sequence))continue;
-     const db=await getSupportDb(),env=currentSupportEnvironment();
-     const previous=await db.execute({sql:`SELECT 1 FROM support_orders o
-       JOIN support_payment_followups f ON f.environment=o.environment AND f.order_number=o.order_number
-       WHERE o.environment=? AND o.telegram_user_id=(
-         SELECT telegram_user_id FROM support_orders WHERE environment=? AND order_number=?)
-       AND o.order_number<>? AND
-         (f.last_followup_at>? OR
-           (f.last_delivery_status='BLOCKED' AND f.last_error_code='TELEGRAM_BOT_BLOCKED'))
-       LIMIT 1`,
-       args:[env,env,order,order,new Date(Date.now()-SECOND_FOLLOWUP_MS).toISOString()]});
-     if(previous.rows?.length){
-       // No message sent; release this sequence for a later safe cycle.
-       await db.execute({sql:"DELETE FROM support_auto_followup_claims_v3 WHERE environment=? AND order_number=? AND sequence_no=? AND state='sending'",args:[env,order,sequence]});
-       continue;
-     }
-     let state='needs_review';
-     try{
-       const outcome=await sendPaymentFollowup(order,{manual:false});
-       if(outcome.sent){result.sent++;state='sent'}
-       else{state='skipped';result.resolved++}
-     }catch(e){result.failed++;console.warn('[payment-followup] automatic delivery requires review:',e.code||e.message)}
-     finally{await finishAutoClaim(order,sequence,state).catch(e=>console.warn('[payment-followup] claim update failed:',e.message))}
-   }
-   return result;
- }finally{cycleRunning=false}
+  return {skipped:true,reason:'manual_only',candidates:0,sent:0};
 }
 export function startPaymentFollowupScheduler(){
- if(schedulerTimer)return schedulerTimer;
- const run=()=>void runPaymentFollowupCycle().catch(e=>console.warn('[payment-followup] auto cycle failed:',e.message));
- // Activation is persisted *before* the first scheduled check.
- void autoFollowupRollout().then(x=>{
-   console.log('[payment-followup] automatic future checkouts only',x);
-   if(!schedulerTimer){
-     schedulerTimer=setInterval(run,CHECK_INTERVAL_MS);
-     schedulerTimer.unref?.();
-     setTimeout(run,15_000).unref?.();
-   }
- }).catch(e=>console.warn('[payment-followup] auto schedule initialization failed:',e.message));
- return schedulerTimer;
+  // Disable historical rollout in shared Turso. Never register an automatic timer.
+  void autoFollowupRollout().catch(e=>console.warn('[payment-followup] disabling old rollout failed:',e.message));
+  return null;
 }

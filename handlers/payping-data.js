@@ -43,6 +43,7 @@ export default async function handler(req,res){
 
       let actionResult=null;
       if(action==='payment_followup_send'){
+        if(body.trigger!=='transaction_detail')return json(res,403,{ok:false,error:'PAYPING_TRANSACTION_DETAIL_ONLY'});
         actionResult=await sendPaymentFollowup(order,{
           manual:true,
           actorRole:'owner',

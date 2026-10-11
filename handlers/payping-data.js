@@ -36,8 +36,7 @@ export default async function handler(req,res){
       const order=String(body.order||'').trim();
       if(!order)return json(res,400,{ok:false,error:'ORDER_REQUIRED'});
 
-      const affiliateActor=!auth.owner&&String(auth.role||'').toLowerCase()==='affiliate';
-      if(!auth.owner&&!affiliateActor)return json(res,403,{ok:false,error:'PAYPING_FOLLOWUP_FORBIDDEN'});
+      if(!auth.owner)return json(res,403,{ok:false,error:'PAYPING_OWNER_ONLY'});
 
       const scopedDetail=await getPayPingTransactionDetail({...auth,orderNumber:order});
       if(!scopedDetail)return json(res,404,{ok:false,error:'TRANSACTION_NOT_FOUND'});
@@ -46,7 +45,7 @@ export default async function handler(req,res){
       if(action==='payment_followup_send'){
         actionResult=await sendPaymentFollowup(order,{
           manual:true,
-          actorRole:auth.owner?'owner':'affiliate',
+          actorRole:'owner',
           actorUserId:auth.userId,
         });
       }else if(action==='payment_followup_check'){

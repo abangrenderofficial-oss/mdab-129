@@ -161,54 +161,10 @@ self.addEventListener('notificationclick', event => {
     return;
   }
 
+  // Notification actions open Transaction Detail only. Never send messages here.
   if (action === 'follow_up' && orderNumber) {
     note.close();
-    event.waitUntil((async () => {
-      try {
-        const response = await fetch('/api/payping-data', {
-          method: 'POST',
-          credentials: 'include',
-          headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({
-            action: 'payment_followup_send',
-            order: orderNumber,
-          }),
-        });
-        const result = await response.json().catch(() => ({}));
-
-        if (response.ok && result?.ok && result?.actionResult?.sent) {
-          await self.registration.showNotification('Done!', {
-            body: 'Bot sudah follow up 🎉',
-            icon: '/ar-payment/payping-icon-v4.svg',
-            badge: '/ar-payment/payping-icon-v4.svg',
-            tag: note.tag || ('payment-' + orderNumber),
-            data: { url: target, orderNumber, actionable: false },
-          });
-          return;
-        }
-
-        if (response.status === 401) {
-          await openPayPingTarget('/ar-payment/login');
-          return;
-        }
-
-        const message = result?.error === 'PAYMENT_FOLLOWUP_COOLDOWN'
-          ? 'Follow-up kedua belum boleh dihantar lagi.'
-          : result?.error === 'PAYMENT_FOLLOWUP_LIMIT'
-            ? 'Follow-up untuk payment ini dah maksimum 2 kali.'
-            : (result?.message || 'Follow-up tak berjaya dihantar.');
-
-        await self.registration.showNotification('PayPing!', {
-          body: message,
-          icon: '/ar-payment/payping-icon-v4.svg',
-          badge: '/ar-payment/payping-icon-v4.svg',
-          tag: note.tag || ('payment-' + orderNumber),
-          data: { url: target, orderNumber, actionable: false },
-        });
-      } catch {
-        await openPayPingTarget(target);
-      }
-    })());
+    event.waitUntil(openPayPingTarget(target));
     return;
   }
 

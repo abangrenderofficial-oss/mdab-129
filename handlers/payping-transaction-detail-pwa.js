@@ -130,7 +130,7 @@ async function followupAction(action){
  if(action==='payment_followup_send'&&!confirm('Hantar satu Follow Up sahaja kepada user untuk transaksi ini?'))return;
  try{
   document.querySelectorAll('#followupCard button').forEach(b=>b.disabled=true);$('followupMsg').textContent='Updating…';
-  const r=await fetch('/api/payping-data',{method:'POST',headers:headers(true),body:JSON.stringify({action,order:currentOrder})});const d=await r.json();if(r.status===401){location.replace('/ar-payment/login');return}if(!r.ok||!d.ok){const err=new Error(d.message||d.error||'Action failed.');err.code=d.error;err.retryAt=d.retryAt;throw err;}
+  const r=await fetch('/api/payping-data',{method:'POST',headers:headers(true),body:JSON.stringify({action,order:currentOrder,trigger:'transaction_detail'})});const d=await r.json();if(r.status===401){location.replace('/ar-payment/login');return}if(!r.ok||!d.ok){const err=new Error(d.message||d.error||'Action failed.');err.code=d.error;err.retryAt=d.retryAt;throw err;}
   const resultText=action==='payment_followup_send'?(d.actionResult?.sent?'Bot dah follow up user ✅':'Follow-up tak dihantar · '+stageLabel(d.actionResult?.reason||'status checked')):action==='payment_followup_check'?('Status checked · '+stageLabel(d.actionResult?.stage||d.actionResult?.orderStatus||'pending')):'Follow-up stopped ✅';
   $('followupMsg').textContent=resultText;showToast(resultText,d.actionResult?.sent||action!=='payment_followup_send'?'ok':'bad');
   renderDetail(d);

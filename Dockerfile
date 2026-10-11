@@ -14,7 +14,8 @@ COPY . .
 # package.json postinstall installs yt-dlp + validates existing feature boundaries.
 # This repository currently has no committed package-lock.json, so use npm install, NOT npm ci.
 RUN npm install --omit=dev --no-audit --no-fund
-RUN node scripts/deploy-preflight.mjs --build
+RUN node scripts/deploy-preflight.mjs --build \
+    && node scripts/media-aspect-audio-smoke.mjs
 
 RUN chown -R node:node /app
 USER node

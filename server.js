@@ -54,6 +54,7 @@ import { getDailyForceRuntimeState, repairDailyForceCurrentCycleUsers } from './
 import {startSharedConfigHeartbeat} from './src/support/payping-shared-config.js';
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
+const previewMode = process.env.MEDIAX_PREVIEW_MODE === 'true';
 const previewMode = process.argv.includes('--preview')
   || /^(1|true|yes)$/i.test(String(process.env.MEDIAX_PREVIEW_MODE || ''));
 

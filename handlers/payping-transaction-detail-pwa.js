@@ -85,12 +85,12 @@ a,button,.btn,.quick a,.tab,.back,.link,.item,.tx{touch-action:manipulation}
 <div id="supportMessageWrap" hidden><div class="meta" style="margin:10px 0 6px">Support message</div><div id="supportMessage" class="msgbox"></div></div>
 </section>
 
-<section id="followupCard" class="card" hidden><div class="cardTitle">Pending Payment Follow-up</div>
+<section id="followupCard" class="card" hidden><div class="cardTitle">Manual Payment Follow-up</div>
 <div class="row"><span>Follow-up State</span><strong id="followupState">-</strong></div>
-<div class="row"><span>Reminder Count</span><strong id="followupCount">0 / 2</strong></div>
+<div class="row"><span>Follow-up Sent</span><strong id="followupCount">0 / 2</strong></div>
 <div class="row"><span>Last Follow-up</span><strong id="followupLast">-</strong></div>
-<div class="row"><span>Next Follow-up</span><strong id="followupNext">-</strong></div>
-<div class="actions"><button id="followupNow" class="actionBtn primary">Follow Up Now</button><button id="checkStatus" class="actionBtn">Check Status</button><button id="stopFollowup" class="actionBtn warn" style="grid-column:1/-1">Stop Follow-up</button></div>
+<div class="row"><span>Automatic Follow-up</span><strong id="followupNext">-</strong></div>
+<div class="actions"><button id="followupNow" class="actionBtn primary">Follow Up (1x)</button><button id="checkStatus" class="actionBtn">Check Status</button><button id="stopFollowup" class="actionBtn warn" style="grid-column:1/-1">Stop Follow-up</button></div>
 <div id="followupMsg" class="actionMsg"></div></section>
 <section id="affiliateCard" class="card" hidden><div class="cardTitle">Affiliate Commission</div><div id="affiliateBody"></div></section>
 <section class="card"><div class="cardTitle">Notification Delivery</div><div id="notificationSummary" class="row"></div><div id="notifications" class="timeline" style="margin-top:9px"></div></section>
@@ -119,14 +119,15 @@ function showToast(message,type='ok'){
  toastTimer=setTimeout(()=>{el.className='toast '+type},2600);
 }
 function renderFollowup(d){
- const f=d?.followup;const affiliate=String(d?.role||'').toLowerCase()==='affiliate'&&!d?.owner;if((!d?.owner&&!affiliate)||!f){$('followupCard').hidden=true;return}
- $('followupCard').hidden=false;$('followupState').textContent=stageLabel(f.state);$('followupCount').textContent=String(f.followupCount||0)+' / '+String(f.maxFollowups||2);$('followupLast').textContent=date(f.lastFollowupAt);$('followupNext').textContent=date(f.nextFollowupAt);
+ const f=d?.followup;const affiliate=false;if(!d?.owner||!f){$('followupCard').hidden=true;return}
+ $('followupCard').hidden=false;$('followupState').textContent=stageLabel(f.state);$('followupCount').textContent=String(f.followupCount||0)+' / 1';$('followupLast').textContent=date(f.lastFollowupAt);$('followupNext').textContent='OFF — manual only';
  const paid=String(d.transaction?.status||'').toUpperCase()==='PAID';
- $('followupNow').disabled=paid||!f.canFollowUp;$('checkStatus').disabled=paid;$('stopFollowup').hidden=affiliate;$('stopFollowup').disabled=paid||['STOPPED','RESOLVED'].includes(String(f.state||'').toUpperCase());
- if(affiliate&&f.followupCount===1&&f.nextFollowupAt&&!f.canFollowUp){$('followupMsg').textContent='Follow-up kedua boleh dihantar selepas '+date(f.nextFollowupAt);}
- else if(affiliate&&f.followupCount>=2){$('followupMsg').textContent='Follow-up affiliate untuk payment ini dah maksimum 2 kali.';}
+ $('followupNow').disabled=paid||!f.canFollowUp;$('checkStatus').disabled=paid;$('stopFollowup').hidden=true;$('stopFollowup').disabled=paid||['STOPPED','RESOLVED'].includes(String(f.state||'').toUpperCase());
+ if(false&&f.followupCount===1&&f.nextFollowupAt&&!f.canFollowUp){$('followupMsg').textContent='Follow-up kedua boleh dihantar selepas '+date(f.nextFollowupAt);}
+ else if(f.followupCount>=1){$('followupMsg').textContent='Follow-up sudah dihantar sekali. Tiada follow-up kedua.';}
 }
 async function followupAction(action){
+ if(action==='payment_followup_send'&&!confirm('Hantar satu Follow Up sahaja kepada user untuk transaksi ini?'))return;
  try{
   document.querySelectorAll('#followupCard button').forEach(b=>b.disabled=true);$('followupMsg').textContent='Updating…';
   const r=await fetch('/api/payping-data',{method:'POST',headers:headers(true),body:JSON.stringify({action,order:currentOrder})});const d=await r.json();if(r.status===401){location.replace('/ar-payment/login');return}if(!r.ok||!d.ok){const err=new Error(d.message||d.error||'Action failed.');err.code=d.error;err.retryAt=d.retryAt;throw err;}

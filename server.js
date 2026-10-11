@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { telegram } from './src/telegram.js';
 import { URL } from 'node:url';
 
 import healthHandler from './handlers/health.js';
@@ -53,6 +54,9 @@ import { getDailyForceRuntimeState, repairDailyForceCurrentCycleUsers } from './
 import {startSharedConfigHeartbeat} from './src/support/payping-shared-config.js';
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
+const previewMode = process.argv.includes('--preview')
+  || /^(1|true|yes)$/i.test(String(process.env.MEDIAX_PREVIEW_MODE || ''));
+
 
 const routes = new Map([
   ['/api/health', healthHandler],
@@ -190,6 +194,10 @@ const server = http.createServer(async (req, res) => {
     const host = req.headers.host || `127.0.0.1:${process.env.PORT || 3000}`;
     const url = new URL(req.url || '/', `http://${host}`);
 
+    if (previewMode && !['GET', 'HEAD'].includes(req.method)) {
+      return res.status(403).json({ ok: false, error: 'preview_read_only' });
+    }
+
     req.query = parseQuery(url);
     req.body = await parseBody(req);
 
@@ -197,7 +205,7 @@ const server = http.createServer(async (req, res) => {
       return res.status(200).json({
         ok: true,
         service: 'telegram-social-downloader',
-        runtime: 'railway-node',
+        runtime: 'node',
         architecture: 'isolated-features-v1',
       });
     }
@@ -222,6 +230,31 @@ const server = http.createServer(async (req, res) => {
 const port = Number(process.env.PORT || 3000);
 server.listen(port, '0.0.0.0', () => {
   console.log(`Downloader bot listening on 0.0.0.0:${port}`);
+  if (previewMode) {
+    console.log('[mediax] READ-ONLY PREVIEW: no scheduled jobs or outbound messages; write requests blocked');
+    return;
+  }
+
+  if (String(process.env.MEDIAX_REGISTER_WEBHOOK_ON_START || '').toLowerCase() === 'true') {
+    const base = String(process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+    const target = `${base}/api/telegram`;
+    void telegram('getWebhookInfo')
+      .then(async (current) => {
+        if (current?.url === target) {
+          console.log('[mediax] webhook already points to this server');
+          return;
+        }
+        await telegram('setWebhook', {
+          url: target,
+          secret_token: process.env.TELEGRAM_WEBHOOK_SECRET,
+          allowed_updates: ['message', 'edited_message', 'callback_query'],
+          drop_pending_updates: false,
+        });
+        console.log('[mediax] webhook switched to this server without dropping pending updates');
+      })
+      .catch((error) => console.error('[mediax] webhook activation failed:', error?.message));
+  }
+
   if (String(process.env.MEDIAX_STATS_BACKEND || '').trim() === 'mirror') {
     void warmMirrorStatsOnStartup()
       .then((result) => console.log('MEDIAX_STATS_MIRROR_STARTUP', JSON.stringify(result)))

@@ -81,6 +81,10 @@ function checkConfig() {
 }
 
 if (preview) {
+  for (const key of ['TELEGRAM_BOT_TOKEN', 'TURSO_DATABASE_URL', 'TURSO_AUTH_TOKEN', 'GITHUB_ACTIONS_TOKEN',
+    'BAYARCASH_API_TOKEN', 'BAYARCASH_API_SECRET_KEY']) {
+    if (String(process.env[key] || '').trim()) fail('preview mode must not use a live credential: ' + key);
+  }
   pass('preview mode: external configuration and binary checks skipped; outbound writes blocked in server');
 } else {
   if (!configOnly) checkRuntime();

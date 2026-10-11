@@ -686,12 +686,8 @@ function notificationPayload({
     actionable: Boolean(actionable && !successful),
   };
 
-  if (payload.actionable) {
-    payload.actions = [
-      { action: 'follow_up', title: 'Follow Up ✅' },
-      { action: 'dont_follow_up', title: 'Don’t Follow Up ❌' },
-    ];
-  }
+  // Follow-up is only allowed from authenticated Transaction Detail; no push action.
+  payload.actionable = false;
   return payload;
 }
 

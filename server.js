@@ -199,6 +199,10 @@ const server = http.createServer(async (req, res) => {
       return res.status(403).json({ ok: false, error: 'preview_read_only' });
     }
 
+    if (previewMode && !['GET', 'HEAD'].includes(req.method)) {
+      return res.status(403).json({ ok: false, error: 'preview_read_only' });
+    }
+
     req.query = parseQuery(url);
     req.body = await parseBody(req);
 

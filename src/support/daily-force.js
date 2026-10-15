@@ -203,8 +203,8 @@ export async function getDailyForceRuntimeState(date = new Date()) {
   return {
     ...mode,
     ...schedule,
-    active: mode.enabled && schedule.dailyForceWindowActive,
-    pausedForFriday: mode.enabled && !schedule.dailyForceWindowActive && schedule.isFriday,
+    active: mode.enabled && (isPayPingSharedConfigEnabled() || schedule.dailyForceWindowActive),
+    pausedForFriday: mode.enabled && !isPayPingSharedConfigEnabled() && !schedule.dailyForceWindowActive && schedule.isFriday,
   };
 }
 
@@ -280,7 +280,7 @@ async function accessContext(userId) {
   if (!mode.enabled) return { gated: false, ...mode };
 
   const schedule = malaysiaSupportSchedule();
-  if (!schedule.dailyForceWindowActive) {
+  if (!isPayPingSharedConfigEnabled() && !schedule.dailyForceWindowActive) {
     return {
       gated: false,
       ...mode,
@@ -310,7 +310,7 @@ export async function claimDailyForceUsageAttempt(userId) {
 
   const mode = await modeState();
   if (!mode.enabled) return false;
-  if (!malaysiaSupportSchedule().dailyForceWindowActive) return false;
+  if (!isPayPingSharedConfigEnabled() && !malaysiaSupportSchedule().dailyForceWindowActive) return false;
   if (await getActiveSupporterTitle(id)) return false;
 
   await ensureSchema();
@@ -365,7 +365,7 @@ export async function markDailyForceUsageSuccess(userId, { allowFirstHq = false 
 
   const mode = await modeState();
   if (!mode.enabled) return false;
-  if (!malaysiaSupportSchedule().dailyForceWindowActive) return false;
+  if (!isPayPingSharedConfigEnabled() && !malaysiaSupportSchedule().dailyForceWindowActive) return false;
   if (await getActiveSupporterTitle(id)) return false;
 
   const db = await getSupportDb();
@@ -423,7 +423,7 @@ export async function canFinishFirstDailyForceHq(callbackQuery = {}) {
   if (![MEDIA_STATUS_HQ,MEDIA_STATUS_HQ_ANDROID,MEDIA_STATUS_HQ_MENU].some(prefix=>action.startsWith(prefix)))return false;
   if (!callbackQuery?.message?.video && !callbackQuery?.message?.photo?.length) return false;
   const mode=await modeState();
-  if(!mode.enabled || !malaysiaSupportSchedule().dailyForceWindowActive)return false;
+  if(!mode.enabled || (!isPayPingSharedConfigEnabled() && !malaysiaSupportSchedule().dailyForceWindowActive))return false;
   const db=await getSupportDb();
   const r=await db.execute({
     sql:`SELECT s.raw_completed_at,s.hq_completed_at

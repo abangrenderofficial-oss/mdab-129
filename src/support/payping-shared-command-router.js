@@ -46,31 +46,7 @@ export async function routeUnifiedForceCommand(message,command){
     await sendMessage(chatId,'⚠️ Sync PayPing belum diaktifkan pada bot. Command tidak diubah supaya tiada lock bercanggah. Semak PAYPING_SHARED_CONFIG_ENABLED di hosting bot.').catch(()=>{});
     return {ok:true,changed:false,reason:'shared_config_disabled'};
   }
-  try{
-    let next,summary;
-    if(command==='/forcesupport'){
-      const previous=await isDailyForceSupportEnabled();
-      const saved=await setDailyForceSupportEnabled(true,userId);
-      next='force_support';
-      summary='🔒 Force Support ON (7 hari seminggu). 1 penggunaan media lengkap percuma; input media baharu kali kedua barulah minta support. Cycle: '+saved.cycleId+(previous?' (kekal)':'');
-    }else if(command==='/freesupportchannel'){
-      await setMediaXFreeChannelAccessMode({dryRun:true}); // Fail safely BEFORE switching off the force lock.
-      if(await isDailyForceSupportEnabled())await setDailyForceSupportEnabled(false,userId);
-      const saved=await setMediaXFreeChannelAccessMode();
-      next='free_channel';
-      summary='📢 Free + Channel ON. 1 penggunaan lengkap percuma; input baharu kali kedua wajib join '+saved.channel+'.'+(saved.newCampaign?' Kempen akses baharu bermula.':' Kempen sedia ada dikekalkan.');
-    }else{
-      if(await isDailyForceSupportEnabled())await setDailyForceSupportEnabled(false,userId);
-      await setMediaXFreeAccessMode();
-      next='free';
-      summary='🔓 Free ON. Semua user boleh guna tanpa lock support atau syarat channel.';
-    }
-    await refreshSupportMonitorForMode(next==='force_support'?'ON':'OFF').catch(error=>console.warn('[support-monitor] update failed:',error?.message));
-    await reportPayPingSync().catch(()=>{});
-    await sendMessage(chatId,summary);
-    return {ok:true,access_mode:next};
-  }catch(error){
-    await sendMessage(chatId,'❌ Tak dapat tukar mode PayPing: '+String(error?.message||error).slice(0,230)).catch(()=>{});
-    return {ok:false,reason:'access_mode_save_failed'};
-  }
+  // Telegram mode commands are retained but may no longer mutate PayPing policy.
+  await sendMessage(chatId,'🔐 Access Control MediaX dikawal melalui PayPing Aurora → Bots → MediaX → Access Control. Command tidak mengubah mode.').catch(()=>{});
+  return {ok:true,changed:false,reason:'payping_authoritative'};
 }

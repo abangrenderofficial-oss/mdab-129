@@ -51,6 +51,7 @@ import { deliverApprovedBacklog, isContentBridgeConfigured } from './src/support
 import { refreshSupportMonitorMessage } from './src/support/monitor-publisher.js';
 import { getDailyForceRuntimeState, repairDailyForceCurrentCycleUsers } from './src/support/daily-force.js';
 import {startSharedConfigHeartbeat} from './src/support/payping-shared-config.js';
+import {seedMediaXReminderRecipients} from './src/support/payping-reminder-registry.js';
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
@@ -235,6 +236,7 @@ server.listen(port, '0.0.0.0', () => {
 
   startSupportPromotionScheduler();
   startSharedConfigHeartbeat();
+  void seedMediaXReminderRecipients().catch(e=>console.warn('[payping-reminders] audience seed unavailable:',e.message));
   startMediaXTelegramAvatarSync();
 
   void getDailyForceRuntimeState()

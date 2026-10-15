@@ -29,7 +29,7 @@ const [daily,friday,monitor,publisher,audit,paymentDetail,menu]=await Promise.al
 ]);
 const must=(s,m,l)=>{if(!s.includes(m))throw new Error(`${l} missing: ${m}`)};
 
-must(daily,"if (!malaysiaSupportSchedule().dailyForceWindowActive) return false;",'claim/mark Friday guard');
+must(daily,"if (!isPayPingSharedConfigEnabled() && !malaysiaSupportSchedule().dailyForceWindowActive) return false;",'legacy Friday guard must not pause PayPing Force Support');
 must(daily,'pausedForFriday: mode.enabled && !isPayPingSharedConfigEnabled() && !schedule.dailyForceWindowActive && schedule.isFriday','legacy Friday pause excludes PayPing Force Support');
 must(daily,'Jumaat Daily Force auto-pause','command confirmation');
 must(daily,'Ia kekal ON sampai kau guna /stopforcesupportdaily.','persistent mode copy');

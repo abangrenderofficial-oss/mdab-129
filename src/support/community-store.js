@@ -131,7 +131,20 @@ export async function getActiveSupporterTitle(userId) {
     .filter(Boolean)
     .sort((a, b) => b.amountCents - a.amountCents || String(b.paidAt).localeCompare(String(a.paidAt)));
 
-  if (!active.length) return null;
+  // V2 entitlements remain valid when PayPing switches Free+Channel -> Force.
+  // Never discard legacy orders, and also honor bot-specific paid subscriptions.
+  if (!active.length) {
+    const v2 = await db.execute({
+      sql: "SELECT order_number,starts_at,expires_at FROM payping_subscriptions WHERE environment=? AND bot_id='mediax' AND telegram_user_id=? AND status='active' AND (expires_at='lifetime' OR expires_at>?) ORDER BY starts_at DESC LIMIT 1",
+      args: [environment,telegramUserId,new Date(now).toISOString()],
+    }).catch(error=>{
+      if(String(error?.message||'').toLowerCase().includes('no such table'))return {rows:[]};
+      throw error;
+    });
+    const current=v2.rows?.[0];
+    return current?{orderNumber:String(current.order_number||''),tierKey:'supporter',tierLabel:'❤️ Supporter',
+      amount:'0.00',displayName:'',paidAt:String(current.starts_at||''),expiresAt:String(current.expires_at)==='lifetime'?'9999-12-31T23:59:59.000Z':String(current.expires_at||'')}:null;
+  }
   const best = active[0];
   delete best.amountCents;
   return best;

@@ -295,6 +295,7 @@ async function deliverPrivatePromotion({ dateKey, weekday }) {
 }
 
 export async function runSupportPromotionCycle({ force = false } = {}) {
+  if (isPayPingSharedConfigEnabled()) return {skipped:true,reason:'payping_owned_reminders'};
   if (cycleRunning) return { skipped: true, reason: 'already_running' };
   cycleRunning = true;
   try {
@@ -332,6 +333,8 @@ export async function runSupportPromotionCycle({ force = false } = {}) {
 }
 
 export function startSupportPromotionScheduler() {
+  // The legacy scheduler code stays available for rollback but is paused in shared mode.
+  if (isPayPingSharedConfigEnabled()) return null;
   startPaymentFollowupScheduler();
   if (schedulerTimer) return schedulerTimer;
 

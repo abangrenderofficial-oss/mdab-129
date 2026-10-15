@@ -39,11 +39,12 @@ assert(sample.includes('⚠️ @badcase'),'anomaly user missing');
 assert(sample.includes('Daily Force: ON · Sabtu–Khamis · Cycle 9'),'cycle status missing');
 assert(sample.length < 4000,'auto monitor message exceeds Telegram text limit');
 
-const [publisher,monitor,hooks,router,daily,bayarcash,paymentDetail,server]=await Promise.all([
+const [publisher,monitor,hooks,router,commandRouter,daily,bayarcash,paymentDetail,server]=await Promise.all([
   readFile('src/support/monitor-publisher.js','utf8'),
   readFile('src/support/monitor.js','utf8'),
   readFile('src/support/monitor-hooks.js','utf8'),
   readFile('handlers/telegram.js','utf8'),
+  readFile('src/support/payping-shared-command-router.js','utf8'),
   readFile('src/support/daily-force.js','utf8'),
   readFile('handlers/bayarcash.js','utf8'),
   readFile('src/features/payment-detail.js','utf8'),
@@ -59,7 +60,7 @@ must(monitor,'return { recorded: true, changed, isNew: !previous }','meaningful 
 must(hooks,'if (monitorSeen?.changed)','user-change auto refresh');
 must(hooks,"refreshSupportMonitorMessage({ force: true })",'Daily Force mode refresh');
 must(router,'trackSupportMonitorActor(actor, actorChatType)','thin-router monitor tracking');
-must(router,"reason:'payping_authoritative'",'Telegram mode commands cannot override PayPing');
+must(commandRouter,"reason:'payping_authoritative'",'Telegram mode commands cannot override PayPing');
 must(daily,'refresh after Daily Force success failed','usage-success refresh');
 must(bayarcash,'refresh after paid support failed','payment-success refresh');
 must(paymentDetail,'initial auto monitor failed','connect-time refresh');

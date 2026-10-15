@@ -35,7 +35,7 @@ try{
  assert(channel.includes('getMediaXChannelRule'), 'Shared channel config must use the original channel gate');
  assert(channel.includes('getChatMember'), 'Original Telegram membership check must remain intact');
  assert(channel.includes('if(isPayPingSharedConfigEnabled())return {gateRequired:false'), 'Legacy fifth-HQ gate must stay OFF during synced Force Support and Free mode');
- assert(channel.includes('if(await isDailyForceSupportEnabled())return'), 'Force Support must override a stale Free + Channel policy');
+ assert(!channel.includes('if(await isDailyForceSupportEnabled())return'), 'PayPing Free + Channel must override stale Force history');
  assert(channel.includes('hasMediaXChannelCampaignUse(userId,remote.campaignSequence)'), 'Channel gate must use new campaign success records, never accumulated HQ history');
  assert(channel.includes('if (campaignSequence) return false;'),'First successful HQ must NEVER send join-channel prompt');
  assert(channel.includes('if(!isNewChannelUsage(message))return false;'),'Channel prompt must only appear on newly submitted link/photo/video');

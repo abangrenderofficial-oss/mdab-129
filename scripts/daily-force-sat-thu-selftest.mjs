@@ -29,8 +29,8 @@ const [daily,friday,monitor,publisher,audit,paymentDetail,menu]=await Promise.al
 ]);
 const must=(s,m,l)=>{if(!s.includes(m))throw new Error(`${l} missing: ${m}`)};
 
-must(daily,"if (!malaysiaSupportSchedule().dailyForceWindowActive) return false;",'claim/mark Friday guard');
-must(daily,'pausedForFriday: mode.enabled && schedule.isFriday','runtime pause state');
+must(daily,"if (!isPayPingSharedConfigEnabled() && !malaysiaSupportSchedule().dailyForceWindowActive) return false;",'legacy Friday guard must not pause PayPing Force Support');
+must(daily,'pausedForFriday: mode.enabled && !isPayPingSharedConfigEnabled() && !schedule.dailyForceWindowActive && schedule.isFriday','legacy Friday pause excludes PayPing Force Support');
 must(daily,'Jumaat Daily Force auto-pause','command confirmation');
 must(daily,'Ia kekal ON sampai kau guna /stopforcesupportdaily.','persistent mode copy');
 must(friday,"if (parts.weekday !== 'Fri')",'Friday system day guard');
@@ -39,7 +39,7 @@ must(monitor,"dailyState = 'PAUSED_FRIDAY'",'monitor Friday state');
 must(publisher,'Daily Force: ON · PAUSED FRIDAY','auto monitor Friday heading');
 must(audit,'Daily Force: PAUSED FRIDAY','USER RECORD Friday status');
 must(paymentDetail,'PAUSED FRIDAY','Payment Detail Friday status');
-must(menu.toLowerCase(),'persistent sabtu–khamis','admin menu schedule');
+must(menu.toLowerCase(),'/freesupportchannel','modern access mode is visible in admin menu');
 
 console.log('DAILY_FORCE_SAT_THU_SELFTEST_OK',JSON.stringify({
   thursday:malaysiaSupportSchedule(thu),

@@ -1,0 +1,36 @@
+name: MediaX PayPing Authority CI
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/support/**'
+      - 'src/features/channel-gate.js'
+      - 'handlers/telegram.js'
+      - 'server.js'
+      - 'scripts/payping-**'
+      - '.github/workflows/payping-authority-ci.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install
+        run: npm install --ignore-scripts
+      - name: Syntax check
+        run: |
+          node --check server.js
+          node --check src/support/daily-force.js
+          node --check src/support/payping-shared-config.js
+          node --check src/support/payping-shared-command-router.js
+          node --check src/support/payping-reminder-registry.js
+          node --check src/features/channel-gate.js
+          node --check src/support/promotion.js
+          node --check handlers/telegram.js
+      - name: Existing safety regression tests
+        run: npm run check

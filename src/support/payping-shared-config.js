@@ -33,17 +33,10 @@ export async function isSupportAmountCurrentlyActive(amount){
  return existing.some(x=>x.status==='active'&&Number(x.amount_cents)===Math.round(amount*100));
 }
 export async function publishSharedForceState(enabled,source='telegram'){
- if(!isPayPingSharedConfigEnabled())return false;
- // V2 reads the original support_daily_force_mode row directly. This mirror
- // keeps its independent policy snapshot consistent for other API consumers.
- const db=await getSupportDb();
- const t=new Date().toISOString(),env=currentSupportEnvironment();
- await db.execute({
-  sql:"INSERT INTO payping_access_policies_v2(environment,bot_id,mode,updated_at) VALUES(?,'mediax',?,?) ON CONFLICT(environment,bot_id) DO UPDATE SET mode=excluded.mode,updated_at=excluded.updated_at",
-  args:[env,enabled?'force_support':'free',t]
- }).catch(e=>{console.warn('[payping-shared] policy mirror failed:',e.message)});
- return true;
+ // The legacy force publisher remains as a compatibility stub, never writing canonical policy.
+ return false;
 }
+
 export async function reportPayPingSync(){
  if(!isPayPingSharedConfigEnabled()||Date.now()-lastHeartbeat<45000)return;
  lastHeartbeat=Date.now();

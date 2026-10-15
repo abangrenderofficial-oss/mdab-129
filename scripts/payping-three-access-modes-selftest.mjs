@@ -26,9 +26,9 @@ try {
  const router=await readFile('src/support/payping-shared-command-router.js','utf8');
  for(const name of ['/forcesupport','/freesupportchannel','/normalsupport'])
    assert(router.includes("'"+name+"'"),name+' must appear in the unified command router');
- assert(router.includes("setMediaXFreeChannelAccessMode({dryRun:true})"),'Channel must be verified before disabling force');
- assert(router.includes('setMediaXFreeAccessMode()'),'Normal mode must update PayPing database');
- assert(router.includes('setDailyForceSupportEnabled(true'),'Force must use existing 7-day bot engine');
+ assert(router.includes("reason:'payping_authoritative'"),'Telegram commands must not override PayPing access mode');
+ assert(!router.includes('setMediaXFreeAccessMode()'),'Bot commands must not write PayPing mode');
+ assert(!router.includes('setDailyForceSupportEnabled(true'),'Force must be activated by PayPing only');
  assert(router.includes('deprecated:true'),'Old daily commands must not mutate state');
  const handler=await readFile('handlers/telegram.js','utf8');
  assert(handler.includes('routeUnifiedForceCommand(message,command)'));

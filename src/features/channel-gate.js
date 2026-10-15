@@ -97,8 +97,7 @@ export async function sendChannelGatePrompt(chatId, channel=channelUsername(), t
 async function channelGatePolicy(userId){
   const remote=await getMediaXChannelRule();
   if(remote){
-    // Force Support always wins. Campaign usage has no relation to old HQ stats.
-    if(await isDailyForceSupportEnabled())return {gateRequired:false,channel:remote.channel,threshold:1,campaignSequence:remote.campaignSequence};
+    // Canonical PayPing free_channel mode must not be overridden by stale legacy Force rows.
     const gateRequired=await hasMediaXChannelCampaignUse(userId,remote.campaignSequence);
     return {gateRequired,channel:remote.channel,threshold:1,campaignSequence:remote.campaignSequence};
   }

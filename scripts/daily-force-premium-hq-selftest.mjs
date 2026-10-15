@@ -44,9 +44,8 @@ const channelCopy = [
 for(const line of channelCopy) must(support,line,'Daily Force exact channel support copy');
 
 must(support,'export function supportAmountKeyboard()','amount-only support keyboard');
-for(const amount of ['10','20','30','50','100']) {
-  must(support,`SUPPORT_SELECT_PREFIX}${amount}`,'support amount '+amount);
-}
+must(support,'currentSupportAmounts()','amount buttons are dynamically sourced from PayPing');
+must(support,'callback_data:SUPPORT_SELECT_PREFIX+value','amount callbacks use active PayPing plan values');
 must(daily,"const DAILY_FORCE_COPY = 'Please support bot utk teruskan guna ❤️';",'locked private reply');
 must(daily,'dailyForcePremiumSupportText()','first-success long promo');
 must(daily,'supportAmountKeyboard()','Daily Force amount buttons');
@@ -66,7 +65,7 @@ must(gated,'markDailyForceUsageSuccess(userId)','generic successful media consum
 must(link,'const dailyClaimed = await claimDailyForceUsageAttempt(userId);','Daily claim for every link job');
 must(link,"label: 'premium hq status link'",'status-link Premium completion');
 must(link,'completionKey:','status-link completion dedupe key');
-must(link,'markDailyForceUsageSuccess(userId)','normal successful download consumes the free use');
+must(link,'markDailyForceUsageSuccess(userId, {allowFirstHq:true})','normal successful download consumes the free use while allowing HQ completion');
 
 must(status,'premiumImageCompleted = true','photo Premium HQ completion');
 must(status,'premiumHqCompleted: true','unified Premium HQ completion flag');

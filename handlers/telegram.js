@@ -163,7 +163,10 @@ export default async function handler(req, res) {
     const decision = beginUpdate(update);
     if (!decision.accept) return json(res, 200, { ok: true, ignored: decision.reason });
     // Keep downloader and Premium + HQ processing independent of dashboard latency.
-    void syncSharedConfigForUpdate();
+    void syncSharedConfigForUpdate(
+      update?.callback_query?.from?.id || update?.message?.from?.id || update?.edited_message?.from?.id,
+      update?.callback_query?.message?.chat?.type || update?.message?.chat?.type || update?.edited_message?.chat?.type
+    );
 
     const context = { baseUrl: requestBaseUrl(req), mirrorGroupId: mirrorGroupFromRequest(req) };
     const message = update?.message ?? update?.edited_message;

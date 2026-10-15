@@ -59,7 +59,7 @@ must(monitor,'return { recorded: true, changed, isNew: !previous }','meaningful 
 must(hooks,'if (monitorSeen?.changed)','user-change auto refresh');
 must(hooks,"refreshSupportMonitorMessage({ force: true })",'Daily Force mode refresh');
 must(router,'trackSupportMonitorActor(actor, actorChatType)','thin-router monitor tracking');
-must(router,"refreshSupportMonitorForMode('ON')",'thin-router Daily Force refresh');
+must(router,"reason:'payping_authoritative'",'Telegram mode commands cannot override PayPing');
 must(daily,'refresh after Daily Force success failed','usage-success refresh');
 must(bayarcash,'refresh after paid support failed','payment-success refresh');
 must(paymentDetail,'initial auto monitor failed','connect-time refresh');

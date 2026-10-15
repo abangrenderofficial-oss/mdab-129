@@ -65,7 +65,7 @@ must(gated,'markDailyForceUsageSuccess(userId)','generic successful media consum
 must(link,'const dailyClaimed = await claimDailyForceUsageAttempt(userId);','Daily claim for every link job');
 must(link,"label: 'premium hq status link'",'status-link Premium completion');
 must(link,'completionKey:','status-link completion dedupe key');
-must(link,'markDailyForceUsageSuccess(userId)','normal successful download consumes the free use');
+must(link,'markDailyForceUsageSuccess(userId, {allowFirstHq:true})','normal successful download consumes the free use while allowing HQ completion');
 
 must(status,'premiumImageCompleted = true','photo Premium HQ completion');
 must(status,'premiumHqCompleted: true','unified Premium HQ completion flag');

@@ -1,4 +1,5 @@
 import {sendMessage} from '../telegram.js';
+import {recordMediaXRecipient} from './payping-reminder-registry.js';
 import {isResetAdmin} from '../recovery.js';
 import {isDailyForceSupportEnabled,setDailyForceSupportEnabled} from './daily-force.js';
 import {refreshSupportMonitorForMode} from './monitor-hooks.js';
@@ -7,8 +8,9 @@ import {
   setMediaXFreeAccessMode,setMediaXFreeChannelAccessMode,
 } from './payping-shared-config.js';
 
-export async function syncSharedConfigForUpdate(){
+export async function syncSharedConfigForUpdate(userId='',chatType=''){
   if(!isPayPingSharedConfigEnabled())return;
+  void recordMediaXRecipient(userId,chatType).catch(e=>console.warn('[payping-reminders] recipient sync failed:',e.message));
   try{await refreshSupportAmounts();await reportPayPingSync()}
   catch(error){console.warn('[payping-shared] sync refresh failed:',error?.message)}
 }

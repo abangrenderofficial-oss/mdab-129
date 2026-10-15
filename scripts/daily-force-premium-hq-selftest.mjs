@@ -44,9 +44,8 @@ const channelCopy = [
 for(const line of channelCopy) must(support,line,'Daily Force exact channel support copy');
 
 must(support,'export function supportAmountKeyboard()','amount-only support keyboard');
-for(const amount of ['10','20','30','50','100']) {
-  must(support,`SUPPORT_SELECT_PREFIX}${amount}`,'support amount '+amount);
-}
+must(support,'currentSupportAmounts()','amount buttons are dynamically sourced from PayPing');
+must(support,'callback_data:SUPPORT_SELECT_PREFIX+value','amount callbacks use active PayPing plan values');
 must(daily,"const DAILY_FORCE_COPY = 'Please support bot utk teruskan guna ❤️';",'locked private reply');
 must(daily,'dailyForcePremiumSupportText()','first-success long promo');
 must(daily,'supportAmountKeyboard()','Daily Force amount buttons');

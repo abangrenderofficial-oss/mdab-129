@@ -111,11 +111,21 @@ async function modeState() {
           LIMIT 1`,
     args: [currentSupportEnvironment()],
   });
-  return {
+  const legacy = {
     enabled: Number(result.rows?.[0]?.enabled || 0) === 1,
     cycleId: Math.max(1, Number(result.rows?.[0]?.cycle_id || 1)),
     policyVersion: Math.max(1, Number(result.rows?.[0]?.policy_version || 3)),
   };
+  // Authoritative mode is owned by PayPing. Legacy cycle/usage records remain intact.
+  if (isPayPingSharedConfigEnabled()) {
+    const canonical = await db.execute({
+      sql: "SELECT mode FROM payping_access_policies_v2 WHERE environment=? AND bot_id='mediax' LIMIT 1",
+      args: [currentSupportEnvironment()],
+    });
+    const accessMode = String(canonical.rows?.[0]?.mode || 'free').toLowerCase();
+    return {...legacy, enabled: accessMode === 'force_support' || accessMode === 'support_required', accessMode, source:'payping'};
+  }
+  return legacy;
 }
 
 export async function repairDailyForceCurrentCycleUsers(rawUserIds = process.env.DAILY_FORCE_REPAIR_USER_IDS || '') {
@@ -199,6 +209,8 @@ export async function getDailyForceRuntimeState(date = new Date()) {
 }
 
 export async function setDailyForceSupportEnabled(enabled, adminUserId = '') {
+  // Old writer is retained but paused when PayPing Shared Config controls the bot.
+  if (isPayPingSharedConfigEnabled()) throw new Error('Set Access Control melalui PayPing Aurora.');
   await ensureSchema();
   const db = await getSupportDb();
   const environment = currentSupportEnvironment();

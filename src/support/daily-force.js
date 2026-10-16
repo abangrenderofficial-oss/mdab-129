@@ -7,6 +7,7 @@ import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { malaysiaSupportSchedule } from './daily-force-schedule.js';
 import { MEDIA_STATUS_HQ, MEDIA_STATUS_HQ_ANDROID, MEDIA_STATUS_HQ_MENU } from '../bot/media-actions.js';
 import {isPayPingSharedConfigEnabled,publishSharedForceState} from './payping-shared-config.js';
+import {getMediaXLockCopy} from './payping-message-bridge.js';
 
 const DAILY_FORCE_COPY = 'Please support bot utk teruskan guna ❤️';
 const DAILY_FORCE_PROCESSING_COPY = '⏳ Penggunaan pertama sedang diproses. Tunggu sampai siap dulu ya.';
@@ -266,12 +267,14 @@ async function usageState(userId, cycleId) {
   };
 }
 
-async function sendDailyForceLock(chatId) {
-  await sendMessage(
-    chatId,
-    dailyForcePremiumSupportText(),
-    { reply_markup: supportAmountKeyboard() },
-  );
+async function sendDailyForceLock(chatId,person={}) {
+  // Only message content/buttons are read from PayPing. All Force Support
+  // decisions, quotas, completions, exclusions and mode remain unchanged.
+  const saved=await getMediaXLockCopy('force_support',{firstName:person?.first_name,username:person?.username});
+  await sendMessage(chatId,saved?.text??dailyForcePremiumSupportText(),{
+    ...(saved?{parse_mode:saved.parse_mode}:{}),
+    ...(saved?.buttonEnabled===false?{}:{reply_markup:supportAmountKeyboard()})
+  });
 }
 
 async function accessContext(userId) {
@@ -501,7 +504,7 @@ export async function enforceDailyForceSupportForMessage(message = {}) {
     return true;
   }
 
-  await sendDailyForceLock(chatId).catch(() => {});
+  await sendDailyForceLock(chatId,message?.from||{}).catch(() => {});
   return true;
 }
 

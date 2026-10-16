@@ -8,6 +8,7 @@ import {
 } from '../bot/stats.js';
 
 import {getMediaXChannelRule,hasMediaXChannelCampaignUse,canFinishMediaXFirstHq,isPayPingSharedConfigEnabled} from '../support/payping-shared-config.js';
+import {getMediaXLockCopy} from '../support/payping-message-bridge.js';
 import {isDailyForceSupportEnabled} from '../support/daily-force.js';
 
 export const CHANNEL_VERIFY_CALLBACK = 'channel:verify:v1';
@@ -68,11 +69,12 @@ async function getMembership(userId, channel=channelUsername()) {
   }
 }
 
-export async function sendChannelGatePrompt(chatId, channel=channelUsername(), threshold=5) {
+export async function sendChannelGatePrompt(chatId, channel=channelUsername(), threshold=5,person={}) {
   if (!chatId) return false;
+  const saved=await getMediaXLockCopy('free_channel',{firstName:person?.first_name,username:person?.username,channel});
   await sendMessage(
     chatId,
-    [
+    saved?.text??[
       '📢 Join Official Channel Kita 🇲🇾',
       '',
       threshold===0?'Untuk guna bot ini, awak perlu join channel terlebih dahulu.':threshold===1?'Penggunaan percuma pertama dah selesai. Untuk guna bot kali kedua, awak perlu join channel.':'Premium + HQ ke-'+threshold+' dah siap 🥳',
@@ -83,12 +85,13 @@ export async function sendChannelGatePrompt(chatId, channel=channelUsername(), t
       'Apa-apa update bot, features baru dan announcement, semua kita share dekat channel kita.',
     ].join('\n'),
     {
-      reply_markup: {
+      ...(saved?{parse_mode:saved.parse_mode}:{}),
+      ...(saved?.buttonEnabled===false?{}:{reply_markup:{
         inline_keyboard: [
-          [{ text: '📢 Join Channel Kita', url: channelUrl(channel) }],
+          [{ text: saved?.buttonLabel||'📢 Join Channel Kita', url: channelUrl(channel) }],
           [{ text: 'Dah Join ✅', callback_data: CHANNEL_VERIFY_CALLBACK }],
         ],
-      },
+      }}),
     },
   );
   return true;
@@ -161,7 +164,7 @@ export async function enforceChannelGateForMessage(message = {}) {
   }
 
   trace(userId, 'message_gate_result', { blocked: true, membership: false });
-  await sendChannelGatePrompt(chatId,channel,threshold).catch((error) => {
+  await sendChannelGatePrompt(chatId,channel,threshold,message?.from||{}).catch((error) => {
     console.warn('[channel-gate] message gate prompt failed:', error?.message);
   });
   return true;
@@ -206,7 +209,7 @@ export async function enforceChannelGateForCallback(callbackQuery = {}) {
     text: 'Join channel kita dulu ya 😊',
     show_alert: false,
   }).catch(() => {});
-  await sendChannelGatePrompt(chatId,channel,threshold).catch((error) => {
+  await sendChannelGatePrompt(chatId,channel,threshold,callbackQuery?.from||{}).catch((error) => {
     console.warn('[channel-gate] callback gate prompt failed:', error?.message);
   });
   return true;

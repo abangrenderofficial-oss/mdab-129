@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {interpolateMediaXLockText,readMediaXLockReply} from '../src/support/payping-lock-replies.js';
+const body='Hai {first_name}, username {username}. Join {channel} untuk {bot_name}.';
+const rendered=interpolateMediaXLockText(body,{from:{first_name:'Amin',username:'amin3d'},channel:'@samplechannel'});
+assert.match(rendered,/Hai Amin, username @amin3d/);
+assert.match(rendered,/Join @samplechannel untuk MediaX Downloader/);
+const previous=process.env.PAYPING_SHARED_CONFIG_ENABLED;
+process.env.PAYPING_SHARED_CONFIG_ENABLED='false';
+assert.equal(await readMediaXLockReply('force_support'),null,'disabled shared config cannot change existing legacy behavior');
+if(previous===undefined)delete process.env.PAYPING_SHARED_CONFIG_ENABLED;else process.env.PAYPING_SHARED_CONFIG_ENABLED=previous;
+const force=readFileSync(new URL('../src/support/daily-force.js',import.meta.url),'utf8');
+const gate=readFileSync(new URL('../src/features/channel-gate.js',import.meta.url),'utf8');
+assert.match(force,/readMediaXLockReply\('force_support'/);
+assert.match(force,/supportAmountKeyboard\(\)/);
+assert.match(gate,/readMediaXLockReply\('free_channel'/);
+assert.match(gate,/CHANNEL_VERIFY_CALLBACK/);
+console.log('MediaX PayPing lock reply integration preflight passed (no Telegram/network calls).');

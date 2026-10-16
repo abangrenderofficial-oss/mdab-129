@@ -25,7 +25,7 @@ function validateConfig(){
   try{url=new URL(env('PUBLIC_BASE_URL'))}catch{fail('PUBLIC_BASE_URL must be an HTTPS origin')}
   if(url&&(url.protocol!=='https:'||url.pathname!=='/'||url.search||url.hash||url.username||url.password))
     fail('PUBLIC_BASE_URL must be a clean public HTTPS origin');
-  if(!/^\\d+$/.test(env('BOT_OWNER_ID')))fail('BOT_OWNER_ID must be numeric');
+  if(!/^\d+$/.test(env('BOT_OWNER_ID')))fail('BOT_OWNER_ID must be numeric');
   if(!/^[A-Za-z0-9_-]{1,256}$/.test(env('TELEGRAM_WEBHOOK_SECRET')))
     fail('Invalid TELEGRAM_WEBHOOK_SECRET format');
   if(env('BAYARCASH_SANDBOX').toLowerCase()==='true')

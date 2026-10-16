@@ -7,6 +7,7 @@ import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { malaysiaSupportSchedule } from './daily-force-schedule.js';
 import { MEDIA_STATUS_HQ, MEDIA_STATUS_HQ_ANDROID, MEDIA_STATUS_HQ_MENU } from '../bot/media-actions.js';
 import {isPayPingSharedConfigEnabled,publishSharedForceState} from './payping-shared-config.js';
+import {readMediaXLockReply} from './payping-lock-replies.js';
 
 const DAILY_FORCE_COPY = 'Please support bot utk teruskan guna ❤️';
 const DAILY_FORCE_PROCESSING_COPY = '⏳ Penggunaan pertama sedang diproses. Tunggu sampai siap dulu ya.';
@@ -266,11 +267,18 @@ async function usageState(userId, cycleId) {
   };
 }
 
-async function sendDailyForceLock(chatId) {
+async function sendDailyForceLock(chatId,from={}) {
+  const custom=await readMediaXLockReply('force_support',{from});
+  const amounts=supportAmountKeyboard();
+  const keyboard=custom
+   ?custom.buttonEnabled
+    ?{inline_keyboard:[[{text:custom.buttonLabel||'💜 Support Sekarang',callback_data:'support:amounts'}],...amounts.inline_keyboard]}
+    :null
+   :amounts;
   await sendMessage(
     chatId,
-    dailyForcePremiumSupportText(),
-    { reply_markup: supportAmountKeyboard() },
+    custom?.text||dailyForcePremiumSupportText(),
+    keyboard?{reply_markup:keyboard}:{},
   );
 }
 
@@ -501,7 +509,7 @@ export async function enforceDailyForceSupportForMessage(message = {}) {
     return true;
   }
 
-  await sendDailyForceLock(chatId).catch(() => {});
+  await sendDailyForceLock(chatId,message?.from).catch(() => {});
   return true;
 }
 

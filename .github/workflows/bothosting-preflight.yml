@@ -1,0 +1,35 @@
+name: MediaX Bot Hosting isolated preflight
+
+on:
+  push:
+    branches: [bothosting-ready]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies including FFmpeg, FFprobe and yt-dlp
+        run: npm install --omit=dev --no-audit --no-fund
+      - name: Verify Bot Hosting startup safety with fake credentials
+        run: node scripts/bothosting-selftest.mjs
+      - name: Verify Bot Hosting real runtime binaries without touching Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: '123456789:FAKE_NOT_LIVE'
+          TELEGRAM_WEBHOOK_SECRET: test_no_real_webhook_secret
+          BOT_OWNER_ID: '123456789'
+          SETUP_SECRET: fake_setup_key
+          PUBLIC_BASE_URL: https://example.apps.bot-hosting.net
+          TURSO_DATABASE_URL: libsql://example.invalid
+          TURSO_AUTH_TOKEN: fake-turso
+          GITHUB_ACTIONS_TOKEN: fake-gh
+          BAYARCASH_API_SECRET_KEY: fake-secret
+          BAYARCASH_API_TOKEN: fake-token
+          BAYARCASH_PORTAL_KEY: fake-portal
+          PAYPING_SHARED_CONFIG_ENABLED: 'true'
+        run: node scripts/bothosting-start.mjs --check

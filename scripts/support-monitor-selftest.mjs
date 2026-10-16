@@ -10,6 +10,8 @@ process.env.BOT_OWNER_ID='999999999';
 
 const { getSupportDb, currentSupportEnvironment } = await import('../src/support/store.js');
 const { recordSupportMonitorSeen, getSupportMonitorUserStatus, getSupportMonitorReport } = await import('../src/support/monitor.js');
+const {malaysiaSupportSchedule}=await import('../src/support/daily-force-schedule.js');
+const forcedToday=malaysiaSupportSchedule().dailyForceWindowActive;
 
 function assert(v,m){if(!v)throw new Error(m)}
 const db=await getSupportDb();
@@ -71,21 +73,21 @@ assert(supporter.dailyForce.state==='EXEMPT_SUPPORTER','supporter should be exem
 
 const locked=await getSupportMonitorUserStatus('200002');
 assert(locked.support.active===false,'locked user should be unsupported');
-assert(locked.dailyForce.state==='LOCKED','used non-supporter should be locked');
+assert(locked.dailyForce.state===(forcedToday?'LOCKED':'PAUSED_FRIDAY'),'used non-supporter state follows existing Friday schedule');
 assert(locked.dailyForce.successCount===1,'locked user success count should be 1');
 assert(locked.dailyForce.anomaly===false,'success=1 should not be anomaly');
 
 const free=await getSupportMonitorUserStatus('200003');
-assert(free.dailyForce.state==='FREE_USE_AVAILABLE','unused non-supporter should have free use');
+assert(free.dailyForce.state===(forcedToday?'FREE_USE_AVAILABLE':'PAUSED_FRIDAY'),'unused user state follows Friday schedule');
 
 const anomaly=await getSupportMonitorUserStatus('200004');
-assert(anomaly.dailyForce.state==='LOCKED','anomaly user should be locked');
+assert(anomaly.dailyForce.state===(forcedToday?'LOCKED':'PAUSED_FRIDAY'),'anomaly user state follows Friday schedule');
 assert(anomaly.dailyForce.successCount===2,'anomaly success count should be 2');
 assert(anomaly.dailyForce.anomaly===true,'success>1 must flag anomaly');
 
 const report=await getSupportMonitorReport(80);
 assert(report.supported.some(x=>x.userId==='200001'),'report missing active supporter');
-assert(report.locked.some(x=>x.userId==='200002'),'report missing locked user');
+assert(forcedToday?report.locked.some(x=>x.userId==='200002'):!report.locked.some(x=>x.userId==='200002'),'report lock list follows existing Friday schedule');
 assert(report.anomalies.some(x=>x.userId==='200004'),'report missing anomaly user');
 assert(!report.users.some(x=>x.userId==='999999999'),'owner must be excluded from monitor list');
 

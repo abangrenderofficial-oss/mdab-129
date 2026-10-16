@@ -9,6 +9,7 @@ import {
 
 import {getMediaXChannelRule,hasMediaXChannelCampaignUse,canFinishMediaXFirstHq,isPayPingSharedConfigEnabled} from '../support/payping-shared-config.js';
 import {isDailyForceSupportEnabled} from '../support/daily-force.js';
+import {readMediaXLockReply} from '../support/payping-lock-replies.js';
 
 export const CHANNEL_VERIFY_CALLBACK = 'channel:verify:v1';
 
@@ -68,29 +69,26 @@ async function getMembership(userId, channel=channelUsername()) {
   }
 }
 
-export async function sendChannelGatePrompt(chatId, channel=channelUsername(), threshold=5) {
-  if (!chatId) return false;
-  await sendMessage(
-    chatId,
-    [
-      '📢 Join Official Channel Kita 🇲🇾',
-      '',
-      threshold===0?'Untuk guna bot ini, awak perlu join channel terlebih dahulu.':threshold===1?'Penggunaan percuma pertama dah selesai. Untuk guna bot kali kedua, awak perlu join channel.':'Premium + HQ ke-'+threshold+' dah siap 🥳',
-      `Untuk terus guna bot, awak wajib join ${channel} dulu ya.`,
-      '',
-      'Thank you banyak-banyak atas support korang yang tak berbelah bahagi! 🥹❤️',
-      '',
-      'Apa-apa update bot, features baru dan announcement, semua kita share dekat channel kita.',
-    ].join('\n'),
-    {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '📢 Join Channel Kita', url: channelUrl(channel) }],
-          [{ text: 'Dah Join ✅', callback_data: CHANNEL_VERIFY_CALLBACK }],
-        ],
-      },
-    },
-  );
+export async function sendChannelGatePrompt(chatId, channel=channelUsername(), threshold=5, from={}) {
+  if(!chatId)return false;
+  const custom=await readMediaXLockReply('free_channel',{from,channel});
+  const text=custom?.text||[
+    '📢 Join Official Channel Kita 🇲🇾','',
+    threshold===0?'Untuk guna bot ini, awak perlu join channel terlebih dahulu.':threshold===1?'Penggunaan percuma pertama dah selesai. Untuk guna bot kali kedua, awak perlu join channel.':'Premium + HQ ke-'+threshold+' dah siap 🥳',
+    'Untuk terus guna bot, awak wajib join '+channel+' dulu ya.','',
+    'Thank you banyak-banyak atas support korang yang tak berbelah bahagi! 🥹❤️','',
+    'Apa-apa update bot, features baru dan announcement, semua kita share dekat channel kita.'
+  ].join('\n');
+  const defaultKeyboard={inline_keyboard:[
+    [{text:'📢 Join Channel Kita',url:channelUrl(channel)}],
+    [{text:'Dah Join ✅',callback_data:CHANNEL_VERIFY_CALLBACK}],
+  ]};
+  const url=custom?.buttonUrl||(channel.startsWith('@')?channelUrl(channel):'');
+  const keyboard=!custom?defaultKeyboard:custom.buttonEnabled&&url?{inline_keyboard:[
+    [{text:custom.buttonLabel||'📢 Join Channel',url}],
+    [{text:'Dah Join ✅',callback_data:CHANNEL_VERIFY_CALLBACK}],
+  ]}:undefined;
+  await sendMessage(chatId,text,keyboard?{reply_markup:keyboard}:{});
   return true;
 }
 
@@ -161,7 +159,7 @@ export async function enforceChannelGateForMessage(message = {}) {
   }
 
   trace(userId, 'message_gate_result', { blocked: true, membership: false });
-  await sendChannelGatePrompt(chatId,channel,threshold).catch((error) => {
+  await sendChannelGatePrompt(chatId,channel,threshold,message?.from).catch((error) => {
     console.warn('[channel-gate] message gate prompt failed:', error?.message);
   });
   return true;

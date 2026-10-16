@@ -18,6 +18,12 @@ jobs:
         run: npm install --omit=dev --no-audit --no-fund
       - name: Verify Bot Hosting startup safety with fake credentials
         run: node scripts/bothosting-selftest.mjs
+      - name: Validate MediaX shared PayPing lock integration without contacting Telegram
+        run: |
+          node --check src/support/payping-lock-replies.js
+          node --check src/support/daily-force.js
+          node --check src/features/channel-gate.js
+          node scripts/mediax-payping-lock-selftest.mjs
       - name: Verify Bot Hosting real runtime binaries without touching Telegram
         env:
           TELEGRAM_BOT_TOKEN: '123456789:FAKE_NOT_LIVE'

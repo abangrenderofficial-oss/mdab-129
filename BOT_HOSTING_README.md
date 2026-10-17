@@ -15,6 +15,7 @@
 - Activate a public HTTPS domain on the deployment; copy exact HTTPS origin into `PUBLIC_BASE_URL`.
 - Server binds `0.0.0.0` on `SERVER_PORT` (or `PORT` for Railway).
 - Disable Git auto-pull on reboot until staging validation finishes; pin this branch for the dry run.
+- Keep `MEDIAX_HOSTING_STANDBY=true` while Railway runs the production webhook. This suppresses Telegram webhook processing and all scheduled side jobs on the new server.
 
 ## ENV
 Copy keys from `BOT_HOSTING_ENV.template` into Bot-Hosting Env UI. Use real values from the existing production runtime, never paste secrets to GitHub. If a key is only used for optional features, it can be omitted. Preserve all existing codec-specific/status env overrides **unchanged**.
@@ -33,10 +34,11 @@ PayPing shared mode: `PAYPING_SHARED_CONFIG_ENABLED=true` only when existing Rai
 
 ## Manual cutover (after all checks)
 1. Snapshot the exact Railway webhook via Telegram `getWebhookInfo` and keep the prior callback settings for rollback.
-2. In the Bot-Hosting service shell, run `node scripts/register-railway-webhook.mjs`. Despite its legacy name, it uses `PUBLIC_BASE_URL` and preserves pending updates. Run this **only once** during scheduled cutover.
-3. Confirm `getWebhookInfo` points to the new HTTPS `/api/telegram` URL. Test normal TikTok, Instagram, Threads, YouTube, Premium+ HQ, Android HQ and native Apple Live Photo using test accounts/controlled content. GitHub heavy worker still runs on `main`.
-4. Move Bayarcash callback/return URL only after webhook and smoke validations succeed; check PayPing notification and transaction detail.
-5. Keep Railway available for rollback. If Bot-Hosting fails, re-register prior Telegram URL and restore previous Bayarcash callback. Never run two Telegram active webhooks for the same bot token.
+2. Set `MEDIAX_HOSTING_STANDBY=false` on the prepared deployment and restart it. Confirm `/api/health` stays healthy; only do this immediately before intentional cutover.
+3. In the Bot-Hosting service shell, run `node scripts/register-railway-webhook.mjs`. Despite its legacy name, it uses `PUBLIC_BASE_URL` and preserves pending updates. Run this **only once** during scheduled cutover.
+4. Confirm `getWebhookInfo` points to the new HTTPS `/api/telegram` URL. Test normal TikTok, Instagram, Threads, YouTube, Premium+ HQ, Android HQ and native Apple Live Photo using test accounts/controlled content. GitHub heavy worker still runs on `main`.
+5. Move Bayarcash callback/return URL only after webhook and smoke validations succeed; check PayPing notification and transaction detail.
+6. Keep Railway available for rollback. If Bot-Hosting fails, re-register prior Telegram URL, restore previous Bayarcash callback and set `MEDIAX_HOSTING_STANDBY=true` on the new deployment. Never run two Telegram active webhooks for the same bot token.
 
 ## Why older CI runs failed
 - CI `Downloader Smoke`, Status HQ and Heavy Limit were targeting unavailable `mdab-129.vercel.app` and returned HTTP 503 — not evidence that Bot-Hosting breaks media quality.

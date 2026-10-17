@@ -22,7 +22,19 @@ export async function recordMediaXRecipient(userId,chatType='private'){
 export async function seedMediaXReminderRecipients(){
  if(!isPayPingSharedConfigEnabled())return {skipped:true};
  await ensureRegistry();
- const data=JSON.parse(await readFile(file,'utf8'));
+ // Bot-Hosting uses Turso's durable stats snapshot instead of Railway's /data volume.
+ // Never seed an empty audience when that snapshot is missing or corrupted.
+ let data;
+ if(String(process.env.MEDIAX_STATS_BACKEND||'file').trim().toLowerCase()==='turso'){
+  const db=await getSupportDb();
+  const namespace=String(process.env.MEDIAX_STATS_NAMESPACE||'mediax-production');
+  const result=await db.execute({sql:"SELECT payload_json FROM mediax_statistics_snapshot WHERE namespace=? LIMIT 1",args:[namespace]});
+  if(!result.rows?.length)throw new Error('MediaX Turso statistics snapshot missing; reminders not modified');
+  data=JSON.parse(String(result.rows[0].payload_json||'null'));
+  if(!data?.users||typeof data.users!=='object'||Array.isArray(data.users))throw new Error('Invalid Turso stats snapshot; reminders not modified');
+ }else{
+  data=JSON.parse(await readFile(file,'utf8'));
+ }
  const ids=Object.keys(data?.users||{}).filter(id=>/^[0-9]{1,20}$/.test(id));
  const db=await getSupportDb(),env=currentSupportEnvironment(),t=new Date().toISOString();
  for(let i=0;i<ids.length;i+=100){

@@ -29,7 +29,7 @@ export async function prepareMediaXPayPingCheckout({userId,username='',amount},f
   const telegramUserId=String(userId||'').trim();
   if(!/^[0-9]{1,20}$/.test(telegramUserId))throw Object.assign(new Error('Invalid Telegram user ID'),{code:'PAYPING_USER_INVALID'});
   const planId=await activeMediaXPlanForAmount(amount);
-  const response=await fetchImpl(base+'/api/bot-checkout/'+encodeURIComponent(botId)+'/prepare',{
+  const response=await fetchImpl(base+'/api/bot-checkout/'+encodeURIComponent(botId)+'/start',{
     method:'POST',headers:{'content-type':'application/json','x-payping-bot-key':apiKey},
     body:JSON.stringify({telegramUserId,telegramUsername:String(username||'').replace(/^@/,'').slice(0,80),planId}),
     signal:AbortSignal.timeout(12000),redirect:'error'
@@ -38,6 +38,6 @@ export async function prepareMediaXPayPingCheckout({userId,username='',amount},f
   if(!response.ok||!payload.ok)throw Object.assign(new Error('PayPing checkout temporarily unavailable'),{code:'PAYPING_CHECKOUT_UNAVAILABLE',status:response.status});
   const destination=String(payload.data?.url||'');
   let u;try{u=new URL(destination)}catch{}
-  if(!u||u.protocol!=='https:'||u.origin!==base||u.pathname!=='/api/payments/start'||!u.searchParams.has('ticket'))throw Object.assign(new Error('Unexpected PayPing checkout URL'),{code:'PAYPING_BAD_CHECKOUT_URL'});
+  if(!u||u.protocol!=='https:'||u.origin!==base||!/^\/pay\/[a-f0-9]{64}$/.test(u.pathname)||u.search||u.hash)throw Object.assign(new Error('Unexpected PayPing Aurora checkout URL'),{code:'PAYPING_BAD_CHECKOUT_URL'});
   return {url:u.href,planId,expiresAt:payload.data?.expiresAt||null};
 }

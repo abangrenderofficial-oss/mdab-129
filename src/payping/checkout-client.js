@@ -4,7 +4,7 @@ export function isPayPingV2CheckoutSelected(){
   return String(process.env.MEDIAX_PAYMENT_PROVIDER||'legacy').trim().toLowerCase()==='payping';
 }
 function requireConfig(){
-  const base=String(process.env.PAYPING_URL||'').trim().replace(/\\/$/,'');
+  const base=String(process.env.PAYPING_URL||'').trim();
   const botId=String(process.env.PAYPING_BOT_ID||'mediax').trim();
   const apiKey=String(process.env.PAYPING_BOT_API_KEY||'').trim();
   let url;
@@ -27,7 +27,7 @@ export async function activeMediaXPlanForAmount(amount){
 export async function prepareMediaXPayPingCheckout({userId,username='',amount},fetchImpl=fetch){
   const {base,botId,apiKey}=requireConfig();
   const telegramUserId=String(userId||'').trim();
-  if(!/^\\d{1,20}$/.test(telegramUserId))throw Object.assign(new Error('Invalid Telegram user ID'),{code:'PAYPING_USER_INVALID'});
+  if(!/^[0-9]{1,20}$/.test(telegramUserId))throw Object.assign(new Error('Invalid Telegram user ID'),{code:'PAYPING_USER_INVALID'});
   const planId=await activeMediaXPlanForAmount(amount);
   const response=await fetchImpl(base+'/api/bot-checkout/'+encodeURIComponent(botId)+'/prepare',{
     method:'POST',headers:{'content-type':'application/json','x-payping-bot-key':apiKey},

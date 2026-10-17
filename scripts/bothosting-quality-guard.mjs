@@ -29,7 +29,7 @@ let failures = 0;
 for (const [path, sha] of Object.entries(expected)) {
   try {
     const bytes = await readFile(path);
-    const blob = createHash('sha1').update(`blob ${bytes.length}\\0`.replace('\\0','\\x00')).update(bytes).digest('hex');
+    const blob = createHash('sha1').update('blob ' + bytes.length).update(Buffer.from([0])).update(bytes).digest('hex');
     if (blob !== sha) { console.error('[quality-guard] CHANGED:', path); failures++; }
   } catch (e) { console.error('[quality-guard] MISSING:', path, e.message); failures++; }
 }

@@ -13,7 +13,7 @@ const major = Number(process.versions.node.split('.')[0]);
 check('Node.js >= 22',major>=22);
 check('Linux x64 binary-compatible runtime',process.platform==='linux' && process.arch==='x64');
 const portValue = String(process.env.SERVER_PORT || process.env.PORT || '3000');
-check('Valid public HTTP binding port',/^\\d+$/.test(portValue) && Number(portValue)>0 && Number(portValue)<=65535);
+check('Valid public HTTP binding port',Number.isInteger(Number(portValue)) && Number(portValue)>0 && Number(portValue)<=65535);
 check('yt-dlp installed at bin/yt-dlp',existsSync('bin/yt-dlp'));
 let ffmpegExecutable=false;
 try{accessSync(ffmpegPath,constants.X_OK);const run=spawnSync(ffmpegPath,['-version'],{timeout:5000,encoding:'utf8'}); ffmpegExecutable=run.status===0;}catch{}

@@ -1,8 +1,8 @@
 # MediaX Downloader — Bot-Hosting (fill in Bot-Hosting Env panel; NEVER commit actual secrets)
 # Migration mode: keep legacy by default. Only use payping after sandbox test and
-# verifying PayPing V2 checkout/callback/entitlement reconciliation.
+# verifying PayPing Aurora checkout/callback/entitlement reconciliation.
 MEDIAX_PAYMENT_PROVIDER=legacy
-PAYPING_URL=
+PAYPING_URL=https://payping-v2-aurora.onrender.com
 PAYPING_BOT_ID=mediax
 PAYPING_BOT_API_KEY=
 

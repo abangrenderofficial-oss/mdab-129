@@ -15,6 +15,9 @@ BAYARCASH_PORTAL_KEY=
 # For existing PayPing Access Control, copy value from Railway (don't reset or migrate the shared database)
 PAYPING_SHARED_CONFIG_ENABLED=true
 
+# Safe standby while Railway is live. Change to false ONLY after validation and webhook cutover.
+MEDIAX_HOSTING_STANDBY=true
+
 # RECOMMENDED: copy from original MediaX Railway deployment where configured
 TELEGRAM_BOT_USERNAME=
 BAYARCASH_SANDBOX=false

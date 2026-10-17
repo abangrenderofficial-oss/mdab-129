@@ -194,6 +194,12 @@ const server = http.createServer(async (req, res) => {
     req.query = parseQuery(url);
     req.body = await parseBody(req);
 
+    // Staging guard: do not accept Telegram updates until intentional cutover.
+    // This changes HTTP routing only; all original download/HQ encoders are untouched.
+    if (String(process.env.MEDIAX_HOSTING_STANDBY || '').trim().toLowerCase() === 'true' && url.pathname === '/api/telegram') {
+      return res.status(503).json({ ok: false, error: 'mediax_standby_webhook_disabled' });
+    }
+
     if (url.pathname === '/') {
       return res.status(200).json({
         ok: true,
@@ -225,6 +231,11 @@ const server = http.createServer(async (req, res) => {
 const port = Number(process.env.SERVER_PORT || process.env.PORT || 3000);
 server.listen(port, '0.0.0.0', () => {
   console.log(`Downloader bot listening on 0.0.0.0:${port}`);
+  // Avoid duplicate reminders / monitoring posts while Railway is authoritative.
+  if (String(process.env.MEDIAX_HOSTING_STANDBY || '').trim().toLowerCase() === 'true') {
+    console.log('[mediax] STANDBY: webhook processing and scheduled side effects disabled until cutover');
+    return;
+  }
   if (String(process.env.MEDIAX_STATS_BACKEND || '').trim() === 'mirror') {
     void warmMirrorStatsOnStartup()
       .then((result) => console.log('MEDIAX_STATS_MIRROR_STARTUP', JSON.stringify(result)))

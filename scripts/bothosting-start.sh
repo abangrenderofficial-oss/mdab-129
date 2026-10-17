@@ -12,5 +12,12 @@ if [ ! -x node_modules/ffmpeg-static/ffmpeg ]; then
   node node_modules/ffmpeg-static/install.js
 fi
 node scripts/bothosting-quality-guard.mjs
-node scripts/bothosting-preflight.mjs --production
+# Allow a SAFE HTTP-only standby deployment before production secrets are supplied.
+# Full secret validation is strictly required whenever Telegram/payment processing is enabled.
+if [ "${MEDIAX_HOSTING_STANDBY:-false}" = "true" ]; then
+  echo '[mediax] Safe standby requested: validating runtime only; payment and Telegram credentials remain required for production.'
+  node scripts/bothosting-preflight.mjs
+else
+  node scripts/bothosting-preflight.mjs --production
+fi
 exec node server.js

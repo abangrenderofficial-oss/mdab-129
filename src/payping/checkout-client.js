@@ -1,18 +1,17 @@
 import {currentSupportEnvironment,getSupportDb} from '../support/store.js';
+import {proofForRequest,AURORA_ORIGIN} from './aurora-proof.js';
 
 export function isPayPingV2CheckoutSelected(){
   return String(process.env.MEDIAX_PAYMENT_PROVIDER||'legacy').trim().toLowerCase()==='payping';
 }
 function requireConfig(){
-  const base=String(process.env.PAYPING_URL||'').trim();
-  const botId=String(process.env.PAYPING_BOT_ID||'mediax').trim();
-  const apiKey=String(process.env.PAYPING_BOT_API_KEY||'').trim();
+  const base=String(process.env.PAYPING_URL||AURORA_ORIGIN).trim();
+  const telegramToken=String(process.env.TELEGRAM_BOT_TOKEN||'').trim();
   let url;
   try{url=new URL(base);}catch{}
   if(!url||url.protocol!=='https:'||url.username||url.password||!/^[-a-z0-9.]+$/i.test(url.hostname)||url.pathname!=='/'||url.search||url.hash)throw Object.assign(new Error('Invalid PayPing HTTPS origin'),{code:'PAYPING_URL_INVALID'});
-  if(botId!=='mediax')throw Object.assign(new Error('MediaX bot ID must remain mediax'),{code:'PAYPING_BOT_ID_INVALID'});
-  if(!/^ppk_[A-Za-z0-9_-]{32,}$/.test(apiKey))throw Object.assign(new Error('PayPing bot API key missing or invalid'),{code:'PAYPING_KEY_MISSING'});
-  return {base:url.origin,botId,apiKey};
+  if(!/^\\d{5,20}:[A-Za-z0-9_-]{30,}$/.test(telegramToken))throw Object.assign(new Error('Telegram Bot Token is required for Aurora AutoConnect'),{code:'PAYPING_TELEGRAM_PROOF_MISSING'});
+  return {base:url.origin,botId:'mediax',telegramToken};
 }
 /** Resolves editable support plans from canonical Turso, without relying on fixed RM amount mapping. */
 export async function activeMediaXPlanForAmount(amount){
@@ -25,14 +24,16 @@ export async function activeMediaXPlanForAmount(amount){
 }
 /** Creates a short-lived PayPing hosted form link; MediaX never receives payment credentials. */
 export async function prepareMediaXPayPingCheckout({userId,username='',amount},fetchImpl=fetch){
-  const {base,botId,apiKey}=requireConfig();
+  const {base,botId,telegramToken}=requireConfig();
   const telegramUserId=String(userId||'').trim();
   if(!/^[0-9]{1,20}$/.test(telegramUserId))throw Object.assign(new Error('Invalid Telegram user ID'),{code:'PAYPING_USER_INVALID'});
   const planId=await activeMediaXPlanForAmount(amount);
-  const response=await fetchImpl(base+'/api/bot-checkout/'+encodeURIComponent(botId)+'/start',{
-    method:'POST',headers:{'content-type':'application/json','x-payping-bot-key':apiKey},
-    body:JSON.stringify({telegramUserId,telegramUsername:String(username||'').replace(/^@/,'').slice(0,80),planId}),
-    signal:AbortSignal.timeout(12000),redirect:'error'
+  const path='/api/bot-checkout/'+encodeURIComponent(botId)+'/start';
+  const raw=JSON.stringify({telegramUserId,telegramUsername:String(username||'').replace(/^@/,'').slice(0,80),planId});
+  const proof=proofForRequest({token:telegramToken,identity:botId,method:'POST',path,body:raw});
+  const response=await fetchImpl(base+path,{
+    method:'POST',headers:{'content-type':'application/json',...proof},
+    body:raw,signal:AbortSignal.timeout(12000),redirect:'error'
   });
   const payload=await response.json().catch(()=>({}));
   if(!response.ok||!payload.ok)throw Object.assign(new Error('PayPing checkout temporarily unavailable'),{code:'PAYPING_CHECKOUT_UNAVAILABLE',status:response.status});

@@ -2,9 +2,9 @@
 # Migration mode: keep legacy by default. Only use payping after sandbox test and
 # verifying PayPing Aurora checkout/callback/entitlement reconciliation.
 MEDIAX_PAYMENT_PROVIDER=legacy
-PAYPING_URL=https://payping-v2-aurora.onrender.com
-PAYPING_BOT_ID=mediax
-PAYPING_BOT_API_KEY=
+# Aurora URL is bundled in the code. Override only for migration/testing.
+# PAYPING_URL=https://payping-v2-aurora.onrender.com
+# No PAYPING_BOT_API_KEY is required. AutoConnect signs with TELEGRAM_BOT_TOKEN.
 
 # REQUIRED before starting production
 TELEGRAM_BOT_TOKEN=

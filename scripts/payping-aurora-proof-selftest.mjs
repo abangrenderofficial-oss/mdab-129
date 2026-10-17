@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {createHash,createHmac} from 'node:crypto';
+import {proofForRequest,AURORA_ORIGIN} from '../src/payping/aurora-proof.js';
+const token='123456789:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+const path='/api/bot-checkout/mediax/start',raw='{"telegramUserId":"1234","planId":"test"}';
+const p=proofForRequest({token,identity:'mediax',method:'POST',path,body:raw,timestamp:1781691600,nonce:'f'.repeat(32)});
+const signature=createHmac('sha256',token).update(['payping-bot-proof-v1','mediax','POST',path,'1781691600','f'.repeat(32),createHash('sha256').update(raw).digest('hex')].join('\n')).digest('hex');
+assert.equal(p['x-payping-proof-v1'],signature);
+assert.notEqual(signature,proofForRequest({token,identity:'mediax',method:'POST',path,body:raw+' ',timestamp:1781691600,nonce:'f'.repeat(32)})['x-payping-proof-v1']);
+assert.throws(()=>proofForRequest({token:'invalid',identity:'mediax',method:'POST',path,body:raw}),/TELEGRAM_BOT_TOKEN/);
+assert.equal(AURORA_ORIGIN,'https://payping-v2-aurora.onrender.com');
+console.log('[payping-aurora] PASS: signed token proof, strict route, tamper detection; zero API-key ENV');

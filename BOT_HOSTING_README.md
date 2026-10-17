@@ -56,4 +56,9 @@ PayPing shared mode: `PAYPING_SHARED_CONFIG_ENABLED=true` only when existing Rai
 - Manual Follow Up is mandatory: no unattended Telegram payment reminders for MediaX.
 
 - Aurora already provides POST `/api/bot-checkout/mediax/start` and short-lived `/pay/<64-hex-token>` form. Do NOT use earlier `/prepare` or `/api/payments/start` from the unrelated staging checkout experiment.
-- Generate/rotate the MediaX API key via Aurora admin → Bots → MediaX → Connection, and store only in Bot-Hosting environment. Rotation invalidates prior keys; do not rotate if another runtime already uses the key.
+- Inside Aurora admin → Bots → MediaX → Connection, securely verify/link the EXISTING Telegram token once. It must be stored encrypted in Aurora to match the signed proof. No API key rotation or copy/paste between hostings is required.
+
+### AutoConnect without extra ENV
+- MediaX reuses its existing `TELEGRAM_BOT_TOKEN` to sign a fresh short-lived request (time, random nonce, body hash, bot ID and route) for Aurora checkout. The bot token is not transmitted in the PayPing API request.
+- Aurora requires that its Bots → MediaX → Connection already linked the same verified Telegram bot token. An Aurora deployment with the AutoConnect backend must be in service first; otherwise request fails safely.
+- `MEDIAX_PAYMENT_PROVIDER` remains `legacy` until sandbox checkout/callback/supporter/affiliate/follow-up verification. `MEDIAX_HOSTING_STANDBY=true` prevents Telegram/webhook side effects while Railway is authoritative.

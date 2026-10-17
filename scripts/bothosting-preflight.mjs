@@ -24,13 +24,12 @@ if (prod) {
   const provider=String(process.env.MEDIAX_PAYMENT_PROVIDER||'legacy').trim().toLowerCase();
   check('Supported payment provider value',provider==='legacy'||provider==='payping');
   const required=['TELEGRAM_BOT_TOKEN','TELEGRAM_WEBHOOK_SECRET','SETUP_SECRET','BOT_OWNER_ID','PUBLIC_BASE_URL','TURSO_DATABASE_URL','TURSO_AUTH_TOKEN','GITHUB_ACTIONS_TOKEN',
-    ...(provider==='payping'?['PAYPING_URL','PAYPING_BOT_API_KEY']:['BAYARCASH_API_SECRET_KEY','BAYARCASH_API_TOKEN','BAYARCASH_PORTAL_KEY'])];
+    ...(provider==='payping'?[]:['BAYARCASH_API_SECRET_KEY','BAYARCASH_API_TOKEN','BAYARCASH_PORTAL_KEY'])];
   if(provider==='payping'){
-    const origin=String(process.env.PAYPING_URL||'');
+    const origin=String(process.env.PAYPING_URL||'https://payping-v2-aurora.onrender.com');
     let paypingOriginValid=false;try{const u=new URL(origin);paypingOriginValid=u.protocol==='https:' && !u.username && !u.password && !u.search && !u.hash && u.pathname==='/';}catch{}
     check('PayPing HTTPS origin configured',paypingOriginValid);
-    check('PayPing Bot ID is mediax',String(process.env.PAYPING_BOT_ID||'mediax')==='mediax');
-    check('PayPing Bot API key format',/^ppk_[A-Za-z0-9_-]{32,}$/.test(String(process.env.PAYPING_BOT_API_KEY||'')));
+    check('Telegram token usable for Aurora proof',/^\d{5,20}:[A-Za-z0-9_-]{30,}$/.test(String(process.env.TELEGRAM_BOT_TOKEN||'')));
   }
   for(const key of required)check('ENV '+key,Boolean(String(process.env[key]||'').trim()));
   const base=String(process.env.PUBLIC_BASE_URL||'').trim();

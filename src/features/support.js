@@ -556,7 +556,7 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
   const tier = tierForAmount(amount);
   await answerSupportCallback(callbackQuery, `${tier.label} dipilih!`);
 
-  // Explicit PayPing V2 migration path. Legacy Bayarcash remains untouched unless
+  // Explicit PayPing Aurora migration path. Legacy Bayarcash remains untouched unless
   // MEDIAX_PAYMENT_PROVIDER=payping is deliberately set after sandbox testing.
   if (isPayPingV2CheckoutSelected()) {
     try {

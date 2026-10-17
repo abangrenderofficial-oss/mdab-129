@@ -47,10 +47,13 @@ PayPing shared mode: `PAYPING_SHARED_CONFIG_ENABLED=true` only when existing Rai
 ## Quality preservation
 `node scripts/bothosting-quality-guard.mjs` checks Git blob SHA of all protected processing files against GitHub `main` at `abf3dacfb909930f9f0d28c09c144fd3b8a43877`. No auto-fixes, no transcoding changes, no settings resets. If an intentional new feature later changes protected files, update the baseline deliberately in a separate reviewed change.
 
-## NEW — PayPing V2 staged checkout integration (not active by default)
-- MediaX supports `MEDIAX_PAYMENT_PROVIDER=payping` **only after** PayPing's matching staging branch is tested and deployed and its live-checkout switches have been authorized. Default is `legacy`; switching the environment alone on today's production PayPing service will fail closed.
-- For PayPing mode, use `PAYPING_URL` (HTTPS PayPing V2 origin), `PAYPING_BOT_ID=mediax`, `PAYPING_BOT_API_KEY` (owner-issued bot-specific secret). MediaX does NOT need Bayarcash API keys in this mode.
+## NEW — PayPing Aurora staged checkout integration (not active by default)
+- MediaX supports `MEDIAX_PAYMENT_PROVIDER=payping` **only after** the live Aurora branch `feature/aurora-user-access-render-20261014` is verified and its live-checkout switches have been authorized. Default is `legacy`; switching the environment alone on today's production PayPing service will fail closed.
+- For PayPing mode, use `PAYPING_URL=https://payping-v2-aurora.onrender.com` (HTTPS PayPing Aurora origin), `PAYPING_BOT_ID=mediax`, `PAYPING_BOT_API_KEY` (owner-issued bot-specific secret). MediaX does NOT need Bayarcash API keys in this mode.
 - User chooses amount in Telegram -> MediaX resolves active PayPing plan via shared Turso -> authenticated PayPing prepares short-lived checkout handoff -> user enters real payer name/email on PayPing -> Bayarcash payment intent created by PayPing -> signed callback returns to PayPing. MediaX never receives payer email or gateway credentials.
 - No PayPing-unavailable fallback to legacy checkout, to prevent duplicate payment intents or callbacks.
 - PayPing callback must be verified for active supporter subscription, affiliate and notification parity before live cutover; these are **acceptance gates**, not assumed passed.
 - Manual Follow Up is mandatory: no unattended Telegram payment reminders for MediaX.
+
+- Aurora already provides POST `/api/bot-checkout/mediax/start` and short-lived `/pay/<64-hex-token>` form. Do NOT use earlier `/prepare` or `/api/payments/start` from the unrelated staging checkout experiment.
+- Generate/rotate the MediaX API key via Aurora admin → Bots → MediaX → Connection, and store only in Bot-Hosting environment. Rotation invalidates prior keys; do not rotate if another runtime already uses the key.

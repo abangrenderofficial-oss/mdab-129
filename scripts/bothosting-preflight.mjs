@@ -27,7 +27,8 @@ if (prod) {
     ...(provider==='payping'?['PAYPING_URL','PAYPING_BOT_API_KEY']:['BAYARCASH_API_SECRET_KEY','BAYARCASH_API_TOKEN','BAYARCASH_PORTAL_KEY'])];
   if(provider==='payping'){
     const origin=String(process.env.PAYPING_URL||'');
-    check('PayPing HTTPS origin configured',/^https:\\/\\/[^/]+\\/?$/.test(origin));
+    let paypingOriginValid=false;try{const u=new URL(origin);paypingOriginValid=u.protocol==='https:' && !u.username && !u.password && !u.search && !u.hash && u.pathname==='/';}catch{}
+    check('PayPing HTTPS origin configured',paypingOriginValid);
     check('PayPing Bot ID is mediax',String(process.env.PAYPING_BOT_ID||'mediax')==='mediax');
     check('PayPing Bot API key format',/^ppk_[A-Za-z0-9_-]{32,}$/.test(String(process.env.PAYPING_BOT_API_KEY||'')));
   }

@@ -192,13 +192,16 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', `http://${host}`);
 
     req.query = parseQuery(url);
-    req.body = await parseBody(req);
 
-    // Staging guard: do not accept Telegram updates until intentional cutover.
-    // This changes HTTP routing only; all original download/HQ encoders are untouched.
-    if (String(process.env.MEDIAX_HOSTING_STANDBY || '').trim().toLowerCase() === 'true' && url.pathname === '/api/telegram') {
-      return res.status(503).json({ ok: false, error: 'mediax_standby_webhook_disabled' });
+    // HTTP-only standby: allow basic health inspection, but NEVER process Telegram,
+    // payment callbacks, mutating setup requests, or any other production route.
+    // No body parsing occurs before this guard.
+    if (String(process.env.MEDIAX_HOSTING_STANDBY || '').trim().toLowerCase() === 'true' &&
+        (req.method !== 'GET' || !['/', '/api/health'].includes(url.pathname))) {
+      return res.status(503).json({ ok: false, error: 'mediax_hosting_standby' });
     }
+
+    req.body = await parseBody(req);
 
     if (url.pathname === '/') {
       return res.status(200).json({

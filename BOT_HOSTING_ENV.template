@@ -1,0 +1,41 @@
+# MediaX Downloader — Bot-Hosting (fill in Bot-Hosting Env panel; NEVER commit actual secrets)
+# REQUIRED before starting production
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_WEBHOOK_SECRET=
+SETUP_SECRET=
+BOT_OWNER_ID=
+PUBLIC_BASE_URL=https://YOUR_ASSIGNED_BOT_HOSTING_DOMAIN
+TURSO_DATABASE_URL=
+TURSO_AUTH_TOKEN=
+GITHUB_ACTIONS_TOKEN=
+BAYARCASH_API_SECRET_KEY=
+BAYARCASH_API_TOKEN=
+BAYARCASH_PORTAL_KEY=
+
+# For existing PayPing Access Control, copy value from Railway (don't reset or migrate the shared database)
+PAYPING_SHARED_CONFIG_ENABLED=true
+
+# RECOMMENDED: copy from original MediaX Railway deployment where configured
+TELEGRAM_BOT_USERNAME=
+BAYARCASH_SANDBOX=false
+BAYARCASH_PAYER_EMAIL=
+REQUIRED_CHANNEL_USERNAME=
+STATS_SUPABASE_URL=
+STATS_SUPABASE_KEY=
+STATS_RPC_SECRET=
+GITHUB_WORKER_OWNER=abangrenderofficial-oss
+GITHUB_WORKER_REPO=mdab-129
+GITHUB_WORKER_WORKFLOW=heavy-status-hq.yml
+GITHUB_WORKER_REF=main
+
+# OPTIONAL legacy integrations only if used in current runtime
+CONTENT_MANAGER_URL=
+CONTENT_BRIDGE_SECRET=
+WEBPUSH_VAPID_PUBLIC_KEY=
+WEBPUSH_VAPID_PRIVATE_KEY=
+WEBPUSH_VAPID_SUBJECT=
+NTFY_PAYMENT_TOPIC=
+
+# Bot-Hosting automatically supplies SERVER_PORT. DO NOT set PORT unless provider requires it.
+# Leave all Status HQ, Android HQ, Live Wallpaper, encoder, preset, audio and quality
+# values untouched. If Railway has overrides, copy them verbatim from Railway.

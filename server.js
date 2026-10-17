@@ -220,7 +220,9 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-const port = Number(process.env.PORT || 3000);
+// Bot-Hosting supplies SERVER_PORT; Railway/Vercel may supply PORT.
+// Keep the transport change isolated from media pipelines and codec presets.
+const port = Number(process.env.SERVER_PORT || process.env.PORT || 3000);
 server.listen(port, '0.0.0.0', () => {
   console.log(`Downloader bot listening on 0.0.0.0:${port}`);
   if (String(process.env.MEDIAX_STATS_BACKEND || '').trim() === 'mirror') {

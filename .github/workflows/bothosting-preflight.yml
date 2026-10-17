@@ -1,0 +1,22 @@
+name: Bot-Hosting media-quality and bootstrap preflight
+on:
+  push:
+    branches: ['hosting/bothosting-mediax-ready-20261017']
+  workflow_dispatch:
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies and run existing tests
+        run: npm install --no-audit --no-fund
+      - name: Verify all HQ / Live Wallpaper quality source files remain untouched
+        run: node scripts/bothosting-quality-guard.mjs
+      - name: Verify Node + Linux yt-dlp + FFmpeg bootstrap (no production secrets needed)
+        run: node scripts/bothosting-preflight.mjs --build
+      - name: Check Node syntax
+        run: node --check server.js && node --check scripts/bothosting-preflight.mjs && node --check scripts/bothosting-quality-guard.mjs

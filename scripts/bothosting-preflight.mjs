@@ -21,7 +21,16 @@ check('Bundled ffmpeg-static executable',ffmpegExecutable);
 const ytdlp=spawnSync('bin/yt-dlp',['--version'],{timeout:10000,encoding:'utf8'});
 check('yt-dlp executable starts',ytdlp.status===0);
 if (prod) {
-  const required=['TELEGRAM_BOT_TOKEN','TELEGRAM_WEBHOOK_SECRET','SETUP_SECRET','BOT_OWNER_ID','PUBLIC_BASE_URL','TURSO_DATABASE_URL','TURSO_AUTH_TOKEN','GITHUB_ACTIONS_TOKEN','BAYARCASH_API_SECRET_KEY','BAYARCASH_API_TOKEN','BAYARCASH_PORTAL_KEY'];
+  const provider=String(process.env.MEDIAX_PAYMENT_PROVIDER||'legacy').trim().toLowerCase();
+  check('Supported payment provider value',provider==='legacy'||provider==='payping');
+  const required=['TELEGRAM_BOT_TOKEN','TELEGRAM_WEBHOOK_SECRET','SETUP_SECRET','BOT_OWNER_ID','PUBLIC_BASE_URL','TURSO_DATABASE_URL','TURSO_AUTH_TOKEN','GITHUB_ACTIONS_TOKEN',
+    ...(provider==='payping'?['PAYPING_URL','PAYPING_BOT_API_KEY']:['BAYARCASH_API_SECRET_KEY','BAYARCASH_API_TOKEN','BAYARCASH_PORTAL_KEY'])];
+  if(provider==='payping'){
+    const origin=String(process.env.PAYPING_URL||'');
+    check('PayPing HTTPS origin configured',/^https:\\/\\/[^/]+\\/?$/.test(origin));
+    check('PayPing Bot ID is mediax',String(process.env.PAYPING_BOT_ID||'mediax')==='mediax');
+    check('PayPing Bot API key format',/^ppk_[A-Za-z0-9_-]{32,}$/.test(String(process.env.PAYPING_BOT_API_KEY||'')));
+  }
   for(const key of required)check('ENV '+key,Boolean(String(process.env[key]||'').trim()));
   const base=String(process.env.PUBLIC_BASE_URL||'').trim();
   let validHttps=false;

@@ -22,6 +22,7 @@ import { sendSupportQuoteToFilter } from '../support/quote-filter.js';
 import { recordSupportAmountClick } from '../support/click-analytics.js';
 import {currentSupportAmounts,refreshSupportAmounts,isSupportAmountCurrentlyActive,isPayPingSharedConfigEnabled} from '../support/payping-shared-config.js';
 import {recordMediaXSupportPlanForOrder} from '../support/payping-order-plan.js';
+import {isPayPingV2CheckoutSelected,prepareMediaXPayPingCheckout} from '../payping/checkout-client.js';
 import { hasMinimumWords } from '../support/text-validation.js';
 import { notifySuccessfulSupportPayment } from '../support/payment-detail.js';
 import { notifyWebPushSupportPayment } from '../support/webpush-payment.js';
@@ -146,7 +147,7 @@ function escapeTelegramHtml(value = '') {
 
 function supportMenuText() {
   const lines = [supportCommandText()];
-  if (!isBayarcashConfigured()) lines.push('', '⚙️ Payment gateway belum lengkap di Railway.');
+  if (!isPayPingV2CheckoutSelected() && !isBayarcashConfigured()) lines.push('', '⚙️ Payment gateway belum lengkap di Railway.');
   return lines.join('\n');
 }
 
@@ -554,6 +555,34 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
 
   const tier = tierForAmount(amount);
   await answerSupportCallback(callbackQuery, `${tier.label} dipilih!`);
+
+  // Explicit PayPing V2 migration path. Legacy Bayarcash remains untouched unless
+  // MEDIAX_PAYMENT_PROVIDER=payping is deliberately set after sandbox testing.
+  if (isPayPingV2CheckoutSelected()) {
+    try {
+      const handoff = await prepareMediaXPayPingCheckout({userId:user.id,username:user.username||'',amount});
+      await editSupportMessage(
+        callbackQuery,
+        [`<b>${escapeTelegramHtml(tier.label.toUpperCase())}!</b>`, '',
+          `Amount: RM${Number(amount).toFixed(2)}`,
+          'Gateway: PayPing → Bayarcash',
+          'Isi nama dan e-mel di halaman PayPing untuk meneruskan pembayaran.',
+          'Status supporter akan disahkan selepas Bayarcash mengesahkan bayaran.'
+        ].join('\\n'),
+        {inline_keyboard:[
+          [{text:`💳 Bayar RM${amount}`,url:handoff.url}],
+          [{text:'← Tukar Amount',callback_data:SUPPORT_AMOUNTS_ACTION}]
+        ]},
+        {parse_mode:'HTML'},
+      );
+    } catch(error) {
+      console.warn('[payping] MediaX checkout handoff unavailable:',error?.code||'UNKNOWN');
+      await editSupportMessage(callbackQuery,
+        '❌ PayPing checkout sedang tidak tersedia. Tiada bayaran dibuat. Cuba semula sebentar lagi.',
+        {inline_keyboard:[[{text:'← Tukar Amount',callback_data:SUPPORT_AMOUNTS_ACTION}]]});
+    }
+    return true;
+  }
 
   if (!isBayarcashConfigured()) {
     await editSupportMessage(

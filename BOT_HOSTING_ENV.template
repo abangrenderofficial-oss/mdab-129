@@ -1,4 +1,11 @@
 # MediaX Downloader — Bot-Hosting (fill in Bot-Hosting Env panel; NEVER commit actual secrets)
+# Migration mode: keep legacy by default. Only use payping after sandbox test and
+# verifying PayPing V2 checkout/callback/entitlement reconciliation.
+MEDIAX_PAYMENT_PROVIDER=legacy
+PAYPING_URL=
+PAYPING_BOT_ID=mediax
+PAYPING_BOT_API_KEY=
+
 # REQUIRED before starting production
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_WEBHOOK_SECRET=
@@ -8,6 +15,7 @@ PUBLIC_BASE_URL=https://YOUR_ASSIGNED_BOT_HOSTING_DOMAIN
 TURSO_DATABASE_URL=
 TURSO_AUTH_TOKEN=
 GITHUB_ACTIONS_TOKEN=
+# Legacy-only: required while MEDIAX_PAYMENT_PROVIDER=legacy; NOT needed after PayPing cutover
 BAYARCASH_API_SECRET_KEY=
 BAYARCASH_API_TOKEN=
 BAYARCASH_PORTAL_KEY=

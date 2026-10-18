@@ -1,5 +1,5 @@
 import { createWriteStream } from 'node:fs';
-import { rm, stat } from 'node:fs/promises';
+import { open, rename, rm, stat } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { execFile } from 'node:child_process';
@@ -88,20 +88,18 @@ async function cleanup(paths) {
   await Promise.all([...new Set(paths)].map((filePath) => rm(filePath, { force: true }).catch(() => {})));
 }
 
-function premiumPlusImageFilter() {
-  // Match the Premium+ HQ V2 preservation philosophy used for video:
-  // no artificial denoise/sharpen pass, no upscaling, and pre-size the image
-  // to a WhatsApp-friendly canvas so WhatsApp has less work to recompress.
-  const squareish = 'lt(abs(iw-ih)/max(iw,ih),0.08)';
-  const maxWidth = `if(${squareish},1280,if(gt(iw,ih),1280,720))`;
-  const maxHeight = `if(${squareish},1280,if(gt(iw,ih),720,1280))`;
-  const fit = `min(1,min(${maxWidth}/iw,${maxHeight}/ih))`;
-
-  return [
-    `scale=w='max(2,trunc(iw*${fit}/2)*2)':h='max(2,trunc(ih*${fit}/2)*2)':flags=lanczos`,
-    'setsar=1',
-    'format=yuvj420p',
-  ].join(',');
+// Telegram photos arrive as JPEG in most cases. Preserve their exact bytes
+// when possible: resizing to 720x1280 and recompressing a 260 KB JPEG cannot
+// recover detail and will visibly soften text and high-frequency patterns.
+async function sourceIsJpeg(filePath) {
+  const handle = await open(filePath, 'r');
+  try {
+    const header = Buffer.alloc(3);
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    return bytesRead === 3 && header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff;
+  } finally {
+    await handle.close();
+  }
 }
 
 export async function prepareWhatsAppStatusImageHQ({ image }) {
@@ -114,25 +112,33 @@ export async function prepareWhatsAppStatusImageHQ({ image }) {
   try {
     await downloadRemoteImage(image, inputPath);
 
-    await execFileAsync(
-      ffmpegPath,
-      [
-        '-y',
-        '-hide_banner',
-        '-loglevel', 'error',
-        '-nostats',
-        '-nostdin',
-        '-filter_threads', '1',
-        '-i', inputPath,
-        '-vf', premiumPlusImageFilter(),
-        '-frames:v', '1',
-        '-q:v', '2',
-        '-threads', '1',
-        '-map_metadata', '-1',
-        outputPath,
-      ],
-      commandOptions(Number(process.env.STATUS_IMAGE_ENCODE_TIMEOUT_MS || 90000)),
-    );
+    if (await sourceIsJpeg(inputPath)) {
+      // A document upload preserves the original Telegram JPEG without a second
+      // lossy JPEG encode or any resolution change.
+      await rename(inputPath, outputPath);
+    } else {
+      // For less common photo formats, preserve source dimensions and encode at
+      // high quality without forcing a 720x1280 canvas or 4:2:0 chroma reduction.
+      await execFileAsync(
+        ffmpegPath,
+        [
+          '-y',
+          '-hide_banner',
+          '-loglevel', 'error',
+          '-nostats',
+          '-nostdin',
+          '-filter_threads', '1',
+          '-i', inputPath,
+          '-frames:v', '1',
+          '-pix_fmt', 'yuvj444p',
+          '-q:v', '2',
+          '-threads', '1',
+          '-map_metadata', '-1',
+          outputPath,
+        ],
+        commandOptions(Number(process.env.STATUS_IMAGE_ENCODE_TIMEOUT_MS || 90000)),
+      );
+    }
 
     const outputStat = await stat(outputPath);
     if (!outputStat.isFile() || !outputStat.size) {
@@ -146,7 +152,7 @@ export async function prepareWhatsAppStatusImageHQ({ image }) {
     return {
       filePath: outputPath,
       size: outputStat.size,
-      quality: 'Premium+ HQ image • preservation V2 • 720×1280 / 1280×720 / 1280² max • JPEG q2 • Telegram-safe file',
+      quality: 'Premium+ HQ image • preserve original Telegram JPEG bytes and dimensions; no forced downscale • Telegram document',
       cleanup: async () => cleanup(allPaths),
     };
   } catch (error) {

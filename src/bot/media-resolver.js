@@ -1,4 +1,5 @@
 import { parseMedia, chooseBestVideo, needsCustomHeaders } from '../downloader.js';
+import { resolveTikTokPhotoUrl, resolveTikTokSlideshow } from '../tiktok-slideshow.js';
 import { positiveIntEnv } from '../env-number.js';
 import { resolveInstagramAudio } from '../instagram-audio.js';
 import { resolveInstagramYtDlpAudio } from '../instagram-ytdlp-audio.js';
@@ -71,6 +72,27 @@ function tikwmRetryUrls(url) {
 }
 
 async function resolveTikTok(url) {
+  // TikTok Photo Mode has images and a separate soundtrack, not an MP4.
+  // Recognize short share URLs before invoking video-only resolver fallbacks.
+  const photoUrl = await resolveTikTokPhotoUrl(url);
+  if (photoUrl) {
+    try {
+      const slideshow = await resolveTikTokSlideshow(photoUrl);
+      return {
+        platform: 'TikTok',
+        title: slideshow.title || '',
+        thumbnail: slideshow.images[0]?.url || '',
+        duration: slideshow.duration,
+        canonicalUrl: photoUrl,
+        images: slideshow.images,
+        videos: [],
+        audios: [slideshow.audio],
+      };
+    } catch (error) {
+      console.warn('[tiktok-photo] native Photo extraction failed; trying video providers:', error?.message);
+    }
+  }
+
   const attempts = [{ method: 'GET', url, hd: '1' }];
   for (const retryUrl of tikwmRetryUrls(url)) {
     attempts.push({ method: 'GET', url: retryUrl, hd: '' });

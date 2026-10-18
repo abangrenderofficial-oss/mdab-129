@@ -1,4 +1,5 @@
 import { parseMedia, chooseBestVideo, needsCustomHeaders } from '../downloader.js';
+import { resolveTikTokEmbeddedPhoto } from '../tiktok-photo-embed.js';
 import { resolveTikTokPhotoUrl, resolveTikTokSlideshow } from '../tiktok-slideshow.js';
 import { positiveIntEnv } from '../env-number.js';
 import { resolveInstagramAudio } from '../instagram-audio.js';
@@ -72,6 +73,17 @@ function tikwmRetryUrls(url) {
 }
 
 async function resolveTikTok(url) {
+  // TikTok Photo Mode can be embedded publicly even when TikWM is blocked
+  // by an upstream 403. Detect Photo Mode before video-only providers.
+  try {
+    const photo = await resolveTikTokEmbeddedPhoto(url);
+    if (photo) {
+      console.info('[tiktok-photo] public embed resolved', { images: photo.images.length, hasAudio: Boolean(photo.audio?.url) });
+      return photo;
+    }
+  } catch (error) {
+    console.warn('[tiktok-photo] public embed unavailable; falling back to TikWM:', error?.message);
+  }
   // TikTok Photo Mode has images and a separate soundtrack, not an MP4.
   // Recognize short share URLs before invoking video-only resolver fallbacks.
   const photoUrl = await resolveTikTokPhotoUrl(url);

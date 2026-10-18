@@ -1,5 +1,7 @@
 // Read-only migration invariant: Git blob SHA for ALL protected quality pipelines.
-// This snapshot matches GitHub main commit abf3dacfb909930f9f0d28c09c144fd3b8a43877.
+// Baseline media quality guard; the uploaded photo Premium+ HQ path is explicitly
+// upgraded to preserve original JPEG bytes and dimensions (2026-10-18).
+// All other protected media pipelines retain the original GitHub main baseline.
 // It checks byte-identical implementations; it never changes media files or presets.
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -13,7 +15,7 @@ const expected = {
   "src/hq-lab.js": "6b039fb0f99b7f9bd094106db3fa8c0d1af7849f",
   "src/status-hq.js": "a9cb6e2bd80805f99844d0d6fc1b325e4fbda750",
   "src/status-hq-android.js": "58adb78c9971463a5eaecbbfe002f0529d1fa74d",
-  "src/status-image-hq.js": "03d7b4438b3142ebfabd5442b4166ff09ec537b0",
+  "src/status-image-hq.js": "d07bdbd41fc5cb4689acd03b19df067744d9730e",
   "src/live-wallpaper.js": "df08317783226f23228ec46eb3dae123319b502a",
   "src/live-photo-telegram.js": "4a4f014fbfe3db17505c64902897d4d67fb0262d",
   "src/features/hq-lab.js": "12115c6518c2d6529f031ff9a64c4d12f2bdb347",

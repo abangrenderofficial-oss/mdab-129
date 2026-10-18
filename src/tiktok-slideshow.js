@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import ffmpegPath from 'ffmpeg-static';
 import { sendAudioFileUpload } from './telegram.js';
+import { resolveTikTokEmbeddedPhoto } from './tiktok-photo-embed.js';
 
 const execFileAsync = promisify(execFile);
 const TIKWM_API = 'https://www.tikwm.com/api/';
@@ -187,6 +188,21 @@ async function resolveTikTokPhotoEmbed(photoUrl) {
 }
 
 export async function resolveTikTokSlideshow(url) {
+  // Callback buttons re-resolve the same Photo Mode post. Do not depend on
+  // TikWM (often HTTP 403 on cloud IPs) once TikTok itself can expose assets.
+  try {
+    const photo = await resolveTikTokEmbeddedPhoto(url);
+    if (photo?.images?.length && photo?.audio?.url) {
+      return {
+        title: photo.title,
+        duration: photo.duration,
+        images: photo.images,
+        audio: photo.audio,
+      };
+    }
+  } catch (error) {
+    console.warn('[tiktok-slideshow] public embed unavailable; trying TikWM:', error?.message);
+  }
   const photoUrl = await resolveTikTokPhotoUrl(url);
   if (photoUrl) {
     try {

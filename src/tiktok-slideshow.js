@@ -114,8 +114,8 @@ const TIKTOK_PHOTO_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) 
 function tiktokPhotoCanonical(value) {
   try {
     const parsed = new URL(value);
-    if (!/^(?:www\\.|m\\.)?tiktok\\.com$/i.test(parsed.hostname)) return '';
-    const match = parsed.pathname.match(/^\\/@[A-Za-z0-9._-]+\\/photo\\/(\\d{10,25})(?:\\/|$)/);
+    if (!/^(?:www\.|m\.)?tiktok\.com$/i.test(parsed.hostname)) return '';
+    const match = parsed.pathname.match(/^\/@[A-Za-z0-9._-]+\/photo\/(\d{10,25})(?:\/|$)/);
     return match ? `https://www.tiktok.com${parsed.pathname}` : '';
   } catch { return ''; }
 }
@@ -127,7 +127,7 @@ export async function resolveTikTokPhotoUrl(url) {
   if (direct) return direct;
   try {
     const parsed = new URL(url);
-    if (!/^(?:vt|vm)\\.tiktok\\.com$/i.test(parsed.hostname)) return '';
+    if (!/^(?:vt|vm)\.tiktok\.com$/i.test(parsed.hostname)) return '';
     const response = await fetch(url, {
       redirect: 'follow',
       headers: { 'User-Agent': TIKTOK_PHOTO_UA },
@@ -143,7 +143,7 @@ export async function resolveTikTokPhotoUrl(url) {
 }
 
 async function resolveTikTokPhotoEmbed(photoUrl) {
-  const match = new URL(photoUrl).pathname.match(/\\/photo\\/(\\d{10,25})/);
+  const match = new URL(photoUrl).pathname.match(/\/photo\/(\d{10,25})/);
   if (!match) throw new Error('TikTok Photo post ID not found');
   const postId = match[1];
   const path = `/embed/v2/${postId}`;
@@ -153,7 +153,7 @@ async function resolveTikTokPhotoEmbed(photoUrl) {
   });
   if (!response.ok) throw new Error(`TikTok embed HTTP ${response.status}`);
   const html = await response.text();
-  const stateText = html.match(/<script[^>]*id=["']__FRONTITY_CONNECT_STATE__["'][^>]*>([\\s\\S]*?)<\\/script>/i)?.[1];
+  const stateText = html.match(/<script[^>]*id=["']__FRONTITY_CONNECT_STATE__["'][^>]*>([\s\S]*?)<\/script>/i)?.[1];
   if (!stateText) throw new Error('TikTok embed metadata missing');
   const state = JSON.parse(stateText);
   const metadata = state?.source?.data?.[path]?.videoData;

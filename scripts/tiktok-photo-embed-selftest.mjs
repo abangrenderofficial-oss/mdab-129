@@ -64,4 +64,15 @@ const videoUrl = `https://www.tiktok.com/@creator/video/${id}`;
 video.fetchImpl = async () => ({ url: videoUrl, body: { async cancel() {} } });
 assert.equal(await resolveTikTokEmbeddedPhoto('https://vt.tiktok.com/VIDEO/', video), null);
 
-console.log('TIKTOK_PHOTO_EMBED_SELFTEST_OK: short URL, image+audio, video isolation, invalid assets');
+let retryCount = 0;
+const recovered = await resolveTikTokEmbeddedPhoto(canonical, {
+  async fetchImpl() {
+    retryCount++;
+    if (retryCount === 1) return { ok: false, status: 500 };
+    return { ok: true, async text() { return page(); } };
+  },
+});
+assert.equal(recovered.images.length, 2);
+assert.equal(retryCount, 2);
+
+console.log('TIKTOK_PHOTO_EMBED_SELFTEST_OK: short URL, image+audio, video isolation, invalid assets, HTTP 500 recovery');

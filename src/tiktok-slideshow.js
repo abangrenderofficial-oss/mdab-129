@@ -109,7 +109,93 @@ async function cleanup(paths) {
   await Promise.all(paths.map((filePath) => rm(filePath, { force: true }).catch(() => {})));
 }
 
+const TIKTOK_PHOTO_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1';
+
+function tiktokPhotoCanonical(value) {
+  try {
+    const parsed = new URL(value);
+    if (!/^(?:www\\.|m\\.)?tiktok\\.com$/i.test(parsed.hostname)) return '';
+    const match = parsed.pathname.match(/^\\/@[A-Za-z0-9._-]+\\/photo\\/(\\d{10,25})(?:\\/|$)/);
+    return match ? `https://www.tiktok.com${parsed.pathname}` : '';
+  } catch { return ''; }
+}
+
+// A normal TikTok short share link does not reveal whether the post is Photo
+// Mode. Resolve its redirect before calling a video-only downloader.
+export async function resolveTikTokPhotoUrl(url) {
+  const direct = tiktokPhotoCanonical(url);
+  if (direct) return direct;
+  try {
+    const parsed = new URL(url);
+    if (!/^(?:vt|vm)\\.tiktok\\.com$/i.test(parsed.hostname)) return '';
+    const response = await fetch(url, {
+      redirect: 'follow',
+      headers: { 'User-Agent': TIKTOK_PHOTO_UA },
+      signal: AbortSignal.timeout(10000),
+    });
+    const finalUrl = response.url;
+    await response.body?.cancel().catch(() => {});
+    return tiktokPhotoCanonical(finalUrl);
+  } catch (error) {
+    console.warn('[tiktok-photo] short-link classification unavailable:', error?.message);
+    return '';
+  }
+}
+
+async function resolveTikTokPhotoEmbed(photoUrl) {
+  const match = new URL(photoUrl).pathname.match(/\\/photo\\/(\\d{10,25})/);
+  if (!match) throw new Error('TikTok Photo post ID not found');
+  const postId = match[1];
+  const path = `/embed/v2/${postId}`;
+  const response = await fetch(`https://www.tiktok.com${path}`, {
+    headers: { Accept: 'text/html', 'User-Agent': TIKTOK_PHOTO_UA },
+    signal: AbortSignal.timeout(Number(process.env.DOWNLOADER_TIMEOUT_MS || 25000)),
+  });
+  if (!response.ok) throw new Error(`TikTok embed HTTP ${response.status}`);
+  const html = await response.text();
+  const stateText = html.match(/<script[^>]*id=["']__FRONTITY_CONNECT_STATE__["'][^>]*>([\\s\\S]*?)<\\/script>/i)?.[1];
+  if (!stateText) throw new Error('TikTok embed metadata missing');
+  const state = JSON.parse(stateText);
+  const metadata = state?.source?.data?.[path]?.videoData;
+  if (String(metadata?.itemInfos?.id || '') !== postId) {
+    throw new Error('TikTok embed post ID mismatch');
+  }
+  const images = (Array.isArray(metadata?.imagePostInfo?.displayImages)
+    ? metadata.imagePostInfo.displayImages : [])
+    .map((image) => ({
+      url: absoluteUrl((image?.urlList || []).find((url) => typeof url === 'string' && url.startsWith('https://'))),
+      width: Number(image?.width || 0) || null,
+      height: Number(image?.height || 0) || null,
+    }))
+    .filter((image) => image.url);
+  const music = metadata?.musicInfos || {};
+  const musicUrl = absoluteUrl((Array.isArray(music?.playUrl) ? music.playUrl : [music.playUrl])
+    .find((url) => typeof url === 'string' && url.startsWith('https://')));
+  if (!images.length || !musicUrl) throw new Error('TikTok embed photo or music unavailable');
+
+  console.info('[tiktok-photo] native embed resolved:', { images: images.length, hasAudio: true });
+  return {
+    title: String(metadata?.itemInfos?.text || '').trim(),
+    duration: null,
+    images,
+    audio: {
+      url: musicUrl,
+      title: cleanName(music?.musicName || 'TikTok sound'),
+      performer: cleanName(music?.authorName || '', ''),
+    },
+  };
+}
+
 export async function resolveTikTokSlideshow(url) {
+  const photoUrl = await resolveTikTokPhotoUrl(url);
+  if (photoUrl) {
+    try {
+      return await resolveTikTokPhotoEmbed(photoUrl);
+    } catch (error) {
+      // Preserve the existing TikWM route if TikTok blocks embed metadata.
+      console.warn('[tiktok-photo] embed failed; trying TikWM:', error?.message);
+    }
+  }
   const endpoint = new URL(TIKWM_API);
   endpoint.searchParams.set('url', url);
   endpoint.searchParams.set('hd', '1');

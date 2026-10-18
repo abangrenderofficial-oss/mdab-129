@@ -107,17 +107,32 @@ export async function resolveTikTokEmbeddedPhoto(link, { fetchImpl = fetch } = {
   }
 
   const endpoint = `https://www.tiktok.com/embed/v2/${id}`;
-  const response = await fetchImpl(endpoint, {
-    headers: {
-      Accept: 'text/html',
-      'User-Agent': TIKTOK_USER_AGENT,
-    },
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!response.ok) throw new Error(`TikTok embed returned HTTP ${response.status}`);
-  const body = await response.text();
-  if (body.length > 2_000_000) throw new Error('TikTok embed response too large');
-  const item = parseEmbeddedPhoto(body, id);
-  if (!item) return null;
-  return { ...item, canonicalUrl: canonical };
+  // Photo embeds sometimes transiently return HTTP 500 on cloud IPs.
+  // Retry a bounded number of times; never modify Telegram state here.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetchImpl(endpoint, {
+        headers: {
+          Accept: 'text/html',
+          'User-Agent': TIKTOK_USER_AGENT,
+        },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!response.ok) {
+        if (response.status === 429 || response.status >= 500) {
+          throw new Error(`TikTok embed returned HTTP ${response.status}`);
+        }
+        return null; // Protected/private or unavailable post.
+      }
+      const body = await response.text();
+      if (body.length > 2_000_000) throw new Error('TikTok embed response too large');
+      const item = parseEmbeddedPhoto(body, id);
+      if (!item) return null;
+      return { ...item, canonicalUrl: canonical };
+    } catch (error) {
+      if (attempt === 2) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 350 * (attempt + 1)));
+    }
+  }
+  return null;
 }

@@ -1,6 +1,7 @@
 import {
   prepareTikTokSlideshowVideo,
   prepareTikTokSound,
+  prepareTikTokOriginalImages,
   resolveTikTokSlideshow,
   sendTikTokSoundUpload,
 } from '../tiktok-slideshow.js';
@@ -13,6 +14,7 @@ import { mirrorMediaToGroup } from '../bot/audit.js';
 import { startStatusProgress } from '../bot/progress.js';
 import {
   sendChatAction,
+  sendDocumentFileUpload,
   sendMediaGroup,
   sendMessage,
   sendPhotoUrl,
@@ -141,11 +143,16 @@ async function processSplit(callbackQuery, context) {
   if (!slideshow) return false;
 
   let preparedSound = null;
+  let preparedImages = null;
   try {
-    await sendChatAction(chatId, 'upload_photo').catch(() => {});
-    await deliverImages(chatId, slideshow.images, 'TikTok images', context.baseUrl);
-    await sendChatAction(chatId, 'upload_document').catch(() => {});
+    // Download both assets BEFORE sending anything; reject missing original media.
     preparedSound = await prepareTikTokSound(slideshow.audio);
+    preparedImages = await prepareTikTokOriginalImages(slideshow.images);
+    await sendChatAction(chatId, 'upload_document').catch(() => {});
+    for (let index = 0; index < preparedImages.files.length; index++) {
+      const original = preparedImages.files[index];
+      await sendDocumentFileUpload(chatId, original.filePath, original.fileName, index === 0 ? '🖼️ TikTok original images (no Telegram photo compression)' : '');
+    }
     await sendTikTokSoundUpload(chatId, preparedSound, `🎵 ${slideshow.audio.title}`);
     await disableChoiceButtons(callbackQuery);
     return true;
@@ -155,6 +162,7 @@ async function processSplit(callbackQuery, context) {
     return false;
   } finally {
     if (preparedSound?.cleanup) await preparedSound.cleanup().catch(() => {});
+    if (preparedImages?.cleanup) await preparedImages.cleanup().catch(() => {});
   }
 }
 

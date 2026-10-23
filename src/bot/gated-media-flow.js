@@ -169,11 +169,18 @@ export async function processMediaCallbackWithSupport(callbackQuery, context = {
     return true;
   }
 
-  if (await processTikTokSlideshowChoice(callbackQuery, context)) {
-    await recordUsage(userId, 'download');
-    await markFridaySuccess(userId, 'slideshow');
-    if (claims.dailyClaimed) await markDailyForceUsageSuccess(userId).catch(() => {});
-    await recordMediaXChannelCampaignUse(userId,'slideshow').catch(()=>{});
+  const slideshowResult = await processTikTokSlideshowChoice(callbackQuery, context);
+  if (slideshowResult?.handled) {
+    if (slideshowResult.completed) {
+      await recordUsage(userId, 'download');
+      await markFridaySuccess(userId, 'slideshow');
+      if (claims.dailyClaimed) await markDailyForceUsageSuccess(userId).catch(() => {});
+      await recordMediaXChannelCampaignUse(userId,'slideshow').catch(()=>{});
+    } else {
+      // A 429/403, failed audio/video or an already-running callback is NOT
+      // a completed download; never consume the user's support-free try.
+      await releaseClaims(userId, claims.fridayClaimed, claims.dailyClaimed);
+    }
     return true;
   }
 

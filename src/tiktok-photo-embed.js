@@ -78,6 +78,78 @@ function parseEmbeddedPhoto(html, requestedId) {
   };
 }
 
+
+/**
+ * TikTok's Photo URL is sometimes an app-gated shell (HTTP 200 with no item
+ * media) while the SAME public post has full imagePost + music metadata on
+ * /@creator/video/POST_ID. Tested against the actual Bot Hosting egress.
+ * Never uses another user's account, cookies or undocumented paid products.
+ */
+export function parseTikTokPagePhoto(html, requestedId) {
+  const match = String(html || '').match(
+    /<script\b[^>]*\bid=["']__UNIVERSAL_DATA_FOR_REHYDRATION__["'][^>]*>([\s\S]*?)<\/script>/i,
+  );
+  if (!match) return null;
+  let state;
+  try { state = JSON.parse(match[1]); } catch { return null; }
+  const detail = state?.__DEFAULT_SCOPE__?.['webapp.video-detail'];
+  if (Number(detail?.statusCode) !== 0) return null;
+  const item = detail?.itemInfo?.itemStruct;
+  if (!item || String(item.id || '') !== String(requestedId)) return null;
+
+  const originals = item?.imagePost?.images;
+  if (!Array.isArray(originals) || !originals.length) return null;
+  // Never substitute the cover thumbnail for a slideshow. Keep all images
+  // in original order and use the source CDN's largest available URL.
+  const images = originals.map((image) => ({
+    url: httpsAsset(image?.imageURL?.urlList || image?.imageURL || image?.urlList),
+    width: Number(image?.imageWidth || image?.imageURL?.width || 0) || null,
+    height: Number(image?.imageHeight || image?.imageURL?.height || 0) || null,
+  }));
+  if (images.some((image) => !image.url)) return null;
+
+  const music = item?.music || {};
+  const sound = httpsAsset(music.playUrl || music.play_url);
+  if (!sound) return null; // Both output buttons require real soundtrack.
+  const seconds = Number(music.duration || item?.video?.duration || 0);
+  return {
+    platform: 'TikTok',
+    title: String(item.desc || item?.imagePost?.title || '').trim(),
+    duration: Number.isFinite(seconds) && seconds > 0 ? seconds : null,
+    images,
+    videos: [],
+    audios: [{ url: sound, quality: 'audio' }],
+    audio: {
+      url: sound,
+      title: String(music.title || 'TikTok sound').trim() || 'TikTok sound',
+      performer: String(music.authorName || '').trim(),
+    },
+    canonicalUrl: '',
+    source: 'tiktok-original-video-page',
+  };
+}
+
+async function resolvePublicVideoPagePhoto(canonical, requestedId, fetchImpl) {
+  const url = new URL(canonical);
+  if (!isTikTokHost(url.hostname) || !/^\/@[A-Za-z0-9._-]+\/photo\/\d{10,25}(?:\/|$)/.test(url.pathname)) return null;
+  // Exact same author + post ID, no search or account lookup.
+  const page = new URL(url.pathname.replace('/photo/', '/video/'), 'https://www.tiktok.com');
+  const response = await fetchImpl(page, {
+    redirect: 'follow',
+    headers: {
+      Accept: 'text/html',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36',
+    },
+    signal: AbortSignal.timeout(12000),
+  });
+  if (!response.ok) return null;
+  const contentLength = Number(response.headers?.get?.('content-length') || 0);
+  if (contentLength > 2_500_000) return null;
+  const html = await response.text();
+  if (html.length > 2_500_000) return null;
+  return parseTikTokPagePhoto(html, requestedId);
+}
+
 /**
  * Resolve an accessible TikTok Photo Mode post with music.
  * Returns null for normal videos, unavailable/private posts or blocked embeds.
@@ -104,6 +176,18 @@ export async function resolveTikTokEmbeddedPhoto(link, { fetchImpl = fetch } = {
     id = photoId(canonical);
     await response.body?.cancel?.().catch(() => {});
     if (!id) return null;
+  }
+
+  // This path works on cloud IPs even where /photo/ metadata and /embed/v2
+  // are rate-limited. Prefer it over the older embed endpoint.
+  try {
+    const original = await resolvePublicVideoPagePhoto(canonical, id, fetchImpl);
+    if (original?.images?.length && original?.audio?.url) {
+      console.info('[tiktok-photo] original page resolved', { images: original.images.length, hasAudio: true });
+      return { ...original, canonicalUrl: canonical };
+    }
+  } catch (error) {
+    console.warn('[tiktok-photo] original page unavailable; trying embed:', error?.message);
   }
 
   const endpoint = `https://www.tiktok.com/embed/v2/${id}`;

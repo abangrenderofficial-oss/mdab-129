@@ -60,7 +60,7 @@ async function runLinkJob({ message, context, url, platform, statusMode, fridayC
 
     const result = await processStandardDownload({ chatId, url, platform, context, message });
     if (result?.slideshow) {
-      await sendTikTokSlideshowChoice(chatId, url);
+      await sendTikTokSlideshowChoice(chatId, url, result.media, userId);
       if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
       if (dailyClaimed) await releaseDailyForceUsageAttempt(userId).catch(() => {});
     } else if (hasDownloadableMedia(result)) {

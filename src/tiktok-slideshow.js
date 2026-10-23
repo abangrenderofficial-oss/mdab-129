@@ -264,6 +264,34 @@ export async function resolveTikTokSlideshow(url) {
   };
 }
 
+/** Prepare all original slides for Telegram binary-document upload. */
+export async function prepareTikTokOriginalImages(images) {
+  if (!Array.isArray(images) || !images.length || images.length > 40) throw new Error('TikTok slideshow must contain 1–40 images.');
+  const token = randomUUID();
+  const created = [], files = [];
+  try {
+    for (let index = 0; index < images.length; index++) {
+      const input = images[index];
+      if (!input?.url || new URL(input.url).protocol !== 'https:') throw new Error('Invalid slideshow image URL.');
+      const base = path.join(tmpdir(), 'ar-ttphoto-' + token + '-' + index);
+      const rawPath = base + '.raw';
+      created.push(rawPath);
+      const meta = await download(input.url, rawPath);
+      if (meta.size > 50 * 1024 * 1024) throw new Error('Single slideshow photo exceeds Telegram limit.');
+      const type = meta.contentType.toLowerCase();
+      const ext = type.includes('png') ? 'png' : type.includes('webp') ? 'webp' : 'jpg';
+      const finalPath = base + '.' + ext;
+      await import('node:fs/promises').then(({ rename }) => rename(rawPath, finalPath));
+      created.push(finalPath);
+      files.push({filePath: finalPath, fileName: 'TikTok-image-' + String(index + 1).padStart(2, '0') + '.' + ext, size: meta.size});
+    }
+    return { files, cleanup: () => cleanup(created) };
+  } catch (error) {
+    await cleanup(created);
+    throw error;
+  }
+}
+
 export async function prepareTikTokSound(audio) {
   if (!audio?.url) throw new Error('TikTok sound URL is missing.');
   const attemptId = randomUUID();

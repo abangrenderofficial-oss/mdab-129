@@ -505,6 +505,35 @@ export async function sendAudioFileUpload(chatId, filePath, fileName, caption = 
   return parseTelegramResponse(response, 'sendAudio');
 }
 
+/**
+ * Send original TikTok images as binary documents. Telegram's sendPhoto URL
+ * fetch can reject CDN signatures with HTTP 403 and recompress JPEG quality.
+ * A local image upload preserves its source bytes and needs no public relay.
+ */
+export async function sendDocumentFileUpload(chatId, filePath, fileName, caption = '') {
+  if (!filePath) throw new Error('Local document path is missing.');
+  await assertChatWriteAllowed('sendDocument', { chat_id: chatId });
+  const fileStat = await stat(filePath);
+  if (fileStat.size > uploadLimitBytes()) {
+    const error = new Error('Original image exceeds Telegram upload limit.');
+    error.code = 'TELEGRAM_FILE_TOO_LARGE';
+    throw error;
+  }
+  const safeName = String(fileName || path.basename(filePath) || 'image.jpg').slice(0, 180);
+  const extension = path.extname(safeName).slice(1).toLowerCase();
+  const type = extension === 'png' ? 'image/png' : extension === 'webp' ? 'image/webp' : 'image/jpeg';
+  const form = new FormData();
+  form.set('chat_id', String(chatId));
+  if (caption) form.set('caption', String(caption).slice(0, 1024));
+  form.set('document', new Blob([await readFile(filePath)], { type }), safeName);
+  const response = await fetch(telegramEndpoint('sendDocument'), {
+    method: 'POST',
+    body: form,
+    signal: AbortSignal.timeout(Number(process.env.TELEGRAM_UPLOAD_TIMEOUT_MS || 55000)),
+  });
+  return parseTelegramResponse(response, 'sendDocument');
+}
+
 export function sendPhotoUrl(chatId, url, caption = '') {
   return telegram('sendPhoto', {
     chat_id: chatId,

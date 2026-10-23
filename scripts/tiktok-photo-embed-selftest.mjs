@@ -41,13 +41,13 @@ assert.equal(item.audio.url, 'https://cdn.example.test/audio.mp3');
 assert.equal(item.videos.length, 0);
 assert.equal(item.duration, 9);
 assert.equal(item.source, 'tiktok-public-embed');
-assert.equal(direct.called.length, 1);
+assert.equal(direct.called.length, 2); // page-first, embed fallback
 
 const shortened = fetcher();
 const shortItem = await resolveTikTokEmbeddedPhoto('https://vt.tiktok.com/SHORTCODE/', shortened);
 assert.equal(shortItem.images.length, 2);
 assert.equal(shortItem.canonicalUrl, canonical);
-assert.equal(shortened.called.length, 2);
+assert.equal(shortened.called.length, 3); // short redirect, page-first, embed
 assert.equal(await resolveTikTokEmbeddedPhoto('https://example.com/photo/' + id, shortened), null);
 
 const noSound = fetcher({ ...photo, musicInfos: {} });

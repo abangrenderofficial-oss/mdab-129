@@ -1,3 +1,4 @@
+import { uploadedPhoto } from '../bot/uploaded-photo.js';
 import { uploadedVideo } from '../bot/uploaded-video.js';
 import { isResetAdmin } from '../recovery.js';
 import { sendMessage, telegram } from '../telegram.js';
@@ -12,7 +13,7 @@ const REVIEW_SUPPORT_COPY = 'Kata2 support korang masih dalam review. Tunggu adm
 const REJECTED_SUPPORT_COPY = 'Kata2 support tadi di reject atas sbb tertentu. Please tinggalkan semula kata2 support nicely ❤️.';
 
 function isUsageAttempt(message = {}) {
-  if (Array.isArray(message?.photo) && message.photo.length) return true;
+  if (uploadedPhoto(message)) return true;
   if (uploadedVideo(message)) return true;
 
   const text = String(message?.text || message?.caption || '').trim();

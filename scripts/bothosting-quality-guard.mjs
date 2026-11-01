@@ -1,12 +1,13 @@
 // Read-only migration invariant: Git blob SHA for ALL protected quality pipelines.
 // Baseline media quality guard; the uploaded photo Premium+ HQ path is explicitly
 // upgraded to preserve original JPEG bytes and dimensions (2026-10-18).
-// Video input adapters accept File/Document uploads (2026-11-01).
+// Video and image input adapters accept File/Document uploads (2026-11-01).
 // Encoder, audio and worker pipelines retain their existing quality baseline.
 // It checks byte-identical implementations; it never changes media files or presets.
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 const expected = {
+  "src/bot/uploaded-photo.js": "b2f48f1af2a9c23aff4ba034d358883a4a38a5d9",
   "src/bot/uploaded-video.js": "3e83ed3d0e04f1b3759dbd933d5229c500d211fc",
   ".github/workflows/heavy-status-hq.yml": "479d4c3852cda8e138ece82b8ab4033d0c8e2a38",
   "scripts/apple_live_photo_pair.swift": "f072314bc088dbdc870a27b54652926ffc3b4377",
@@ -22,7 +23,7 @@ const expected = {
   "src/live-photo-telegram.js": "4a4f014fbfe3db17505c64902897d4d67fb0262d",
   "src/features/hq-lab.js": "12115c6518c2d6529f031ff9a64c4d12f2bdb347",
   "src/features/status-hq-android.js": "1de79b7dc9830c00fa1d38319c89a568176817c5",
-  "src/features/status-hq.js": "ac15990f2e858310d59398432b9c2a3b13a37c52",
+  "src/features/status-hq.js": "013a127fbb472ffc54f38e0efab3400b4eb4dcc1",
   "src/features/live-wallpaper.js": "682fbb11d8926b34ae65c3e14ec2206c765c3835",
   "src/instagram-video-audio-mux.js": "5df6c9607454e82634aed6cc3cafe5fdbf4e700c",
   "src/youtube-upload.js": "11bbe3adab000e4f0536fbe80f17284f64e736dd",

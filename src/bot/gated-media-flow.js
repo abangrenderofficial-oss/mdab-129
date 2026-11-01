@@ -1,3 +1,4 @@
+import { uploadedPhoto, uploadedPhotoError } from './uploaded-photo.js';
 import { uploadedVideo } from './uploaded-video.js';
 import { MEDIA_LIVE_WALLPAPER, MEDIA_STATUS_HQ, MEDIA_STATUS_HQ_ANDROID } from './media-actions.js';
 import { handleHqLabCommand, processHqLabMessage } from '../features/hq-lab.js';
@@ -69,13 +70,16 @@ export async function processGalleryUploadWithSupport(message, context = {}) {
   const userId = message?.from?.id;
   if (!userId) return false;
 
-  const isPhoto = Array.isArray(message?.photo) && message.photo.length;
+  const photoError = uploadedPhotoError(message);
+  const isPhoto = Boolean(uploadedPhoto(message) || photoError);
   const video = uploadedVideo(message);
   const isVideo = Boolean(video?.file_id);
   if (!isPhoto && !isVideo) return false;
 
   if (await enforceFridaySupportForMessage(message)) return true;
   if (await enforceDailyForceSupportForMessage(message)) return true;
+
+  if (photoError) return processUploadedPhoto(message, context);
 
   if (isVideo && isGalleryVideoTooLarge(video?.file_size)) {
     await processUploadedVideo(message, context);

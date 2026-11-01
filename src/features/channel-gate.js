@@ -1,3 +1,4 @@
+import { uploadedPhoto } from '../bot/uploaded-photo.js';
 import { uploadedVideo } from '../bot/uploaded-video.js';
 import { isResetAdmin } from '../recovery.js';
 import { sendMessage, telegram } from '../telegram.js';
@@ -113,7 +114,7 @@ async function channelGatePolicy(userId){
 
 
 function isNewChannelUsage(message={}) {
-  if(Array.isArray(message?.photo)&&message.photo.length)return true;
+  if(uploadedPhoto(message))return true;
   if(uploadedVideo(message))return true;
   const text=String(message?.text||message?.caption||'');
   return /https?:\/\/\S+/i.test(text);

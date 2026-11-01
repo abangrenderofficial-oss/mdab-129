@@ -7,7 +7,7 @@ import vm from 'node:vm';
 // worker dispatch and encoders replaced by spies. No external messages or jobs.
 const root = process.cwd();
 const realPaths = [
-  'src/bot/uploaded-video.js', 'src/bot/media-actions.js',
+  'src/bot/uploaded-video.js', 'src/bot/uploaded-photo.js', 'src/bot/media-actions.js',
   'src/bot/gated-media-flow.js', 'src/features/uploaded-media.js',
   'src/features/status-hq-menu.js', 'src/features/status-hq.js',
   'src/features/status-hq-android.js', 'src/features/live-wallpaper.js',
@@ -39,6 +39,11 @@ const implementations = {
   getTelegramFileSource: async id => {
     calls.push({ name: 'source', args: [id] }); return { url: `mock:${id}` };
   },
+  prepareWhatsAppStatusImageHQ: async input => {
+    calls.push({ name: 'imageEncode', args: [input] });
+    return { filePath: '/mock/status.jpg', cleanup: async () => {} };
+  },
+  sendDocumentFileUpload: spy('sendDocumentFileUpload'),
   prepareWhatsAppStatusHQ: async input => {
     calls.push({ name: 'premiumEncode', args: [input] });
     return { filePath: '/mock/status.mp4', profile: { hasAudio: true }, cleanup: async () => {} };
@@ -100,6 +105,7 @@ const premium = await load('src/features/status-hq.js');
 const android = await load('src/features/status-hq-android.js');
 const live = await load('src/features/live-wallpaper.js');
 const helper = await load('src/bot/uploaded-video.js');
+const photoHelper = await load('src/bot/uploaded-photo.js');
 function message(size = 5 * MB, document = true) {
   const media = { file_id: 'original-file', file_size: size, mime_type: 'video/quicktime', file_name: 'camera.MOV' };
   return { chat: { id: 123, type: 'private' }, from: { id: 123 }, message_id: 42, [document ? 'document' : 'video']: media };
@@ -180,3 +186,46 @@ assert.equal(called('premiumEncode').length, 0);
 assert.equal(called('source').length, 0);
 console.log('Document/native video upload → profile menu → Premium/Android HQ: passed.');
 console.log('116 MiB Document worker dispatch, 200 MiB boundaries, access gate and reused button checks: passed.');
+
+for (const format of ['jpeg', 'png', 'webp', 'native']) {
+  reset();
+  const msg = { chat: { id: 123, type: 'private' }, from: { id: 123 }, message_id: 43 };
+  if (format === 'native') msg.photo = [{ file_id: 'small' }, { file_id: 'original-image', width: 1183, height: 2560 }];
+  else msg.document = { file_id: 'original-image', file_size: MB, mime_type: `image/${format}`, file_name: `original.${format}` };
+  assert.equal(await gated.processGalleryUploadWithSupport(msg), true);
+  const echo = telegramCall(format === 'native' ? 'sendPhoto' : 'sendDocument');
+  assert.equal(echo[format === 'native' ? 'photo' : 'document'], 'original-image');
+  assert.equal(called('mirror').length, 1);
+  assert.equal(called('recordUsage').length, 1);
+  assert.equal(echo.reply_markup.inline_keyboard[0][0].callback_data, actions.MEDIA_STATUS_HQ);
+  reset();
+  const cb = { id: 'image-callback', from: msg.from, message: { ...msg, message_id: 51 }, data: actions.MEDIA_STATUS_HQ };
+  assert.equal(await menu.processStatusProfileMenu(cb), false);
+  assert.equal((await premium.processStatusButton(cb)).premiumImageCompleted, true);
+  assert.equal(called('source')[0].args[0], 'original-image');
+  assert.equal(called('imageEncode')[0].args[0].image.url, 'mock:original-image');
+  assert.equal(called('sendDocumentFileUpload').length, 1);
+  assert.equal(called('dispatch').length, 0);
+  assert.equal(called('premiumEncode').length, 0);
+}
+assert.ok(photoHelper.uploadedPhoto({document:{file_id:'x',file_name:'photo.JPG',mime_type:'application/octet-stream'}}));
+assert.equal(photoHelper.uploadedPhoto({document:{file_id:'x',file_name:'photo.jpg',mime_type:'application/pdf'}}), null);
+for (const [size, accepted] of [[20 * MB, true], [20 * MB + 1, false]]) {
+  reset();
+  const msg = {chat:{id:123},from:{id:123},message_id:43,document:{file_id:'photo',mime_type:'image/jpeg',file_size:size}};
+  await gated.processGalleryUploadWithSupport(msg);
+  assert.equal(Boolean(telegramCall('sendDocument')), accepted);
+  assert.equal(called('recordUsage').length, accepted ? 1 : 0);
+  if (!accepted) assert.match(called('sendMessage')[0].args[1], /20MB/);
+}
+for (const format of ['heic', 'svg+xml']) {
+  reset();
+  await gated.processGalleryUploadWithSupport({chat:{id:123},from:{id:123},document:{file_id:'image',mime_type:`image/${format}`}});
+  assert.equal(called('recordUsage').length, 0);
+  assert.equal(telegramCall('sendDocument'), undefined);
+  assert.match(called('sendMessage')[0].args[1], /JPG, PNG atau WEBP/);
+}
+reset(); blocked = true;
+await gated.processGalleryUploadWithSupport({chat:{id:123},from:{id:123},document:{file_id:'image',mime_type:'image/jpeg'}});
+assert.equal(telegramCall('sendDocument'), undefined);
+console.log('Image File/Document + native photo → Premium HQ, access, file-size and format checks: passed.');

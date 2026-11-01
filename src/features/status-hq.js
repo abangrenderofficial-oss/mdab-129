@@ -1,3 +1,4 @@
+import { uploadedPhoto } from '../bot/uploaded-photo.js';
 import { uploadedVideo } from '../bot/uploaded-video.js';
 import { prepareWhatsAppStatusHQ } from '../status-hq.js';
 import { prepareWhatsAppStatusImageHQ } from '../status-image-hq.js';
@@ -169,9 +170,7 @@ export async function processStatusButton(callbackQuery, context = {}) {
   const userId = callbackQuery?.from?.id;
   const video = uploadedVideo(callbackQuery?.message);
   const videoFileId = video?.file_id;
-  const imageFileId = Array.isArray(callbackQuery?.message?.photo)
-    ? callbackQuery.message.photo.at(-1)?.file_id
-    : '';
+  const imageFileId = uploadedPhoto(callbackQuery?.message)?.file_id;
   const isImage = Boolean(imageFileId && !videoFileId);
   const fileId = videoFileId || imageFileId;
   const caption = callbackQuery?.message?.caption || '';

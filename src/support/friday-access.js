@@ -1,3 +1,4 @@
+import { uploadedPhoto } from '../bot/uploaded-photo.js';
 import { uploadedVideo } from '../bot/uploaded-video.js';
 import { isResetAdmin } from '../recovery.js';
 import { sendMessage, telegram } from '../telegram.js';
@@ -259,7 +260,7 @@ async function botShareLink() {
 }
 
 function isUsageAttempt(message = {}) {
-  if (Array.isArray(message?.photo) && message.photo.length) return true;
+  if (uploadedPhoto(message)) return true;
   if (uploadedVideo(message)) return true;
   const text = String(message?.text || message?.caption || '').trim();
   if (/^\/status(?:@\w+)?(?:\s|$)/i.test(text)) return true;

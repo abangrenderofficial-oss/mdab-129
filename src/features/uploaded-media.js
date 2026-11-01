@@ -1,3 +1,4 @@
+import { uploadedPhoto, uploadedPhotoError } from '../bot/uploaded-photo.js';
 import { uploadedVideo } from '../bot/uploaded-video.js';
 import { mirrorMediaToGroup } from '../bot/audit.js';
 import { galleryMediaActionButtons, MEDIA_STATUS_HQ } from '../bot/media-actions.js';
@@ -55,15 +56,24 @@ function uploadedPhotoActions() {
 
 export async function processUploadedPhoto(message, context = {}) {
   const chatId = message?.chat?.id;
-  const photo = Array.isArray(message?.photo) ? message.photo.at(-1) : null;
+  if (!chatId) return false;
+  const error = uploadedPhotoError(message);
+  if (error) {
+    await sendMessage(chatId, error);
+    return true;
+  }
+  const photo = uploadedPhoto(message);
   if (!chatId || !photo?.file_id) return false;
 
-  await sendChatAction(chatId, 'upload_photo').catch(() => {});
+  const isDocument = Boolean(message?.document?.file_id) && !message?.photo?.length;
+  await sendChatAction(chatId, isDocument ? 'upload_document' : 'upload_photo').catch(() => {});
   try {
-    await telegram('sendPhoto', {
+    await telegram(isDocument ? 'sendDocument' : 'sendPhoto', {
       chat_id: chatId,
-      photo: photo.file_id,
-      caption: uploadedPhotoCaption(photo),
+      [isDocument ? 'document' : 'photo']: photo.file_id,
+      caption: isDocument
+        ? `${uploadedPhotoCaption(photo)}\n\n📎 Diterima sebagai File/Document.`.slice(0, 1024)
+        : uploadedPhotoCaption(photo),
       ...uploadedPhotoActions(),
     });
   } finally {

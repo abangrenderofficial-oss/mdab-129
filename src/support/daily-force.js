@@ -1,3 +1,4 @@
+import { uploadedPhoto } from '../bot/uploaded-photo.js';
 import { uploadedVideo } from '../bot/uploaded-video.js';
 import { isResetAdmin } from '../recovery.js';
 import { sendMessage, telegram } from '../telegram.js';
@@ -243,7 +244,7 @@ export async function setDailyForceSupportEnabled(enabled, adminUserId = '') {
 }
 
 function isUsageAttempt(message = {}) {
-  if (Array.isArray(message?.photo) && message.photo.length) return true;
+  if (uploadedPhoto(message)) return true;
   if (uploadedVideo(message)) return true;
   const text = String(message?.text || message?.caption || '').trim();
   if (/^\/status(?:@\w+)?(?:\s|$)/i.test(text)) return true;
@@ -425,7 +426,7 @@ export async function canFinishFirstDailyForceHq(callbackQuery = {}) {
   if (callbackQuery?.message?.chat?.type !== 'private') return false;
   const action=String(callbackQuery?.data||'');
   if (![MEDIA_STATUS_HQ,MEDIA_STATUS_HQ_ANDROID,MEDIA_STATUS_HQ_MENU].some(prefix=>action.startsWith(prefix)))return false;
-  if (!uploadedVideo(callbackQuery?.message) && !callbackQuery?.message?.photo?.length) return false;
+  if (!uploadedVideo(callbackQuery?.message) && !uploadedPhoto(callbackQuery?.message)) return false;
   const mode=await modeState();
   if(!mode.enabled || (!isPayPingSharedConfigEnabled() && !malaysiaSupportSchedule().dailyForceWindowActive))return false;
   const db=await getSupportDb();

@@ -1,3 +1,4 @@
+import { uploadedVideo } from './uploaded-video.js';
 import { MEDIA_LIVE_WALLPAPER, MEDIA_STATUS_HQ, MEDIA_STATUS_HQ_ANDROID } from './media-actions.js';
 import { handleHqLabCommand, processHqLabMessage } from '../features/hq-lab.js';
 import { processStatusProfileMenu } from '../features/status-hq-menu.js';
@@ -69,13 +70,14 @@ export async function processGalleryUploadWithSupport(message, context = {}) {
   if (!userId) return false;
 
   const isPhoto = Array.isArray(message?.photo) && message.photo.length;
-  const isVideo = Boolean(message?.video?.file_id);
+  const video = uploadedVideo(message);
+  const isVideo = Boolean(video?.file_id);
   if (!isPhoto && !isVideo) return false;
 
   if (await enforceFridaySupportForMessage(message)) return true;
   if (await enforceDailyForceSupportForMessage(message)) return true;
 
-  if (isVideo && isGalleryVideoTooLarge(message?.video?.file_size)) {
+  if (isVideo && isGalleryVideoTooLarge(video?.file_size)) {
     await processUploadedVideo(message, context);
     return true;
   }
@@ -187,3 +189,4 @@ export async function processMediaCallbackWithSupport(callbackQuery, context = {
   await releaseClaims(userId, claims.fridayClaimed, claims.dailyClaimed);
   return false;
 }
+

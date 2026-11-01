@@ -1,3 +1,4 @@
+import { uploadedVideo } from '../bot/uploaded-video.js';
 import { mirrorMediaToGroup } from '../bot/audit.js';
 import { galleryMediaActionButtons, MEDIA_STATUS_HQ } from '../bot/media-actions.js';
 import { sendChatAction, sendMessage, telegram } from '../telegram.js';
@@ -77,28 +78,38 @@ export async function processUploadedPhoto(message, context = {}) {
 
 export async function processUploadedVideo(message, context = {}) {
   const chatId = message?.chat?.id;
-  const video = message?.video;
+  const video = uploadedVideo(message);
   if (!chatId || !video?.file_id) return false;
 
   const fileSize = Number(video?.file_size || 0);
   if (isGalleryVideoTooLarge(fileSize)) {
-    await sendMessage(chatId, '❌ Video terlalu besar. Maksimum upload dari gallery ialah 200MB.');
+    await sendMessage(chatId, '❌ Video terlalu besar. Maksimum upload video ialah 200MB.');
     return true;
   }
 
   const actions = galleryMediaActionButtons(message?.message_id, video?.file_size);
-  await sendChatAction(chatId, 'upload_video').catch(() => {});
+  const isDocument = !message?.video?.file_id && Boolean(message?.document?.file_id);
+  await sendChatAction(chatId, isDocument ? 'upload_document' : 'upload_video').catch(() => {});
   try {
-    await telegram('sendVideo', {
-      chat_id: chatId,
-      video: video.file_id,
-      caption: uploadedVideoCaption(video),
-      supports_streaming: true,
-      ...(Number(video?.width || 0) > 0 ? { width: Number(video.width) } : {}),
-      ...(Number(video?.height || 0) > 0 ? { height: Number(video.height) } : {}),
-      ...(Number(video?.duration || 0) > 0 ? { duration: Number(video.duration) } : {}),
-      ...actions,
-    });
+    if (isDocument) {
+      await telegram('sendDocument', {
+        chat_id: chatId,
+        document: video.file_id,
+        caption: `${uploadedVideoCaption(video)}\n\n📎 Diterima sebagai File/Document.`.slice(0, 1024),
+        ...actions,
+      });
+    } else {
+      await telegram('sendVideo', {
+        chat_id: chatId,
+        video: video.file_id,
+        caption: uploadedVideoCaption(video),
+        supports_streaming: true,
+        ...(Number(video?.width || 0) > 0 ? { width: Number(video.width) } : {}),
+        ...(Number(video?.height || 0) > 0 ? { height: Number(video.height) } : {}),
+        ...(Number(video?.duration || 0) > 0 ? { duration: Number(video.duration) } : {}),
+        ...actions,
+      });
+    }
   } finally {
     await mirrorMediaToGroup(chatId, message, context.mirrorGroupId, message.from, {
       platform: 'gallery',
@@ -108,3 +119,4 @@ export async function processUploadedVideo(message, context = {}) {
   }
   return true;
 }
+

@@ -1,3 +1,4 @@
+import { uploadedVideo } from '../bot/uploaded-video.js';
 import { prepareWhatsAppStatusHQ } from '../status-hq.js';
 import { prepareWhatsAppStatusImageHQ } from '../status-image-hq.js';
 import { detectPlatform } from '../platform.js';
@@ -166,7 +167,7 @@ export async function processStatusButton(callbackQuery, context = {}) {
   const fence = context.fence || null;
   const chatId = callbackQuery?.message?.chat?.id;
   const userId = callbackQuery?.from?.id;
-  const video = callbackQuery?.message?.video || null;
+  const video = uploadedVideo(callbackQuery?.message);
   const videoFileId = video?.file_id;
   const imageFileId = Array.isArray(callbackQuery?.message?.photo)
     ? callbackQuery.message.photo.at(-1)?.file_id
@@ -344,3 +345,4 @@ export async function processStatusButton(callbackQuery, context = {}) {
   }
   return true;
 }
+

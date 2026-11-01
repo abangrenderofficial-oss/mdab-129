@@ -1,3 +1,4 @@
+import { uploadedVideo } from '../bot/uploaded-video.js';
 import { isResetAdmin } from '../recovery.js';
 import { sendMessage, telegram } from '../telegram.js';
 import {
@@ -113,7 +114,7 @@ async function channelGatePolicy(userId){
 
 function isNewChannelUsage(message={}) {
   if(Array.isArray(message?.photo)&&message.photo.length)return true;
-  if(message?.video?.file_id)return true;
+  if(uploadedVideo(message))return true;
   const text=String(message?.text||message?.caption||'');
   return /https?:\/\/\S+/i.test(text);
 }
@@ -262,3 +263,4 @@ export async function processChannelGateCallback(callbackQuery = {}) {
   }).catch(() => {});
   return true;
 }
+

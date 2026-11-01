@@ -1,3 +1,4 @@
+import { uploadedVideo } from '../bot/uploaded-video.js';
 import { telegram } from '../telegram.js';
 import {
   MEDIA_STATUS_HQ,
@@ -23,7 +24,7 @@ export async function processStatusProfileMenu(callbackQuery) {
   const action = String(callbackQuery?.data || '');
   const directMenu = action.startsWith(MEDIA_STATUS_HQ_MENU);
   const legacyGallery = galleryMediaMeta(action, MEDIA_STATUS_HQ);
-  const isVideo = Boolean(callbackQuery?.message?.video?.file_id);
+  const isVideo = Boolean(uploadedVideo(callbackQuery?.message)?.file_id);
   const legacySocial = Boolean(
     !directMenu
     && !legacyGallery
@@ -82,3 +83,4 @@ export async function processStatusProfileMenu(callbackQuery) {
 
   return true;
 }
+

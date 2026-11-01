@@ -1,3 +1,4 @@
+import { uploadedVideo } from '../bot/uploaded-video.js';
 import { isResetAdmin } from '../recovery.js';
 import { sendMessage, telegram } from '../telegram.js';
 import {
@@ -12,7 +13,7 @@ const REJECTED_SUPPORT_COPY = 'Kata2 support tadi di reject atas sbb tertentu. P
 
 function isUsageAttempt(message = {}) {
   if (Array.isArray(message?.photo) && message.photo.length) return true;
-  if (message?.video?.file_id) return true;
+  if (uploadedVideo(message)) return true;
 
   const text = String(message?.text || message?.caption || '').trim();
   if (!text) return false;
@@ -97,3 +98,4 @@ export async function enforceSupportTestimonialGateForCallback(callbackQuery = {
   await sendMessage(chatId, copy).catch(() => {});
   return true;
 }
+

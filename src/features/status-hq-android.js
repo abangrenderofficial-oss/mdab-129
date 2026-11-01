@@ -1,3 +1,4 @@
+import { uploadedVideo } from '../bot/uploaded-video.js';
 import { prepareWhatsAppStatusAndroidHQ } from '../status-hq-android.js';
 import { detectPlatform } from '../platform.js';
 import { getTelegramFileSource, sendChatAction, sendMessage, sendVideoFileUpload, telegram } from '../telegram.js';
@@ -43,7 +44,7 @@ export async function processStatusAndroidButton(callbackQuery, context = {}) {
 
   const fence = context.fence || null;
   const chatId = callbackQuery?.message?.chat?.id;
-  const video = callbackQuery?.message?.video || null;
+  const video = uploadedVideo(callbackQuery?.message);
   const videoFileId = video?.file_id;
   const caption = callbackQuery?.message?.caption || '';
   const gallery = galleryMediaMeta(action, MEDIA_STATUS_HQ_ANDROID);
@@ -178,3 +179,4 @@ export async function processStatusAndroidButton(callbackQuery, context = {}) {
 
   return androidHqCompleted ? {androidHqCompleted:true} : true;
 }
+

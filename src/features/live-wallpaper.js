@@ -1,3 +1,4 @@
+import { uploadedVideo } from '../bot/uploaded-video.js';
 import { dispatchHeavyMediaJob, heavyVideoLimitBytes, heavyWorkerConfigured } from '../heavy-worker-dispatch.js';
 import { isJobFenceActive } from '../recovery.js';
 import { sendMessage, telegram } from '../telegram.js';
@@ -18,7 +19,7 @@ export async function processLiveWallpaperButton(callbackQuery, context = {}) {
 
   const fence = context.fence || null;
   const chatId = callbackQuery?.message?.chat?.id;
-  const video = callbackQuery?.message?.video || null;
+  const video = uploadedVideo(callbackQuery?.message);
   const fileId = video?.file_id;
   const gallery = galleryMediaMeta(action, MEDIA_LIVE_WALLPAPER);
   const fileSize = Number(video?.file_size || gallery?.fileSize || 0);
@@ -85,3 +86,4 @@ export async function processLiveWallpaperButton(callbackQuery, context = {}) {
   }
   return true;
 }
+

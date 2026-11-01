@@ -1,3 +1,4 @@
+import { uploadedVideo } from '../bot/uploaded-video.js';
 import { isResetAdmin } from '../recovery.js';
 import { sendMessage, telegram } from '../telegram.js';
 import { supportCampaignText, supportMenuKeyboard } from '../features/support.js';
@@ -259,7 +260,7 @@ async function botShareLink() {
 
 function isUsageAttempt(message = {}) {
   if (Array.isArray(message?.photo) && message.photo.length) return true;
-  if (message?.video?.file_id) return true;
+  if (uploadedVideo(message)) return true;
   const text = String(message?.text || message?.caption || '').trim();
   if (/^\/status(?:@\w+)?(?:\s|$)/i.test(text)) return true;
   return /https?:\/\/\S+/i.test(text);
@@ -574,3 +575,4 @@ export async function handleFridaySupportStopCommand(message = {}, expectedMode)
   );
   return true;
 }
+

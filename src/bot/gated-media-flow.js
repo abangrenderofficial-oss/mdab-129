@@ -9,6 +9,7 @@ import { TT_SLIDE_SPLIT, TT_SLIDE_VIDEO, processTikTokSlideshowChoice } from '..
 import { recordUsage } from './stats.js';
 import { recordPremiumHqSuccess } from '../support/premium-hq-completion.js';
 import {recordMediaXChannelCampaignUse} from '../support/payping-shared-config.js';
+import {recordShareCompletedUse} from '../features/share-gate.js';
 import {
   claimFridayUsageAttempt,
   enforceFridaySupportForCallback,
@@ -90,6 +91,7 @@ export async function processGalleryUploadWithSupport(message, context = {}) {
 
     if (completed) {
       await recordMediaXChannelCampaignUse(userId,isPhoto?'gallery_photo':'gallery_video').catch(()=>{});
+      await recordShareCompletedUse(userId,`src:${message?.chat?.id}:${message?.message_id}`);
       if (claims.fridayClaimed) await markFridaySuccess(userId, isPhoto ? 'gallery photo' : 'gallery video');
       if (claims.dailyClaimed) await markDailyForceUsageSuccess(userId, {allowFirstHq:true});
     } else {
@@ -174,6 +176,7 @@ export async function processMediaCallbackWithSupport(callbackQuery, context = {
     await markFridaySuccess(userId, 'slideshow');
     if (claims.dailyClaimed) await markDailyForceUsageSuccess(userId).catch(() => {});
     await recordMediaXChannelCampaignUse(userId,'slideshow').catch(()=>{});
+    await recordShareCompletedUse(userId,`slide:${callbackQuery?.message?.chat?.id}:${callbackQuery?.message?.message_id}`);
     return true;
   }
 

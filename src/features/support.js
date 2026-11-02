@@ -565,10 +565,10 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
         callbackQuery,
         [`<b>${escapeTelegramHtml(tier.label.toUpperCase())}!</b>`, '',
           `Amount: RM${Number(amount).toFixed(2)}`,
-          'Gateway: PayPing → Bayarcash',
-          'Isi nama dan e-mel di halaman PayPing untuk meneruskan pembayaran.',
-          'Status supporter akan disahkan selepas Bayarcash mengesahkan bayaran.'
-        ].join('\\n'),
+          '',
+          'Tekan butang bawah → scan QR DuitNow guna app bank → approve.',
+          'Jumlah dah terisi automatik. Status supporter aktif sebaik bayaran disahkan.'
+        ].join('\n'),
         {inline_keyboard:[
           [{text:`💳 Bayar RM${amount}`,url:handoff.url}],
           [{text:'← Tukar Amount',callback_data:SUPPORT_AMOUNTS_ACTION}]

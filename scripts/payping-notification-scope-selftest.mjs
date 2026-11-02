@@ -18,7 +18,8 @@ const [
   sw,
 ] = await Promise.all([
   readFile('src/support/webpush-payment.js','utf8'),
-  readFile('handlers/bayarcash.js','utf8'),
+  // The callback's after-payment steps live in a shared module, also used for PayPing-verified payments.
+  Promise.all([readFile('handlers/bayarcash.js','utf8'),readFile('src/support/after-payment.js','utf8')]).then(parts=>parts.join('\n')),
   readFile('handlers/support-return.js','utf8'),
   readFile('src/features/support.js','utf8'),
   readFile('src/payping/dashboard.js','utf8'),

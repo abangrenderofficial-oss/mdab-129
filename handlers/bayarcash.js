@@ -1,33 +1,9 @@
 import { isBayarcashConfigured, isBayarcashSandbox, verifyTransactionCallback } from '../src/payments/bayarcash.js';
 import { applyBayarcashTransaction } from '../src/support/store.js';
-import { activateSupportSubmissionAfterPayment, getSupportSubmission } from '../src/support/submissions.js';
-import { sendMessage } from '../src/telegram.js';
-import { notifySuccessfulSupportPayment } from '../src/support/payment-detail.js';
-import { notifyWebPushSupportPayment } from '../src/support/webpush-payment.js';
-import { notifyNtfySupportPayment } from '../src/support/ntfy-payment.js';
-import { notifyAffiliateCommission } from '../src/affiliate/notify.js';
-import { refreshSupportMonitorMessage } from '../src/support/monitor-publisher.js';
+import { afterSupportTransaction } from '../src/support/after-payment.js';
 
 function json(res, status, body) {
   res.status(status).json(body);
-}
-
-function confirmationText(result, submission = null) {
-  const sandbox = isBayarcashSandbox();
-  const lines = [];
-  if (sandbox) lines.push('🧪 SANDBOX TEST', '');
-  lines.push(
-    `❤️ Support diterima — RM${result.amount}`,
-    '',
-    sandbox
-      ? 'Payment test berjaya direkodkan. Tiada duit sebenar digunakan.'
-      : 'Terima kasih banyak-banyak sebab support bot kita 🥹❤️',
-    `Support ID: ${result.orderNumber}`,
-    `Jumlah support: RM${result.totalSupport}`,
-  );
-  const tierLabel = submission?.tierLabel || result?.tier?.label;
-  if (tierLabel) lines.push(`Status: ${tierLabel}`, 'Tempoh title: 12 bulan');
-  return lines.join('\n');
 }
 
 export default async function handler(req, res) {
@@ -70,56 +46,7 @@ export default async function handler(req, res) {
     amount_mismatch: result?.amountMismatch || false,
   });
 
-  if (result?.affiliate?.created) {
-    await notifyAffiliateCommission(result.affiliate).catch((error) => {
-      console.warn('[affiliate] callback commission notification failed:', error?.message);
-    });
-  }
-
-  let submission = null;
-  if (result?.orderNumber) {
-    submission = await getSupportSubmission(result.orderNumber).catch((error) => {
-      console.warn('[bayarcash] support submission lookup failed:', error?.message);
-      return null;
-    });
-  }
-
-  if (result?.knownOrder && result?.orderNumber && !result?.paid) {
-    await notifyWebPushSupportPayment(result.orderNumber).catch((error) => {
-      console.warn('[webpush-payment] unsuccessful callback notification failed:', error?.message);
-    });
-  }
-
-  if (result?.paid && result?.orderNumber) {
-    await notifySuccessfulSupportPayment(result.orderNumber).catch((error) => {
-      console.warn('[payment-detail] notification failed:', error?.message);
-    });
-    await notifyNtfySupportPayment(result.orderNumber).catch((error) => {
-      console.warn('[ntfy-payment] callback notification failed:', error?.message);
-    });
-    await refreshSupportMonitorMessage().catch((error) => {
-      console.warn('[support-monitor] refresh after paid support failed:', error?.message);
-    });
-  }
-
-  if (result?.becamePaid && result?.telegramUserId) {
-    await sendMessage(result.telegramUserId, confirmationText(result, submission)).catch((error) => {
-      console.warn('[bayarcash] Telegram confirmation failed:', error?.message);
-    });
-
-    const activation = await activateSupportSubmissionAfterPayment(result.orderNumber).catch((error) => {
-      console.warn('[bayarcash] testimonial activation failed:', error?.message);
-      return null;
-    });
-    if (activation?.activated) {
-      await sendMessage(
-        result.telegramUserId,
-        'Tinggalkan kata-kata support korang ❤️',
-      ).catch((error) => {
-        console.warn('[bayarcash] testimonial follow-up failed:', error?.message);
-      });
-    }
-  }
+  await afterSupportTransaction(result, { sandbox: isBayarcashSandbox() });
 
   // Support testimonial/feedback publishing is intentionally disabled for now.
   return json(res, 200, { ok: true });

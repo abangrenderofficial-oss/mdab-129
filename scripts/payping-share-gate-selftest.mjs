@@ -118,6 +118,12 @@ try{
  await db.execute({sql:"UPDATE payping_share_unlocks_v1 SET expires_at=? WHERE telegram_user_id=?",args:[new Date(Date.now()-1000).toISOString(),String(D)]});
  assert.equal(await gate.enforceShareGateForMessage(msg(D,'Dan')),true,'locked again after expiry');take();
 
+ // 9b. Original-quality photo and video documents are new sources too; other files are not.
+ const doc=(document)=>({message_id:++n,chat:{id:D,type:'private'},from:{id:D,first_name:'Dan'},document});
+ assert.equal(await gate.enforceShareGateForMessage(doc({file_id:'img1',mime_type:'image/png',file_name:'a.png'})),true,'image document locked');take();
+ assert.equal(await gate.enforceShareGateForMessage(doc({file_id:'vid1',mime_type:'video/mp4',file_name:'a.mp4'})),true,'video document locked');take();
+ assert.equal(await gate.enforceShareGateForMessage(doc({file_id:'pdf1',mime_type:'application/pdf',file_name:'a.pdf'})),false,'other files are not a source');
+
  // 10. Groups, the owner and other modes are never share-locked.
  assert.equal(await gate.enforceShareGateForMessage({...msg(D,'Dan'),chat:{id:-100123,type:'supergroup'}}),false);
  assert.equal(await gate.enforceShareGateForMessage(msg(999999999,'Owner')),false);
@@ -132,7 +138,7 @@ try{
  await db.execute("DROP TABLE payping_share_sessions_v1");
  assert.equal(await gate.enforceShareGateForMessage(msg(D,'Dan')),false,'fails open');
 
- console.log('PAYPING_SHARE_GATE_SELFTEST_OK — free uses, second-source lock, invite link + share sheet, friend counted after own use, notices, unlock, expiry, fail-open');
+ console.log('PAYPING_SHARE_GATE_SELFTEST_OK — free uses, second-source lock, invite link + share sheet, friend counted after own use, notices, unlock, expiry, fail-open, original documents');
 }finally{
  await rm(dir,{recursive:true,force:true});
 }

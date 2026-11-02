@@ -2,6 +2,8 @@
 // when PayPing has MediaX on Free + Share. Only a NEW source (link, photo or video)
 // can be locked; Premium + HQ / Android HQ for media already delivered stays usable,
 // so one completed use = one source plus its HQ conversion.
+import { uploadedPhoto } from '../bot/uploaded-photo.js';
+import { uploadedVideo } from '../bot/uploaded-video.js';
 import { isResetAdmin } from '../recovery.js';
 import { sendMessage, telegram } from '../telegram.js';
 import { hasCompletedUse } from '../bot/stats.js';
@@ -36,8 +38,9 @@ async function inviteLinkFor(userId) {
 }
 
 function isNewSource(message = {}) {
-  if (Array.isArray(message?.photo) && message.photo.length) return true;
-  if (message?.video?.file_id) return true;
+  // Photos and videos, including ones sent as original-quality documents.
+  if (uploadedPhoto(message)) return true;
+  if (uploadedVideo(message)) return true;
   return /https?:\/\/\S+/i.test(String(message?.text || message?.caption || ''));
 }
 

@@ -7,6 +7,7 @@ import { processStatusFromLink } from './features/status-hq.js';
 import { sendTikTokSlideshowChoice } from './features/tiktok-slideshow.js';
 import { recordPremiumHqSuccess } from './support/premium-hq-completion.js';
 import {recordMediaXChannelCampaignUse} from './support/payping-shared-config.js';
+import {recordShareCompletedUse} from './features/share-gate.js';
 import {
   claimFridayUsageAttempt,
   enforceFridaySupportForMessage,
@@ -51,6 +52,7 @@ async function runLinkJob({ message, context, url, platform, statusMode, fridayC
           label: 'premium hq status link',
           completionKey: `link:${chatId}:${String(message?.message_id || '')}:status_hq`,
         });
+        await recordShareCompletedUse(userId,`src:${chatId}:${message?.message_id||url}`);
       } else {
         if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
         if (dailyClaimed) await releaseDailyForceUsageAttempt(userId).catch(() => {});
@@ -65,6 +67,7 @@ async function runLinkJob({ message, context, url, platform, statusMode, fridayC
       if (dailyClaimed) await releaseDailyForceUsageAttempt(userId).catch(() => {});
     } else if (hasDownloadableMedia(result)) {
       await recordMediaXChannelCampaignUse(userId,'social_download').catch(()=>{});
+      await recordShareCompletedUse(userId,`src:${chatId}:${message?.message_id||url}`);
       await recordUsage(userId, 'download');
       await markFridaySuccess(userId, 'download');
       if (dailyClaimed) {

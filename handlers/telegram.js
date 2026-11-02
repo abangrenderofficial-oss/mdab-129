@@ -28,6 +28,7 @@ import {
   processChannelGateCallback,
 } from '../src/features/channel-gate.js';
 import { scheduleLinkJob } from '../src/link-queue.js';
+import { enforceShareGateForMessage, handleShareStartPayload, processShareGateCallback } from '../src/features/share-gate.js';
 import { handlePayPingAccountLinkStart } from '../src/features/payping-account-link.js';
 import {syncSharedConfigForUpdate,routeUnifiedForceCommand} from '../src/support/payping-shared-command-router.js';
 import {
@@ -91,6 +92,7 @@ async function processMessage(message, context) {
     await handleAffiliateStartPayload(message, startPayload(message));
     return sendMessage(chatId, startText(message?.from?.id));
   }
+  if (command === '/start' && startPayload(message).startsWith('inv_')) { await handleShareStartPayload(message, startPayload(message)); return sendMessage(chatId, startText(message?.from?.id)); }
   if (command === '/start' && startPayload(message) === 'support') return handleSupportCommand(message, context);
   if (command === '/start' || command === '/help') return sendMessage(chatId, startText(message?.from?.id));
   if (command === '/support') return handleSupportCommand(message, context);
@@ -100,6 +102,7 @@ async function processMessage(message, context) {
   if (await processLuahRasaMessage(message, context)) return;
   if (await enforceDailyForceSupportForMessage(message)) return;
   if (await enforceChannelGateForMessage(message)) return;
+  if (await enforceShareGateForMessage(message)) return;
   if (await processHqLabBeforeMedia(message, context)) return;
   if (await processGalleryUploadWithSupport(message, context)) return;
   const statusMode = command === '/status' || command === 'status';
@@ -125,6 +128,7 @@ async function runWebhookUpdate(update, context) {
     if (await processQuoteFilterCallback(callbackQuery)) return;
     if (await processFridaySupportCallback(callbackQuery)) return;
     if (await processChannelGateCallback(callbackQuery)) return;
+    if (await processShareGateCallback(callbackQuery)) return;
     if (await processAffiliateCallback(callbackQuery, context)) return;
     if (await processSupportCallback(callbackQuery, context)) return;
     if (await enforceSupportTestimonialGateForCallback(callbackQuery)) return;

@@ -4,6 +4,7 @@ import {
   lockAffiliateReferral,
   markAffiliateWithdrawal,
 } from '../affiliate/store.js';
+import { reportPayPingReferral, paypingReferralCode } from '../payping/referral-client.js';
 
 const AFFILIATE_WITHDRAW_ACTION = 'affiliate:withdraw';
 const AFFILIATE_REFRESH_ACTION = 'affiliate:refresh';
@@ -102,6 +103,16 @@ export async function handleAffiliateStartPayload(message = {}, payload = '') {
     });
   } catch (error) {
     console.warn('[affiliate] referral lock failed:', error?.message);
+  }
+  // Links shared from the PayPing affiliate dashboard carry a PayPing code (ref_AR…).
+  // PayPing records those joins and pays commission on the user's support.
+  if (paypingReferralCode(payload)) {
+    try {
+      const out = await reportPayPingReferral({ userId: user.id, payload, messageId: message?.message_id, date: message?.date });
+      console.log('[affiliate] payping referral', { user_id: String(user.id), recorded: Boolean(out?.recorded), reason: out?.reason || null });
+    } catch (error) {
+      console.warn('[affiliate] payping referral failed:', error?.code || '', error?.message);
+    }
   }
   return true;
 }

@@ -10,7 +10,7 @@ function requireConfig(){
   let url;
   try{url=new URL(base);}catch{}
   if(!url||url.protocol!=='https:'||url.username||url.password||!/^[-a-z0-9.]+$/i.test(url.hostname)||url.pathname!=='/'||url.search||url.hash)throw Object.assign(new Error('Invalid PayPing HTTPS origin'),{code:'PAYPING_URL_INVALID'});
-  if(!/^\\d{5,20}:[A-Za-z0-9_-]{30,}$/.test(telegramToken))throw Object.assign(new Error('Telegram Bot Token is required for Aurora AutoConnect'),{code:'PAYPING_TELEGRAM_PROOF_MISSING'});
+  if(!/^\d{5,20}:[A-Za-z0-9_-]{30,}$/.test(telegramToken))throw Object.assign(new Error('Telegram Bot Token is required for Aurora AutoConnect'),{code:'PAYPING_TELEGRAM_PROOF_MISSING'});
   return {base:url.origin,botId:'mediax',telegramToken};
 }
 /** Resolves editable support plans from canonical Turso, without relying on fixed RM amount mapping. */

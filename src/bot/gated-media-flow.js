@@ -6,7 +6,14 @@ import { processStatusProfileMenu } from '../features/status-hq-menu.js';
 import { processStatusAndroidButton } from '../features/status-hq-android.js';
 import { processStatusButton } from '../features/status-hq.js';
 import { processLiveWallpaperButton } from '../features/live-wallpaper.js';
-import { isGalleryVideoTooLarge, processUploadedPhoto, processUploadedVideo } from '../features/uploaded-media.js';
+import {
+  NATIVE_MEDIA_TOO_LARGE_TEXT,
+  isGalleryVideoTooLarge,
+  isNativeMediaTooLarge,
+  processUploadedPhoto,
+  processUploadedVideo,
+} from '../features/uploaded-media.js';
+import { sendMessage } from '../telegram.js';
 import { TT_SLIDE_SPLIT, TT_SLIDE_VIDEO, processTikTokSlideshowChoice } from '../features/tiktok-slideshow.js';
 import { recordUsage } from './stats.js';
 import { recordPremiumHqSuccess } from '../support/premium-hq-completion.js';
@@ -76,6 +83,13 @@ export async function processGalleryUploadWithSupport(message, context = {}) {
   const video = uploadedVideo(message);
   const isVideo = Boolean(video?.file_id);
   if (!isPhoto && !isVideo) return false;
+
+  // Photo/Video over 20 MB sent natively (not as File/Document) is rejected
+  // before any support gate or usage claim, so it never costs the user a try.
+  if (isNativeMediaTooLarge(message)) {
+    await sendMessage(message.chat.id, NATIVE_MEDIA_TOO_LARGE_TEXT);
+    return true;
+  }
 
   if (await enforceFridaySupportForMessage(message)) return true;
   if (await enforceDailyForceSupportForMessage(message)) return true;
@@ -159,7 +173,7 @@ export async function processMediaCallbackWithSupport(callbackQuery, context = {
         label: 'premium hq callback',
         completionKey: `callback:${String(callbackQuery?.id || '')}`,
       });
-    } else if (isPremiumHq && premiumResult?.premiumVideoDispatched) {
+    } else if (isPremiumHq && (premiumResult?.premiumVideoDispatched || premiumResult?.premiumImageDispatched)) {
       // Keep the Friday/Daily claims until the heavy worker completion callback
       // confirms the Premium+ HQ media was actually delivered.
     } else {

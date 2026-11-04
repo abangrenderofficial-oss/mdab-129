@@ -78,6 +78,10 @@ export async function startHeavyStatusProgress(chatId) {
   return sendMessage(chatId, videoProgressText(1)).catch(() => null);
 }
 
+export async function startHeavyImageProgress(chatId) {
+  return sendMessage(chatId, imageProgressText(1)).catch(() => null);
+}
+
 export async function startHeavyLiveProgress(chatId) {
   return sendMessage(chatId, videoProgressText(1)).catch(() => null);
 }

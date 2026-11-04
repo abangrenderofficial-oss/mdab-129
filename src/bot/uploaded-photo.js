@@ -5,7 +5,9 @@ const IMAGE_MIME = new Set([
   'image/webp', 'image/bmp', 'image/x-ms-bmp', 'image/tiff',
 ]);
 const IMAGE_EXTENSION = /\.(jpe?g|png|webp|bmp|tiff?)$/i;
-export const MAX_IMAGE_DOCUMENT_BYTES = 20 * 1024 * 1024;
+// Image Documents above 20 MB are processed by the MTProto heavy worker
+// (status_hq_image). 50 MB is the Bot API sendDocument cap for the result.
+export const MAX_IMAGE_DOCUMENT_BYTES = 50 * 1024 * 1024;
 
 export function uploadedPhoto(message = {}) {
   if (Array.isArray(message?.photo) && message.photo.length) return message.photo.at(-1);
@@ -23,7 +25,7 @@ export function uploadedPhotoError(message = {}) {
   if (!document?.file_id || message?.photo?.length || message?.video?.file_id) return '';
   if (uploadedPhoto(message)) {
     if (Number(document.file_size || 0) > MAX_IMAGE_DOCUMENT_BYTES) {
-      return '❌ Fail gambar terlalu besar. Maksimum gambar sebagai File/Document ialah 20MB.';
+      return '❌ Image file is too large. Maximum image size as a Document is 50 MB.';
     }
     return '';
   }

@@ -6,9 +6,24 @@ import { sendChatAction, sendMessage, telegram } from '../telegram.js';
 
 export const MAX_GALLERY_VIDEO_BYTES = 200 * 1024 * 1024;
 
+// Native (non-Document) photos/videos are capped at 20 MB. Anything heavier
+// must be resent as a File/Document so the original bytes reach the
+// Premium+ HQ encoder untouched (via the MTProto heavy worker).
+export const MAX_NATIVE_MEDIA_BYTES = 20 * 1024 * 1024;
+export const NATIVE_MEDIA_TOO_LARGE_TEXT = '❌ Media larger than 20 MB is not accepted. Please make sure you send it as a Document (File).';
+
 export function isGalleryVideoTooLarge(fileSize = 0) {
   const bytes = Number(fileSize || 0);
   return Number.isFinite(bytes) && bytes > MAX_GALLERY_VIDEO_BYTES;
+}
+
+export function isNativeMediaTooLarge(message = {}) {
+  const native = message?.video?.file_id
+    ? message.video
+    : (Array.isArray(message?.photo) && message.photo.length ? message.photo.at(-1) : null);
+  if (!native) return false;
+  const bytes = Number(native.file_size || 0);
+  return Number.isFinite(bytes) && bytes > MAX_NATIVE_MEDIA_BYTES;
 }
 
 function formatFileSize(bytes) {
@@ -57,6 +72,10 @@ function uploadedPhotoActions() {
 export async function processUploadedPhoto(message, context = {}) {
   const chatId = message?.chat?.id;
   if (!chatId) return false;
+  if (isNativeMediaTooLarge(message)) {
+    await sendMessage(chatId, NATIVE_MEDIA_TOO_LARGE_TEXT);
+    return true;
+  }
   const error = uploadedPhotoError(message);
   if (error) {
     await sendMessage(chatId, error);
@@ -92,6 +111,10 @@ export async function processUploadedVideo(message, context = {}) {
   if (!chatId || !video?.file_id) return false;
 
   const fileSize = Number(video?.file_size || 0);
+  if (isNativeMediaTooLarge(message)) {
+    await sendMessage(chatId, NATIVE_MEDIA_TOO_LARGE_TEXT);
+    return true;
+  }
   if (isGalleryVideoTooLarge(fileSize)) {
     await sendMessage(chatId, '❌ Video terlalu besar. Maksimum upload video ialah 200MB.');
     return true;

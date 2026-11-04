@@ -210,14 +210,52 @@ for (const format of ['jpeg', 'png', 'webp', 'native']) {
 }
 assert.ok(photoHelper.uploadedPhoto({document:{file_id:'x',file_name:'photo.JPG',mime_type:'application/octet-stream'}}));
 assert.equal(photoHelper.uploadedPhoto({document:{file_id:'x',file_name:'photo.jpg',mime_type:'application/pdf'}}), null);
-for (const [size, accepted] of [[20 * MB, true], [20 * MB + 1, false]]) {
+for (const [size, accepted] of [[20 * MB + 1, true], [50 * MB, true], [50 * MB + 1, false]]) {
   reset();
   const msg = {chat:{id:123},from:{id:123},message_id:43,document:{file_id:'photo',mime_type:'image/jpeg',file_size:size}};
   await gated.processGalleryUploadWithSupport(msg);
   assert.equal(Boolean(telegramCall('sendDocument')), accepted);
   assert.equal(called('recordUsage').length, accepted ? 1 : 0);
-  if (!accepted) assert.match(called('sendMessage')[0].args[1], /20MB/);
+  if (!accepted) assert.match(called('sendMessage')[0].args[1], /50 MB/);
 }
+
+// Native (non-Document) photo/video over 20 MB: rejected in English, no usage
+// claimed, no echo. The same size as a Document is accepted.
+const NATIVE_TEXT = 'Media larger than 20 MB is not accepted. Please make sure you send it as a Document (File).';
+for (const [kind, size, rejected] of [
+  ['video', 20 * MB, false], ['video', 20 * MB + 1, true], ['photo', 20 * MB + 1, true], ['photo', 2 * MB, false],
+]) {
+  reset();
+  const msg = { chat: { id: 123, type: 'private' }, from: { id: 123 }, message_id: 44 };
+  if (kind === 'video') msg.video = { file_id: 'native-video', file_size: size, mime_type: 'video/mp4' };
+  else msg.photo = [{ file_id: 'small', file_size: 1000 }, { file_id: 'native-photo', file_size: size, width: 4000, height: 3000 }];
+  assert.equal(await gated.processGalleryUploadWithSupport(msg), true);
+  const echo = telegramCall(kind === 'video' ? 'sendVideo' : 'sendPhoto');
+  assert.equal(Boolean(echo), !rejected, `${kind} ${size}`);
+  assert.equal(called('recordUsage').length, rejected ? 0 : 1);
+  if (rejected) assert.ok(called('sendMessage')[0].args[1].includes(NATIVE_TEXT));
+}
+reset();
+assert.equal(await gated.processGalleryUploadWithSupport(message(25 * MB, true)), true);
+assert.ok(telegramCall('sendDocument'), '25 MB video Document must be accepted');
+assert.equal(called('recordUsage').length, 1);
+
+// Image Document over 20 MB → Premium+ HQ via MTProto worker (status_hq_image).
+reset();
+{
+  const msg = { chat: { id: 123, type: 'private' }, from: { id: 123 }, message_id: 52,
+    document: { file_id: 'big-image', file_size: 30 * MB, mime_type: 'image/jpeg', file_name: 'big.jpg' } };
+  const cb = { id: 'big-image-cb', from: msg.from, message: msg, data: actions.MEDIA_STATUS_HQ };
+  const result = await premium.processStatusButton(cb, { baseUrl: 'https://example.invalid' });
+  assert.equal(result.premiumImageDispatched, true);
+  const job = called('dispatch')[0].args[0];
+  assert.equal(job.action, 'status_hq_image');
+  assert.equal(job.videoFileId, 'big-image');
+  assert.equal(job.fileSize, 30 * MB);
+  assert.equal(called('source').length, 0);
+  assert.equal(called('imageEncode').length, 0);
+}
+console.log('Native >20MB reject, Document >20MB accept, large image → heavy worker: passed.');
 for (const format of ['heic', 'svg+xml']) {
   reset();
   await gated.processGalleryUploadWithSupport({chat:{id:123},from:{id:123},document:{file_id:'image',mime_type:`image/${format}`}});

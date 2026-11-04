@@ -18,7 +18,13 @@ import {
   galleryMediaMeta,
 } from '../bot/media-actions.js';
 import { localMediaLane } from '../bot/job-lanes.js';
-import { removeHeavyProgress, startHeavyStatusProgress, startImageStatusProgress, startStatusProgress } from '../bot/progress.js';
+import {
+  removeHeavyProgress,
+  startHeavyImageProgress,
+  startHeavyStatusProgress,
+  startImageStatusProgress,
+  startStatusProgress,
+} from '../bot/progress.js';
 import { sendDocumentFileUpload } from '../bot/telegram-document.js';
 import { statusImageCaption, statusVideoCaption } from '../bot/status-caption.js';
 
@@ -170,8 +176,13 @@ export async function processStatusButton(callbackQuery, context = {}) {
   const userId = callbackQuery?.from?.id;
   const video = uploadedVideo(callbackQuery?.message);
   const videoFileId = video?.file_id;
-  const imageFileId = uploadedPhoto(callbackQuery?.message)?.file_id;
+  const image = uploadedPhoto(callbackQuery?.message);
+  const imageFileId = image?.file_id;
   const isImage = Boolean(imageFileId && !videoFileId);
+  // Cloud Bot API getFile cannot download above 20 MB, so large image
+  // Documents go to the MTProto heavy worker (same Premium+ HQ formula).
+  const imageFileSize = Number(image?.file_size || 0);
+  const heavyImageCandidate = Boolean(isImage && shouldUseHeavyWorker({ file_size: imageFileSize }));
   const fileId = videoFileId || imageFileId;
   const caption = callbackQuery?.message?.caption || '';
   const sourceUrl = callbackSourceUrl(action, MEDIA_STATUS_HQ, caption);
@@ -191,10 +202,12 @@ export async function processStatusButton(callbackQuery, context = {}) {
     return true;
   }
 
-  if (heavyCandidate && !heavyWorkerConfigured()) {
+  if ((heavyCandidate || heavyImageCandidate) && !heavyWorkerConfigured()) {
     await telegram('answerCallbackQuery', {
       callback_query_id: callbackQuery.id,
-      text: '⚠️ Large video worker is not available right now.',
+      text: heavyImageCandidate
+        ? '⚠️ Large image worker is not available right now.'
+        : '⚠️ Large video worker is not available right now.',
       show_alert: true,
     }).catch(() => {});
     return true;
@@ -234,6 +247,32 @@ export async function processStatusButton(callbackQuery, context = {}) {
       await removeHeavyProgress(chatId, progressMessage?.message_id);
       if (!cancelled(fence)) {
         await sendMessage(chatId, '❌ Worker video besar tak dapat dimulakan sekarang. Cuba lagi.').catch(() => {});
+      }
+    }
+    return true;
+  }
+
+  if (heavyImageCandidate) {
+    const progressMessage = await startHeavyImageProgress(chatId);
+    try {
+      const baseUrl = String(context.baseUrl || '').replace(/\/$/, '');
+      await dispatchHeavyMediaJob({
+        chatId,
+        userId,
+        videoFileId: imageFileId,
+        fileSize: imageFileSize,
+        action: 'status_hq_image',
+        sourceKind: 'gallery',
+        progressMessageId: progressMessage?.message_id || 0,
+        sourceMessageId: callbackQuery?.message?.message_id || 0,
+        completionCallbackUrl: baseUrl ? `${baseUrl}/api/premium-hq-success` : '',
+      });
+      return { premiumImageDispatched: true };
+    } catch (error) {
+      console.error('[status-hq/heavy-image] dispatch failed:', error?.code, error?.message);
+      await removeHeavyProgress(chatId, progressMessage?.message_id);
+      if (!cancelled(fence)) {
+        await sendMessage(chatId, '❌ Large image worker could not start right now. Please try again.').catch(() => {});
       }
     }
     return true;

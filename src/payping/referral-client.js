@@ -21,14 +21,15 @@ export function config(){
 }
 
 /** Returns PayPing's answer, e.g. {recorded:true} or {recorded:false,reason:'self_referral'}. */
-export async function reportPayPingReferral({userId,payload,messageId,date},fetchImpl=fetch){
+export async function reportPayPingReferral({userId,payload,messageId,date,username='',firstName='',lastName=''},fetchImpl=fetch){
   const code=paypingReferralCode(payload);
   const telegramUserId=String(userId||'').trim();
   if(!code||!/^\d{1,20}$/.test(telegramUserId))return {recorded:false,reason:'not_payping_code'};
   const {base,token,botId}=config();
   const path='/api/bot-referrals/'+encodeURIComponent(botId)+'/join';
   const eventId=('tgstart:'+telegramUserId+':'+String(messageId||date||Date.now())).replace(/[^-_A-Za-z0-9:.]/g,'').slice(0,120);
-  const raw=JSON.stringify({telegramUserId,referralCode:code,eventId});
+  // Name details let PayPing show the affiliate who joined (@username, else name, else masked ID).
+  const raw=JSON.stringify({telegramUserId,referralCode:code,eventId,username:String(username||'').slice(0,64),firstName:String(firstName||'').slice(0,80),lastName:String(lastName||'').slice(0,80)});
   const proof=proofForRequest({token,identity:botId,method:'POST',path,body:raw});
   const res=await fetchImpl(base+path,{method:'POST',headers:{'content-type':'application/json',...proof},body:raw,signal:AbortSignal.timeout(10000),redirect:'error'});
   const out=await res.json().catch(()=>({}));

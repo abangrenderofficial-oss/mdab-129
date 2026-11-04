@@ -108,7 +108,7 @@ export async function handleAffiliateStartPayload(message = {}, payload = '') {
   // PayPing records those joins and pays commission on the user's support.
   if (paypingReferralCode(payload)) {
     try {
-      const out = await reportPayPingReferral({ userId: user.id, payload, messageId: message?.message_id, date: message?.date });
+      const out = await reportPayPingReferral({ userId: user.id, payload, messageId: message?.message_id, date: message?.date, username: user.username || '', firstName: user.first_name || '', lastName: user.last_name || '' });
       console.log('[affiliate] payping referral', { user_id: String(user.id), recorded: Boolean(out?.recorded), reason: out?.reason || null });
     } catch (error) {
       console.warn('[affiliate] payping referral failed:', error?.code || '', error?.message);

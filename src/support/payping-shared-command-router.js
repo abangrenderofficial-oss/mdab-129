@@ -1,5 +1,6 @@
 import {sendMessage} from '../telegram.js';
 import {recordMediaXRecipient} from './payping-reminder-registry.js';
+import {reportPayPingUserJoined} from '../payping/user-joined-client.js';
 import {isResetAdmin} from '../recovery.js';
 import {isDailyForceSupportEnabled,setDailyForceSupportEnabled} from './daily-force.js';
 import {refreshSupportMonitorForMode} from './monitor-hooks.js';
@@ -8,9 +9,12 @@ import {
   setMediaXFreeAccessMode,setMediaXFreeChannelAccessMode,
 } from './payping-shared-config.js';
 
-export async function syncSharedConfigForUpdate(userId='',chatType=''){
+export async function syncSharedConfigForUpdate(userId='',chatType='',from=null){
   if(!isPayPingSharedConfigEnabled())return;
-  void recordMediaXRecipient(userId,chatType).catch(e=>console.warn('[payping-reminders] recipient sync failed:',e.message));
+  // A person MediaX has never seen before: tell the owner through PayPing ("New User Joined MediaX! 🎉").
+  void recordMediaXRecipient(userId,chatType).then(isNew=>{
+    if(isNew&&from&&String(from.id)===String(userId))return reportPayPingUserJoined(from).catch(e=>console.warn('[payping-joins] notice failed:',e?.code||'',e.message));
+  }).catch(e=>console.warn('[payping-reminders] recipient sync failed:',e.message));
   try{await refreshSupportAmounts();await reportPayPingSync()}
   catch(error){console.warn('[payping-shared] sync refresh failed:',error?.message)}
 }

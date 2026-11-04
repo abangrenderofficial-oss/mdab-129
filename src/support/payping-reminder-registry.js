@@ -11,13 +11,14 @@ async function ensureRegistry(){
  })().catch(e=>{ready=null;throw e});
  return ready;
 }
+/** Returns true only the first time this person is ever seen by MediaX (a new user). */
 export async function recordMediaXRecipient(userId,chatType='private'){
  const id=String(userId||'');
  if(!isPayPingSharedConfigEnabled()||chatType!=='private'||!/^[0-9]{1,20}$/.test(id)||memo.has(id))return false;
  await ensureRegistry();const db=await getSupportDb(),t=new Date().toISOString();
- await db.execute({sql:"INSERT OR IGNORE INTO payping_reminder_recipients_v3(environment,bot_id,telegram_user_id,first_seen_at,last_seen_at) VALUES(?,'mediax',?,?,?)",args:[currentSupportEnvironment(),id,t,t]});
+ const r=await db.execute({sql:"INSERT OR IGNORE INTO payping_reminder_recipients_v3(environment,bot_id,telegram_user_id,first_seen_at,last_seen_at) VALUES(?,'mediax',?,?,?)",args:[currentSupportEnvironment(),id,t,t]});
  if(memo.size>15000)memo.clear();
- memo.add(id);return true;
+ memo.add(id);return Number(r?.rowsAffected||0)===1;
 }
 export async function seedMediaXReminderRecipients(){
  if(!isPayPingSharedConfigEnabled())return {skipped:true};

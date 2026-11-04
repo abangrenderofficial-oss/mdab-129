@@ -11,7 +11,7 @@ export function paypingReferralCode(payload){
   return PAYPING_CODE.test(code)?code:'';
 }
 
-function config(){
+export function config(){
   const base=String(process.env.PAYPING_URL||AURORA_ORIGIN).trim();
   const token=String(process.env.TELEGRAM_BOT_TOKEN||'').trim();
   let url;try{url=new URL(base)}catch{}

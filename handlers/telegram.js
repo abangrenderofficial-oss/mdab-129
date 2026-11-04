@@ -169,7 +169,8 @@ export default async function handler(req, res) {
     // Keep downloader and Premium + HQ processing independent of dashboard latency.
     void syncSharedConfigForUpdate(
       update?.callback_query?.from?.id || update?.message?.from?.id || update?.edited_message?.from?.id,
-      update?.callback_query?.message?.chat?.type || update?.message?.chat?.type || update?.edited_message?.chat?.type
+      update?.callback_query?.message?.chat?.type || update?.message?.chat?.type || update?.edited_message?.chat?.type,
+      update?.callback_query?.from || update?.message?.from || update?.edited_message?.from || null
     );
 
     const context = { baseUrl: requestBaseUrl(req), mirrorGroupId: mirrorGroupFromRequest(req) };

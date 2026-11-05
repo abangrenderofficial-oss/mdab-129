@@ -51,48 +51,6 @@ function formatFps(value) {
   return Number.isInteger(fps) ? String(fps) : fps.toFixed(2);
 }
 
-
-async function dispatchOwnerV3Document({ chatId, userId, document }) {
-  const token = String(process.env.GITHUB_ACTIONS_TOKEN || process.env.GH_ACTIONS_TOKEN || '').trim();
-  if (!token) throw new Error('GitHub Actions worker belum dikonfigurasi.');
-  const owner = String(process.env.GITHUB_WORKER_OWNER || 'abangrenderofficial-oss').trim();
-  const repo = String(process.env.GITHUB_WORKER_REPO || 'mdab-129').trim();
-  // Only the dedicated owner HQ Lab workflow on main; no production-worker changes.
-  const endpoint = 'https://api.github.com/repos/' + encodeURIComponent(owner) + '/' +
-    encodeURIComponent(repo) + '/actions/workflows/hqlab-v3.yml/dispatches';
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      Authorization: 'Bearer ' + token,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      ref: 'main',
-      inputs: {
-        chat_id: String(chatId),
-        user_id: String(userId),
-        file_id: String(document.file_id),
-        file_size: String(Number(document.file_size || 0)),
-      },
-    }),
-    signal: AbortSignal.timeout(12000),
-  });
-  if (!response.ok) {
-    throw new Error('HQ Lab V3 worker dispatch gagal (HTTP ' + response.status + ').');
-  }
-}
-
-function isV3VideoDocument(document) {
-  const mime = String(document?.mime_type || '').split(';')[0].trim().toLowerCase();
-  const filename = String(document?.file_name || '');
-  return Boolean(document?.file_id) && (
-    mime.startsWith('video/') ||
-    /\.(mp4|mov|m4v|mkv|webm|avi|mts|m2ts|mpeg|mpg|3gp)$/i.test(filename)
-  );
-}
-
 function resultCaption(result, burnLabel) {
   const output = result?.output || {};
   const displayName = result?.id === 'PREMIUM+' ? 'Premium + HQ old' : `${result.id} — ${result.name}`;
@@ -151,20 +109,7 @@ export async function handleHqLabCommand(message) {
     return true;
   }
 
-  const mode = /^\/hqlab(?:@\w+)?\s+v3$/.test(raw) ? 'v3' : 'compare';
-  state().set(stateKey(message), { expiresAt: Date.now() + LAB_TTL_MS, mode });
-  if (mode === 'v3') {
-    await sendMessage(chatId, [
-      '🧪 HQ Lab Premium+ HQ V3 — owner sahaja.',
-      'Hantar video 2K / 4K sebagai File / Document (MP4, MOV, MKV, dll).',
-      'V3 output: sehingga 1080p • 60 FPS • bitrate sehingga 10 Mbps • maksimum 10 MB.',
-      'Untuk video panjang, bitrate akan diturunkan supaya fail kekal ≤10 MB.',
-      'Fail siap dihantar semula sebagai MP4 Document supaya compression tidak berubah.',
-      'Maksimum input untuk ujian V3: 500 MiB. /hqlab off untuk batal.',
-      'Formula Premium+ HQ production dan HQ Lab lama tidak diubah.',
-    ].join('\n'));
-    return true;
-  }
+  state().set(stateKey(message), { expiresAt: Date.now() + LAB_TTL_MS });
   await sendMessage(
     chatId,
     [
@@ -183,7 +128,6 @@ export async function handleHqLabCommand(message) {
       '',
       'Audio source akan dipulihkan sekali jika platform beri video dan audio berasingan.',
       'Upload ketiga-tiga ke WhatsApp Status dan compare selepas WhatsApp compress.',
-      'Ujian Premium+ HQ V3 (Document 2K/4K): /hqlab v3',
       'Taip /hqlab off untuk batal.',
     ].join('\n'),
   );
@@ -196,27 +140,6 @@ export async function processHqLabMessage(message, context = {}) {
 
   const chatId = message?.chat?.id;
   if (!chatId) return false;
-
-  if (state().get(stateKey(message))?.mode === 'v3') {
-    const document = message?.document;
-    if (!isV3VideoDocument(document)) {
-      await sendMessage(chatId, '🧪 HQ Lab V3 tunggu video yang dihantar sebagai File / Document (bukan Telegram video biasa).').catch(() => {});
-      return true;
-    }
-    if (Number(document.file_size || 0) > 500 * 1024 * 1024) {
-      await sendMessage(chatId, '❌ Document melebihi had ujian V3 500 MiB.').catch(() => {});
-      return true;
-    }
-    try {
-      await dispatchOwnerV3Document({ chatId, userId: message.from.id, document });
-      state().delete(stateKey(message));
-      await sendMessage(chatId, '🧪 Premium+ HQ V3 dihantar ke worker khas. Hasil MP4 Document akan dihantar di sini apabila encoding berjaya. Production HQ tidak terjejas.').catch(() => {});
-    } catch (error) {
-      console.error('[hqlab/v3] dispatch failed:', error?.message);
-      await sendMessage(chatId, '❌ ' + (error?.message || 'HQ Lab V3 tidak dapat dimulakan.')).catch(() => {});
-    }
-    return true;
-  }
 
   let input;
   try {

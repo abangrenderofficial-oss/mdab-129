@@ -1,0 +1,52 @@
+name: HQ Lab Premium Plus V3 Owner Test
+on:
+  workflow_dispatch:
+    inputs:
+      chat_id:
+        description: Owner Telegram private chat ID
+        required: true
+        type: string
+      user_id:
+        description: Owner Telegram user ID
+        required: true
+        type: string
+      file_id:
+        description: Owner video Document file ID
+        required: true
+        type: string
+      file_size:
+        description: Owner video Document size
+        required: false
+        type: string
+        default: '0'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hqlab-v3-${{ inputs.chat_id }}
+  cancel-in-progress: false
+
+jobs:
+  owner_v3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+      TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      HQLAB_V3_CHAT_ID: ${{ inputs.chat_id }}
+      HQLAB_V3_USER_ID: ${{ inputs.user_id }}
+      HQLAB_V3_FILE_ID: ${{ inputs.file_id }}
+      HQLAB_V3_FILE_SIZE: ${{ inputs.file_size }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup MTProto client
+        run: python -m pip install --disable-pip-version-check --quiet 'kurigram[fast]==2.2.26' requests
+      - name: Ensure FFmpeg
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y ffmpeg
+          fi
+      - name: Encode owner HQ Lab V3
+        run: python scripts/hqlab_v3_worker.py

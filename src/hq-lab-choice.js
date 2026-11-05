@@ -1,0 +1,549 @@
+import { createWriteStream } from 'node:fs';
+import { access, chmod, rm, stat } from 'node:fs/promises';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { execFile } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { promisify } from 'node:util';
+import { randomUUID } from 'node:crypto';
+// Independent copy of approved HQ Lab formula implementations for ONE selected output.
+// The production and original protected HQ Lab engines remain byte-identical.
+const ffmpegPath = process.env.HQ_LAB_FFMPEG_PATH || 'ffmpeg';
+
+const execFileAsync = promisify(execFile);
+const MB = 1024 * 1024;
+let labelSupportPromise = null;
+
+function commandOptions(timeoutMs) {
+  return {
+    timeout: timeoutMs,
+    maxBuffer: 12 * 1024 * 1024,
+    env: {
+      ...process.env,
+      PATH: `${path.dirname(process.execPath)}:${process.env.PATH || ''}`,
+    },
+  };
+}
+
+function ytdlpBinary() {
+  return path.join(process.cwd(), 'bin', 'yt-dlp');
+}
+
+function ytdlpCommonArgs() {
+  return [
+    '--no-playlist',
+    '--no-warnings',
+    '--no-check-certificates',
+    '--js-runtimes', `node:${process.execPath}`,
+    '--remote-components', 'ejs:github',
+  ];
+}
+
+function sourceHeaders(headers) {
+  const source = headers && typeof headers === 'object' ? headers : {};
+  const allowed = new Set(['user-agent', 'referer', 'origin', 'accept', 'accept-language']);
+  const out = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (!allowed.has(String(key).toLowerCase())) continue;
+    if (typeof value !== 'string' || !value) continue;
+    out[key] = value;
+  }
+  if (!Object.keys(out).some((key) => key.toLowerCase() === 'user-agent')) {
+    out['User-Agent'] = 'Mozilla/5.0 (compatible; ARDownloader-HQLab/1.0)';
+  }
+  return out;
+}
+
+function safeExtension(item, fallback = 'mp4') {
+  const ext = String(item?.ext || fallback).toLowerCase().replace(/[^a-z0-9]/g, '');
+  return ext || fallback;
+}
+
+async function fetchWithHeaderTimeout(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.max(5000, Number(timeoutMs) || 30000));
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal, redirect: 'follow' });
+    clearTimeout(timer);
+    return response;
+  } catch (error) {
+    clearTimeout(timer);
+    throw error;
+  }
+}
+
+async function downloadRemoteFile(item, filePath, label = 'source') {
+  if (!item?.url) {
+    const error = new Error(`HQ Lab ${label} URL is missing.`);
+    error.code = 'HQ_LAB_SOURCE_MISSING';
+    throw error;
+  }
+
+  const response = await fetchWithHeaderTimeout(
+    item.url,
+    { method: 'GET', headers: sourceHeaders(item.headers) },
+    Number(process.env.HQ_LAB_SOURCE_HEADER_TIMEOUT_MS || 30000),
+  );
+  if (!response.ok || !response.body) {
+    const error = new Error(`HQ Lab ${label} returned HTTP ${response.status}.`);
+    error.code = 'HQ_LAB_SOURCE_FETCH_ERROR';
+    throw error;
+  }
+
+  await pipeline(Readable.fromWeb(response.body), createWriteStream(filePath));
+  const info = await stat(filePath);
+  if (!info.isFile() || !info.size) {
+    const error = new Error(`HQ Lab ${label} download is empty.`);
+    error.code = 'HQ_LAB_SOURCE_EMPTY';
+    throw error;
+  }
+  return filePath;
+}
+
+async function downloadWithYtDlp(url, outputBase) {
+  const binary = ytdlpBinary();
+  await chmod(binary, 0o755).catch(() => {});
+  const outputTemplate = `${outputBase}.%(ext)s`;
+  const args = [
+    ...ytdlpCommonArgs(),
+    '--format', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+    '--merge-output-format', 'mp4',
+    '--ffmpeg-location', ffmpegPath,
+    '--no-progress',
+    '--output', outputTemplate,
+    '--print', 'after_move:filepath',
+    '--',
+    url,
+  ];
+  const { stdout } = await execFileAsync(
+    binary,
+    args,
+    commandOptions(Number(process.env.HQ_LAB_YTDLP_TIMEOUT_MS || 150000)),
+  );
+  const reported = String(stdout || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).at(-1);
+  const candidates = [reported, `${outputBase}.mp4`, `${outputBase}.mkv`, `${outputBase}.webm`, `${outputBase}.mov`].filter(Boolean);
+  for (const candidate of candidates) {
+    try {
+      const info = await stat(candidate);
+      if (info.isFile() && info.size) return candidate;
+    } catch {}
+  }
+  const error = new Error('HQ Lab yt-dlp did not produce a video file.');
+  error.code = 'HQ_LAB_YTDLP_OUTPUT_MISSING';
+  throw error;
+}
+
+function parseClockDuration(value) {
+  const match = String(value || '').match(/(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/);
+  if (!match) return 0;
+  return (Number(match[1]) * 3600) + (Number(match[2]) * 60) + Number(match[3]);
+}
+
+function parseFps(videoLine) {
+  const fps = Number(String(videoLine || '').match(/(?:,|\s)(\d+(?:\.\d+)?)\s*fps\b/i)?.[1] || 0);
+  if (!Number.isFinite(fps) || fps <= 0 || fps > 240) return 30;
+  return fps;
+}
+
+async function probeVideo(filePath) {
+  let stderr = '';
+  try {
+    await execFileAsync(ffmpegPath, ['-hide_banner', '-i', filePath], commandOptions(Number(process.env.HQ_LAB_PROBE_TIMEOUT_MS || 15000)));
+  } catch (error) {
+    stderr = String(error?.stderr || error?.message || '');
+  }
+
+  const duration = parseClockDuration(stderr.match(/Duration:\s*([^,]+)/i)?.[1] || '');
+  const videoLine = stderr.match(/Video:[^\n]+/i)?.[0] || '';
+  const dimensions = videoLine.match(/\b(\d{2,5})x(\d{2,5})\b/i);
+  if (!duration || !dimensions) {
+    const error = new Error('HQ Lab could not determine video metadata.');
+    error.code = 'HQ_LAB_PROBE_FAILED';
+    throw error;
+  }
+
+  return {
+    duration,
+    width: Number(dimensions[1]),
+    height: Number(dimensions[2]),
+    fps: parseFps(videoLine),
+    hasAudio: /Audio:/i.test(stderr),
+  };
+}
+
+async function mergeExternalAudio(videoPath, audioPath, outputPath) {
+  await rm(outputPath, { force: true }).catch(() => {});
+  const args = [
+    '-y', '-hide_banner', '-loglevel', 'error', '-nostats', '-nostdin',
+    '-i', videoPath,
+    '-i', audioPath,
+    '-map', '0:v:0', '-map', '1:a:0',
+    '-c:v', 'copy',
+    '-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', '128k',
+    '-shortest', '-map_metadata', '-1', '-f', 'matroska', outputPath,
+  ];
+  await execFileAsync(ffmpegPath, args, commandOptions(Number(process.env.HQ_LAB_MUX_TIMEOUT_MS || 120000)));
+  const info = await stat(outputPath);
+  if (!info.isFile() || !info.size) throw new Error('HQ Lab audio mux produced an empty file.');
+  return outputPath;
+}
+
+async function recoverAudioSource({ inputPath, sourceUrl, platform, audio, base, paths }) {
+  let activePath = inputPath;
+  let source = await probeVideo(activePath);
+  if (source.hasAudio || platform === 'telegram') return { inputPath: activePath, source };
+
+  if (audio?.url) {
+    const audioPath = `${base}-audio.${safeExtension(audio, 'm4a')}`;
+    const muxedPath = `${base}-source-av.mkv`;
+    paths.push(audioPath, muxedPath);
+    try {
+      await downloadRemoteFile(audio, audioPath, 'audio');
+      await mergeExternalAudio(activePath, audioPath, muxedPath);
+      const muxedProbe = await probeVideo(muxedPath);
+      if (muxedProbe.hasAudio) {
+        console.info('[hq-lab] restored audio using resolver audio track.');
+        await rm(activePath, { force: true }).catch(() => {});
+        activePath = muxedPath;
+        source = muxedProbe;
+        return { inputPath: activePath, source };
+      }
+    } catch (error) {
+      console.warn('[hq-lab] resolver audio restore failed:', error?.code, error?.message);
+    }
+  }
+
+  if (sourceUrl) {
+    try {
+      const mergedPath = await downloadWithYtDlp(sourceUrl, `${base}-source-ytdlp-av`);
+      paths.push(mergedPath);
+      const mergedProbe = await probeVideo(mergedPath);
+      if (mergedProbe.hasAudio) {
+        console.info('[hq-lab] restored audio using original URL + yt-dlp.');
+        await rm(activePath, { force: true }).catch(() => {});
+        activePath = mergedPath;
+        source = mergedProbe;
+      } else {
+        console.warn('[hq-lab] yt-dlp fallback also had no audio; keeping direct source.');
+      }
+    } catch (error) {
+      console.warn('[hq-lab] yt-dlp audio restore failed; keeping direct source:', error?.code, error?.message);
+    }
+  }
+
+  return { inputPath: activePath, source };
+}
+
+function uploadLimitBytes() {
+  const configured = Number(process.env.TELEGRAM_UPLOAD_MAX_MB || 0);
+  const mb = Number.isFinite(configured) && configured > 0 ? configured : 50;
+  return Math.floor(mb * MB);
+}
+
+function targetOutputBytes() {
+  const customMb = Number(process.env.STATUS_HQ_TARGET_MB || 0);
+  const requested = Number.isFinite(customMb) && customMb > 0 ? customMb * MB : 45 * MB;
+  return Math.floor(Math.min(requested, uploadLimitBytes() * 0.9));
+}
+
+function currentPlan(probe) {
+  const duration = Math.max(1, Number(probe.duration || 0));
+  const audioKbps = probe.hasAudio ? 128 : 0;
+  const totalKbps = Math.max(300, Math.floor((targetOutputBytes() * 8 / duration / 1000) * 0.92));
+  const videoKbps = Math.max(180, Math.min(4300, totalKbps - audioKbps - 60));
+
+  let tier;
+  if (videoKbps >= 2400) tier = 1080;
+  else if (videoKbps >= 1050) tier = 720;
+  else if (videoKbps >= 650) tier = 540;
+  else tier = 360;
+  if (duration >= 420 && tier > 540) tier = 540;
+
+  const landscape = probe.width > probe.height;
+  const squareish = Math.abs(probe.width - probe.height) / Math.max(probe.width, probe.height) < 0.08;
+  let maxWidth;
+  let maxHeight;
+  if (squareish) {
+    const side = tier === 1080 ? 1080 : tier === 720 ? 720 : tier === 540 ? 540 : 360;
+    maxWidth = side;
+    maxHeight = side;
+  } else if (landscape) {
+    if (tier === 1080) [maxWidth, maxHeight] = [1920, 1080];
+    else if (tier === 720) [maxWidth, maxHeight] = [1280, 720];
+    else if (tier === 540) [maxWidth, maxHeight] = [960, 540];
+    else [maxWidth, maxHeight] = [640, 360];
+  } else {
+    if (tier === 1080) [maxWidth, maxHeight] = [1080, 1920];
+    else if (tier === 720) [maxWidth, maxHeight] = [720, 1280];
+    else if (tier === 540) [maxWidth, maxHeight] = [540, 960];
+    else [maxWidth, maxHeight] = [360, 640];
+  }
+
+  return {
+    maxWidth,
+    maxHeight,
+    fps: 30000 / 1001,
+    videoKbps,
+    audioKbps,
+    preset: duration >= 180 ? 'superfast' : (videoKbps >= 1800 ? 'fast' : 'veryfast'),
+    scaleFlags: duration >= 180 ? 'bicubic' : 'lanczos',
+  };
+}
+
+function cappedSourceBox(probe, maxLong, maxShort) {
+  const landscape = probe.width >= probe.height;
+  return landscape
+    ? { maxWidth: maxLong, maxHeight: maxShort }
+    : { maxWidth: maxShort, maxHeight: maxLong };
+}
+
+function proportionalRate(value, target, cap) {
+  if (value >= target) return cap;
+  return Math.max(value, Math.round(value * (cap / target)));
+}
+
+function variantsFor(probe) {
+  const base = currentPlan(probe);
+  const cBox = cappedSourceBox(probe, 1920, 1080);
+  const statusBox = cappedSourceBox(probe, 1280, 720);
+  const premiumKbps = Math.min(base.videoKbps, 3350);
+  const v2Kbps = Math.min(base.videoKbps, 4300);
+
+  return [
+    {
+      id: 'C+', slug: 'cplus', name: 'C+ HQ', label: 'C+ HQ',
+      ...base,
+      ...cBox,
+      preset: 'fast',
+      scaleFlags: 'lanczos',
+      filters: [
+        'hqdn3d=0.35:0.35:1.5:1.5',
+        'unsharp=5:5:0.36:3:3:0.0',
+        'eq=contrast=1.015:saturation=1.01',
+      ],
+      tune: 'film',
+    },
+    {
+      id: 'PREMIUM+', slug: 'premiumplus', name: 'Premium+ HQ', label: 'PREMIUM+ HQ',
+      ...base,
+      ...statusBox,
+      videoKbps: premiumKbps,
+      maxRateKbps: proportionalRate(premiumKbps, 3350, 3900),
+      bufferKbps: proportionalRate(premiumKbps, 3350, 7800),
+      preset: 'veryfast',
+      scaleFlags: 'lanczos',
+      filters: [
+        'hqdn3d=0.18:0.18:0.70:0.70',
+        'unsharp=5:5:0.18:3:3:0.0',
+        'eq=contrast=1.012:saturation=1.015',
+      ],
+      profile: 'main',
+      level: '3.1',
+      tag: 'avc1',
+      gop: 60,
+      keyintMin: 30,
+      sceneThreshold: 0,
+      audioHz: 48000,
+    },
+    {
+      id: 'PREMIUM+ V2', slug: 'premiumplus-v2', name: 'Premium+ HQ V2', label: 'PREMIUM+ HQ V2',
+      ...base,
+      ...statusBox,
+      videoKbps: v2Kbps,
+      maxRateKbps: proportionalRate(v2Kbps, 4300, 4650),
+      bufferKbps: proportionalRate(v2Kbps, 4300, 9300),
+      preset: 'fast',
+      scaleFlags: 'lanczos',
+      filters: [
+        'hqdn3d=0.18:0.18:0.70:0.70',
+        'unsharp=5:5:0.18:3:3:0.0',
+        'eq=contrast=1.012:saturation=1.015',
+      ],
+      profile: 'main',
+      level: '3.1',
+      tag: 'avc1',
+      gop: 60,
+      keyintMin: 30,
+      sceneThreshold: 0,
+      audioHz: 48000,
+    },
+  ];
+}
+
+async function canBurnLabel() {
+  if (!labelSupportPromise) {
+    labelSupportPromise = (async () => {
+      try {
+        await execFileAsync(
+          ffmpegPath,
+          [
+            '-hide_banner', '-loglevel', 'error',
+            '-f', 'lavfi', '-i', 'color=s=64x64:d=0.05',
+            '-vf', "drawtext=text='TEST':x=2:y=2:fontsize=12:fontcolor=white",
+            '-frames:v', '1', '-f', 'null', '-',
+          ],
+          commandOptions(7000),
+        );
+        return true;
+      } catch (error) {
+        console.warn('[hq-lab] drawtext unavailable; captions will still identify variants:', error?.message);
+        return false;
+      }
+    })();
+  }
+  return labelSupportPromise;
+}
+
+async function knownFontArg() {
+  const candidates = [
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+    '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf',
+  ];
+  for (const candidate of candidates) {
+    try {
+      await access(candidate);
+      return `fontfile='${candidate}':`;
+    } catch {}
+  }
+  return '';
+}
+
+function escapeDrawtext(value) {
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/:/g, '\\:')
+    .replace(/'/g, "\\'");
+}
+
+async function videoFilter(variant, burnLabel) {
+  const maxWidth = Math.max(2, Math.floor(Number(variant.maxWidth || 1080) / 2) * 2);
+  const maxHeight = Math.max(2, Math.floor(Number(variant.maxHeight || 1920) / 2) * 2);
+  const fit = `min(1,min(${maxWidth}/iw,${maxHeight}/ih))`;
+  const filters = [
+    `scale=w='max(2,trunc(iw*${fit}/2)*2)':h='max(2,trunc(ih*${fit}/2)*2)':flags=${variant.scaleFlags || 'lanczos'}`,
+    'setsar=1',
+    `fps=${Number(variant.fps || 30).toFixed(3)}`,
+    ...(Array.isArray(variant.filters) ? variant.filters : []),
+  ];
+  if (burnLabel) {
+    const fontArg = await knownFontArg();
+    filters.push(
+      `drawtext=${fontArg}text='${escapeDrawtext(variant.label)}':x=24:y=24:fontsize=28:fontcolor=white:box=1:boxcolor=black@0.62:boxborderw=10`,
+    );
+  }
+  return filters.join(',');
+}
+
+async function encodeVariant(inputPath, outputPath, variant, burnLabel, hasAudio) {
+  await rm(outputPath, { force: true }).catch(() => {});
+  const maxRate = Math.max(
+    variant.videoKbps,
+    Number(variant.maxRateKbps || Math.floor(variant.videoKbps * 1.18)),
+  );
+  const buffer = Math.max(1000, Number(variant.bufferKbps || maxRate * 2));
+  const filter = await videoFilter(variant, burnLabel);
+  const args = [
+    '-y', '-hide_banner', '-loglevel', 'error', '-nostats', '-nostdin',
+    '-filter_threads', '1',
+    '-i', inputPath,
+    '-map', '0:v:0', ...(hasAudio ? ['-map', '0:a:0?'] : []),
+    '-vf', filter,
+    '-c:v', 'libx264', '-preset', variant.preset, '-pix_fmt', 'yuv420p',
+    '-b:v', `${variant.videoKbps}k`, '-maxrate', `${maxRate}k`, '-bufsize', `${buffer}k`,
+    '-profile:v', variant.profile || 'high', '-level:v', variant.level || '4.0',
+    ...(variant.tag ? ['-tag:v', variant.tag] : []),
+    ...(variant.gop ? ['-g', String(variant.gop)] : []),
+    ...(variant.keyintMin ? ['-keyint_min', String(variant.keyintMin)] : []),
+    ...(Number.isFinite(Number(variant.sceneThreshold)) ? ['-sc_threshold', String(variant.sceneThreshold)] : []),
+    ...(variant.tune ? ['-tune', variant.tune] : []),
+    ...(hasAudio ? ['-c:a', 'aac', '-ar', String(variant.audioHz || 44100), '-ac', '2', '-b:a', `${variant.audioKbps || 128}k`] : ['-an']),
+    '-brand', 'isom', '-movflags', '+faststart', '-metadata:s:v:0', 'rotate=0',
+    '-map_metadata', '-1', '-f', 'mp4', '-threads', '1', outputPath,
+  ];
+
+  const startedAt = performance.now();
+  await execFileAsync(ffmpegPath, args, commandOptions(Number(process.env.HQ_LAB_ENCODE_TIMEOUT_MS || 360000)));
+  const elapsedMs = Math.round(performance.now() - startedAt);
+  const info = await stat(outputPath);
+  if (!info.isFile() || !info.size) throw new Error(`HQ Lab ${variant.id} produced an empty output.`);
+  const outputProbe = await probeVideo(outputPath).catch(() => null);
+  if (hasAudio && outputProbe && !outputProbe.hasAudio) {
+    const error = new Error(`HQ Lab ${variant.id} lost the source audio track.`);
+    error.code = 'HQ_LAB_AUDIO_MISSING';
+    throw error;
+  }
+  return {
+    ...variant,
+    filePath: outputPath,
+    size: info.size,
+    elapsedMs,
+    output: outputProbe,
+  };
+}
+
+export async function prepareHqLabChoice({ sourceUrl = '', platform = 'generic', video = null, audio = null, localInputPath = '', selectedSlug = '' }) {
+  const attemptId = randomUUID();
+  const base = path.join(tmpdir(), `ar-hqlab-${attemptId}`);
+  const paths = [];
+  let inputPath = '';
+
+  try {
+    if (localInputPath) {
+      await access(localInputPath);
+      inputPath = localInputPath;
+    } else if (platform === 'youtube' && sourceUrl) {
+      inputPath = await downloadWithYtDlp(sourceUrl, `${base}-source`);
+      paths.push(inputPath);
+    } else if (video?.url) {
+      inputPath = `${base}-source.${safeExtension(video)}`;
+      paths.push(inputPath);
+      try {
+        await downloadRemoteFile(video, inputPath, 'video');
+      } catch (directError) {
+        if (!sourceUrl) throw directError;
+        console.warn('[hq-lab] direct source failed; falling back to yt-dlp:', directError?.code, directError?.message);
+        await rm(inputPath, { force: true }).catch(() => {});
+        inputPath = await downloadWithYtDlp(sourceUrl, `${base}-source-ytdlp`);
+        paths.push(inputPath);
+      }
+    } else if (sourceUrl) {
+      inputPath = await downloadWithYtDlp(sourceUrl, `${base}-source`);
+      paths.push(inputPath);
+    } else {
+      const error = new Error('HQ Lab has no usable input source.');
+      error.code = 'HQ_LAB_NO_INPUT';
+      throw error;
+    }
+
+    const recovered = await recoverAudioSource({ inputPath, sourceUrl, platform, audio, base, paths });
+    inputPath = recovered.inputPath;
+    const source = recovered.source;
+    const burnLabel = await canBurnLabel();
+    const variants = variantsFor(source).filter((variant) => variant.slug === selectedSlug);
+    if (variants.length !== 1) throw new Error('HQ Lab choice slug is not supported.');
+    const results = [];
+
+    for (const variant of variants) {
+      const outputPath = `${base}-${variant.slug}.mp4`;
+      paths.push(outputPath);
+      try {
+        const encoded = await encodeVariant(inputPath, outputPath, variant, burnLabel, source.hasAudio);
+        results.push({ ok: true, ...encoded });
+      } catch (error) {
+        console.error(`[hq-lab/${variant.id}] failed:`, error?.code, error?.message);
+        results.push({ ok: false, id: variant.id, name: variant.name, label: variant.label, error: error?.message || 'encode_failed' });
+      }
+    }
+
+    return {
+      source,
+      burnLabel,
+      results,
+      cleanup: () => Promise.all([...new Set(paths)].map((filePath) => rm(filePath, { force: true }).catch(() => {}))),
+    };
+  } catch (error) {
+    await Promise.all([...new Set(paths)].map((filePath) => rm(filePath, { force: true }).catch(() => {})));
+    throw error;
+  }
+}

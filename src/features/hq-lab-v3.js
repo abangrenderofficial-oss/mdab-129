@@ -89,17 +89,19 @@ export function ownerHqLabMenuText() {
     '2. Premium + HQ Old (asal)',
     '3. Premium+ HQ V2 (asal)',
     '4. Premium+ HQ V3 OLD — H.264 Veryfast',
-    '5. ✨ Premium+ HQ V3 NEW — H.265 Slow Two-Pass',
+    '5. ✨ Premium+ HQ V3 NEW — Quality First (H.265 Slow CRF18)',
     '',
-    'V3 OLD vs NEW: maksimum 1080p • 60 FPS • bitrate sehingga 10 Mbps • fail ≤10 MB.',
+    'V3 OLD: 1080p • 60 FPS • maksimum 10 MB.',
+    'V3 NEW: maksimum 1080p • kekalkan FPS asal • CRF18 • tiada paksaan 10 MB.',
     '',
     'Hantar SATU sumber:',
     '• Video biasa dari Gallery: 3 formula asal + V3 OLD & NEW.',
     '• Video 2K / 4K sebagai File / Document: V3 OLD & NEW melalui worker khas. Jika fail ≤20 MB dan disokong, 3 formula asal turut dijalankan.',
     '• Link TikTok / Reels / Threads / X / YouTube: 3 formula asal (V3 perlukan fail video yang diupload).',
     '',
-    'Kedua-dua V3 dihantar sebagai MP4 Document untuk banding side-by-side.',
-    'V3 NEW: SSIM quality check; jika tak lepas had kualiti/saiz, bot akan maklumkan kegagalan.',
+    'Kedua-dua V3 dihantar sebagai MP4 Document untuk perbandingan.',
+    'V3 NEW: quality first, proses lebih lama, ETA dinamik dari progress encoding.',
+    '✨ Premium+ HQ is Processing Your Video... Estimated Time: Calculating...',
     'Had input V3: 500 MiB.',
     'Taip /hqlab off untuk tutup.',
     'Formula Premium+ HQ production tidak diubah.',
@@ -154,7 +156,7 @@ export async function processOwnerHqLabV3(message) {
     await dispatch({ chatId, userId: message.from.id, document: input });
     sessions().delete(key);
     await sendMessage(chatId,
-      '🧪 HQ Lab diterima: worker V3 OLD (H.264) dan V3 NEW (H.265 Slow two-pass) akan proses video yang sama. Kedua-duanya dihantar sebagai MP4 Document jika berjaya.'
+      '🧪 HQ Lab: V3 OLD (H.264 / 10 MB) + V3 NEW Quality First (H.265 Slow CRF18 / source FPS). The new worker will show an estimated time after encoding begins. Both results are sent as MP4 Documents if successful.'
     ).catch(() => {});
   } catch (error) {
     console.error('[hqlab/v3] dispatch failed:', error?.message);
@@ -171,7 +173,7 @@ export async function processOwnerHqLabV3(message) {
   clearOriginalSession(message);
   if (document) {
     await sendMessage(chatId,
-      'ℹ️ Document besar diproses oleh dua formula V3 (OLD + HEVC Slow) sahaja. Tiga formula HQ Lab asal tidak boleh download Document besar menggunakan Telegram Bot API.'
+      'ℹ️ Large Document: testing V3 OLD and V3 NEW Quality First. The three original formulas cannot download large Documents via the standard Telegram Bot API.'
     ).catch(() => {});
   }
   return true;

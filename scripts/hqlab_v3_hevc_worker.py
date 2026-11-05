@@ -1,211 +1,280 @@
-"""MediaX /hqlab owner-only HEVC two-pass A/B encoder.
+"""MediaX owner-only HQ Lab: V3 QUALITY FIRST (HEVC slow, CRF18).
 
-The existing hqlab_v3_worker.py remains untouched and provides the H.264 old output.
-This script is dispatched ONLY by the experimental hqlab-v3 workflow.
+Experimental alternative to V3 OLD H.264. No production encoders are imported
+or modified. No arbitrary 10 MB ceiling, no forced 60 fps, no two-pass bitrate
+target. Actual progress and estimated remaining encoding time are reported
+in the owner's private Telegram chat.
 """
 import math
+import os
+import subprocess
 import tempfile
+import time
+from fractions import Fraction
 from pathlib import Path
 
 from pyrogram import Client
 import hqlab_v3_worker as old
 
-# Decimal MB, so iPhone/Telegram file sizes stay at or below 10,000,000 bytes.
-MAX_OUTPUT_BYTES = 10_000_000
-TARGET_BYTES = 9_400_000
-MAX_TEST_SECONDS = 60.0
-AUDIO_KBPS = 112
-VIDEO_KBPS_CAP = 10_000
-MIN_TEST_VIDEO_KBPS = 650
-QUALITY_SAMPLE_SECONDS = 3.0
-MIN_SAMPLE_SSIM = 0.88
-
-
-def budget_kbps(info):
-    """Whole-file budget less audio and MP4 mux headroom."""
-    duration = float(info["duration"])
-    if duration <= 0:
-        raise RuntimeError("Durasi video tidak sah")
-    if duration > MAX_TEST_SECONDS:
-        raise RuntimeError(
-            "V3 HEVC Slow ujian maksimum 60s supaya 2-pass tidak melebihi masa worker. "
-            "Potong klip 10–30 saat untuk perbandingan."
-        )
-    audio = AUDIO_KBPS if info["audio"] else 0
-    rate = int(TARGET_BYTES * 8 / duration / 1000 - audio - 55)
-    rate = min(VIDEO_KBPS_CAP, rate)
-    if rate < MIN_TEST_VIDEO_KBPS:
-        raise RuntimeError("Bitrate untuk 1080p60 terlalu rendah dalam 10 MB; cuba klip lebih pendek")
-    return rate
+CRF = 18
+PRESET = "slow"
+AUDIO_KBPS = 128
+MAX_OUTPUT_BYTES = 1950 * 1024 * 1024
+ENCODE_TIMEOUT_SECONDS = 50 * 60
+PROGRESS_INTERVAL_SECONDS = 20
 
 
 def frame_box(info):
-    w, h = info["width"], info["height"]
-    if abs(w - h) / max(w, h) < 0.08:
-        mw, mh = 1080, 1080
-    elif w > h:
-        mw, mh = 1920, 1080
+    width, height = info["width"], info["height"]
+    if abs(width - height) / max(width, height) < 0.08:
+        max_w, max_h = 1080, 1080
+    elif width > height:
+        max_w, max_h = 1920, 1080
     else:
-        mw, mh = 1080, 1920
-    fit = min(1.0, mw / w, mh / h)
-    return (max(2, int(math.floor(w * fit / 2) * 2)),
-            max(2, int(math.floor(h * fit / 2) * 2)))
+        max_w, max_h = 1080, 1920
+    fit = min(1.0, max_w / width, max_h / height)
+    return (max(2, int(math.floor(width * fit / 2) * 2)),
+            max(2, int(math.floor(height * fit / 2) * 2)))
 
 
-def two_pass_encode(src, output, info, work, rate, attempt):
+def human_duration(seconds):
+    if seconds is None or not math.isfinite(seconds):
+        return "Calculating..."
+    seconds = max(0, int(math.ceil(seconds)))
+    if seconds < 60:
+        return "Less than 1 minute"
+    minutes = int(math.ceil(seconds / 60))
+    if minutes < 60:
+        return f"Approximately {minutes} min"
+    return f"Approximately {minutes // 60} hr {minutes % 60} min"
+
+
+def source_fps(info):
+    try:
+        value = float(Fraction(str(info.get("fps") or "0/1")))
+        return value if 0 < value < 241 else None
+    except (ValueError, TypeError, ZeroDivisionError):
+        return None
+
+
+def progress_text(percent=None, remaining=None):
+    heading = "✨ Premium+ HQ is Processing Your Video..."
+    note = ("Your high-resolution video requires extra processing time "
+            "to preserve the best possible quality.")
+    lines = [heading, "", note, ""]
+    if percent is not None:
+        lines.append(f"🎞 Encoding progress: {percent:.0f}%")
+    lines.append(f"⏳ Estimated Time: {human_duration(remaining)}")
+    lines.append("")
+    lines.append("Please wait while we optimize your video. 🎬")
+    return "\n".join(lines)
+
+
+def eta_from_progress(source_seconds, elapsed, duration):
+    if elapsed < 5 or source_seconds <= 0 or duration <= 0:
+        return None
+    speed = source_seconds / elapsed
+    if not math.isfinite(speed) or speed <= 0.0001:
+        return None
+    return max(0, (duration - source_seconds) / speed)
+
+
+def parse_ffmpeg_time(line):
+    key, _, value = line.partition("=")
+    if key == "out_time_us" or key == "out_time_ms":
+        # ffmpeg's out_time_ms field is (historically) microseconds.
+        try:
+            return max(0.0, int(value) / 1_000_000)
+        except ValueError:
+            return None
+    if key == "out_time":
+        try:
+            hours, minutes, seconds = value.split(":")
+            return max(0.0, float(hours) * 3600 + float(minutes) * 60 + float(seconds))
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def progress_reporter(message_id, update_text=old.telegram):
+    def publish(percent=None, remaining=None):
+        if not message_id:
+            return
+        try:
+            update_text("editMessageText", {
+                "chat_id": str(old.CHAT_ID),
+                "message_id": str(message_id),
+                "text": progress_text(percent, remaining),
+            }, timeout=30)
+        except Exception as exc:
+            print(f"V3 Quality First progress update skipped: {exc}", flush=True)
+    return publish
+
+
+def ffmpeg_args(src, dest, info):
     width, height = frame_box(info)
-    vf = f"scale={width}:{height}:flags=lanczos,setsar=1,fps=60"
-    stats_path = str(work / f"hevc-v3-{attempt}.stats")
-    x265_base = "log-level=error:pools=2:frame-threads=2"
-    # libx265 two-pass uses x265 params pass=1/pass=2 and matching stats path.
-    # x264's "-pass" is deliberately NOT used for H.265.
-    video = [
-        "-map", "0:v:0", "-vf", vf,
-        "-c:v", "libx265", "-preset", "slow", "-pix_fmt", "yuv420p",
-        "-tag:v", "hvc1", "-b:v", f"{rate}k",
-        "-maxrate", f"{min(VIDEO_KBPS_CAP, int(rate * 1.05))}k",
-        "-bufsize", f"{max(1000, rate * 2)}k", "-g", "120", "-threads", "2",
-    ]
-    prefix = [
-        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-nostdin",
+    filters = f"scale={width}:{height}:flags=lanczos,setsar=1"
+    args = [
+        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+        "-nostdin", "-nostats", "-stats_period", "2", "-progress", "pipe:1",
         "-i", str(src),
+        "-map", "0:v:0",
     ]
-    pass_one = prefix + video + [
-        "-x265-params", f"pass=1:stats={stats_path}:{x265_base}",
-        "-an", "-f", "null", "/dev/null",
+    if info["audio"]:
+        args += ["-map", "0:a:0?"]
+    args += [
+        "-vf", filters,
+        "-c:v", "libx265", "-preset", PRESET, "-crf", str(CRF),
+        "-pix_fmt", "yuv420p", "-tag:v", "hvc1",
+        "-x265-params", "log-level=error:pools=2:frame-threads=2",
     ]
-    old.run(pass_one, timeout=660)
-    pass_two = prefix + video + [
-        "-x265-params", f"pass=2:stats={stats_path}:{x265_base}",
-    ]
-    audio = (["-map", "0:a:0?", "-c:a", "aac", "-b:a", f"{AUDIO_KBPS}k",
-              "-ar", "48000", "-ac", "2"]
-             if info["audio"] else ["-an"])
-    old.run(pass_two + audio + [
+    if info["audio"]:
+        args += ["-c:a", "aac", "-b:a", f"{AUDIO_KBPS}k", "-ar", "48000", "-ac", "2"]
+    else:
+        args += ["-an"]
+    args += [
+        "-fps_mode", "passthrough",
         "-movflags", "+faststart", "-map_metadata", "-1",
-        "-f", "mp4", str(output),
-    ], timeout=660)
-    return output.stat().st_size
-
-
-def sample_ssim(src, output, info):
-    """Short full-resolution sample check; not a guarantee of subjective quality.
-
-    Compare encoded frames with the identical scaled, FPS-converted reference.
-    Avoid a long extra decoding pass for the entire clip.
-    """
-    width, height = frame_box(info)
-    result = old.run([
-        "ffmpeg", "-hide_banner", "-nostdin", "-v", "info",
-        "-t", str(min(QUALITY_SAMPLE_SECONDS, info["duration"])), "-i", str(src),
-        "-t", str(min(QUALITY_SAMPLE_SECONDS, info["duration"])), "-i", str(output),
-        "-filter_complex",
-        f"[0:v]scale={width}:{height}:flags=lanczos,setsar=1,fps=60[ref];"
-        "[ref][1:v]ssim",
-        "-an", "-f", "null", "/dev/null",
-    ], timeout=180)
-    # old.run() returns stdout only; SSIM output lives in ffmpeg stderr.
-    # Quality gate is instead implemented below using an isolated subprocess
-    # that captures stderr without modifying the existing old worker.
-    return result
-
-
-def check_quality(src, output, info):
-    import re
-    import subprocess
-
-    width, height = frame_box(info)
-    secs = str(min(QUALITY_SAMPLE_SECONDS, float(info["duration"])))
-    cmd = [
-        "ffmpeg", "-hide_banner", "-nostdin", "-v", "info",
-        "-t", secs, "-i", str(src), "-t", secs, "-i", str(output),
-        "-filter_complex",
-        f"[0:v]scale={width}:{height}:flags=lanczos,setsar=1,fps=60[ref];"
-        "[ref][1:v]ssim", "-an", "-f", "null", "/dev/null",
+        "-f", "mp4", str(dest),
     ]
-    result = subprocess.run(cmd, text=True, capture_output=True, timeout=180)
-    if result.returncode:
-        raise RuntimeError("Tak dapat buat pemeriksaan SSIM: " + result.stderr[-450:])
-    matches = re.findall(r"All:([0-9.]+)", result.stderr)
-    if not matches:
-        raise RuntimeError("FFmpeg SSIM tidak menghasilkan bacaan")
-    value = float(matches[-1])
-    print(f"V3 HEVC Slow sample SSIM={value:.5f} threshold={MIN_SAMPLE_SSIM}", flush=True)
-    if value < MIN_SAMPLE_SSIM:
-        raise RuntimeError(
-            f"V3 HEVC kualiti belum lepas ujian (SSIM={value:.3f}). "
-            "Video ini terlalu kompleks untuk 1080p60 dalam 10 MB; cuba klip lebih pendek."
+    return args
+
+
+def encode(src, output, info, on_progress=None):
+    if output.exists():
+        output.unlink()
+    command = ffmpeg_args(src, output, info)
+    started = time.monotonic()
+    last_update = started - PROGRESS_INTERVAL_SECONDS
+    encoded_seconds = 0.0
+    # File-backed stderr avoids deadlocking if FFmpeg logs grow.
+    with tempfile.TemporaryFile(mode="w+t") as errors:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=errors,
+            text=True,
+            bufsize=1,
         )
-    return value
-
-
-def encode(src, output, info, work):
-    initial = budget_kbps(info)
-    for attempt, ratio in enumerate((1.00, 0.94, 0.88), 1):
-        rate = int(initial * ratio)
-        if output.exists():
-            output.unlink()
-        size = two_pass_encode(src, output, info, work, rate, attempt)
-        print(f"V3 HEVC Slow pass={attempt} video={rate} kbps bytes={size}", flush=True)
-        if size <= MAX_OUTPUT_BYTES:
-            result = old.probe(output)
-            if result["fps"] != "60/1":
-                raise RuntimeError("FPS output tidak 60: " + str(result["fps"]))
-            if info["audio"] and not result["audio"]:
-                raise RuntimeError("Audio output hilang")
-            if (result["width"], result["height"]) != frame_box(info):
-                raise RuntimeError("Dimensi output tidak sepadan dengan target")
-            ssim = check_quality(src, output, info)
-            return size, rate, result, ssim
-    raise RuntimeError(
-        "V3 HEVC Slow melebihi 10 MB selepas tiga percubaan selamat. "
-        "Formula tidak akan turunkan bitrate secara agresif; cuba klip lebih pendek."
-    )
+        try:
+            for line in process.stdout:
+                line = line.strip()
+                position = parse_ffmpeg_time(line)
+                if position is not None:
+                    encoded_seconds = max(encoded_seconds, position)
+                now = time.monotonic()
+                if now - started > ENCODE_TIMEOUT_SECONDS:
+                    process.kill()
+                    raise RuntimeError("Quality First encoding exceeded 50 minutes.")
+                if on_progress and (line == "progress=end" or now - last_update >= PROGRESS_INTERVAL_SECONDS):
+                    complete = min(99, 100 * encoded_seconds / max(info["duration"], 0.001))
+                    eta = eta_from_progress(encoded_seconds, now - started, info["duration"])
+                    on_progress(complete, eta)
+                    last_update = now
+            code = process.wait(timeout=30)
+            if code:
+                errors.seek(0)
+                raise RuntimeError("Quality First FFmpeg error: " + errors.read()[-1200:])
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=15)
+    if not output.is_file() or output.stat().st_size <= 0:
+        raise RuntimeError("Quality First did not produce an MP4 output.")
+    size = output.stat().st_size
+    if size > MAX_OUTPUT_BYTES:
+        raise RuntimeError(
+            "Quality First output exceeds the 1.9 GiB Telegram document limit. "
+            "Shorten your source video."
+        )
+    final = old.probe(output)
+    if (final["width"], final["height"]) != frame_box(info):
+        raise RuntimeError("Output dimensions do not match the source aspect ratio.")
+    if info["audio"] and not final["audio"]:
+        raise RuntimeError("Source audio was lost during encoding.")
+    incoming = source_fps(info)
+    outgoing = source_fps(final)
+    if incoming is not None and outgoing is not None and abs(incoming - outgoing) > 0.6:
+        raise RuntimeError(
+            f"Source frame rate was not preserved ({incoming:.2f} -> {outgoing:.2f})."
+        )
+    return size, final
 
 
 def main():
     if not old.BOT_TOKEN or not old.API_ID or not old.API_HASH or not old.FILE_ID:
-        raise RuntimeError("Konfigurasi worker eksperimen tidak lengkap")
-    if not old.CHAT_ID or old.CHAT_ID != old.USER_ID:
-        raise RuntimeError("HQ Lab HEVC hanya untuk owner dalam private chat")
+        raise RuntimeError("Missing owner-only V3 worker configuration.")
+    if old.CHAT_ID <= 0 or old.CHAT_ID != old.USER_ID:
+        raise RuntimeError("This test can only run in the owner's private chat.")
     if old.SIZE > old.MAX_SOURCE:
-        raise RuntimeError("Input Document melebihi 500 MiB")
-    old.notify("🧪 Premium+ HQ V3 HEVC Slow 2-pass sedang diuji (asing daripada V3 Old).")
-    with tempfile.TemporaryDirectory(prefix="mediax-hqlab-hevc-") as workdir:
-        work = Path(workdir)
-        source = work / "source.bin"
-        result_file = work / "premium-v3-hevc-slow.mp4"
-        client = Client("hqlab_v3_hevc_owner", api_id=old.API_ID,
-                        api_hash=old.API_HASH, bot_token=old.BOT_TOKEN, in_memory=True)
-        with client:
-            downloaded = client.download_media(old.FILE_ID, file_name=str(source))
-        if not downloaded or not source.is_file():
-            raise RuntimeError("Download Document melalui MTProto gagal")
-        if source.stat().st_size > old.MAX_SOURCE:
-            raise RuntimeError("Document lebih 500 MiB")
-        info = old.probe(source)
-        size, kbps, result, ssim = encode(source, result_file, info, work)
-        caption = (
-            "🧪 Premium+ HQ V3 NEW — HEVC Slow 2-pass\n"
-            f"📐 {result['width']} × {result['height']} • 60 FPS\n"
-            f"📊 Target video bitrate: {kbps} kbps (maks 10,000)\n"
-            f"📦 Saiz: {size / 1_000_000:.2f} MB / 10 MB\n"
-            f"🔍 Sample SSIM: {ssim:.3f}\n"
-            "📎 Original encoded MP4 sebagai Document.\n"
-            "Production Premium+ HQ tidak berubah."
-        )
-        with result_file.open("rb") as handle:
-            old.telegram("sendDocument",
-                         {"chat_id": str(old.CHAT_ID), "caption": caption},
-                         {"document": ("Premium-HQ-V3-HEVC-Slow.mp4", handle, "video/mp4")},
-                         timeout=300)
-    print("V3 HEVC Slow output delivered", flush=True)
+        raise RuntimeError("Input document exceeds 500 MiB.")
+    message_id = None
+    try:
+        message = old.telegram("sendMessage", {
+            "chat_id": str(old.CHAT_ID),
+            "text": progress_text(),
+        }, timeout=30)
+        message_id = message.get("message_id") if message else None
+    except Exception as exc:
+        print(f"V3 Quality First initial progress unavailable: {exc}", flush=True)
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="mediax-hqlab-quality-first-") as directory:
+            work = Path(directory)
+            source = work / "source.bin"
+            target = work / "Premium-HQ-V3-Quality-First.mp4"
+            # Keep MTProto session alive to upload large outputs (> 50MB Bot API limit).
+            with Client("hqlab_v3_quality_owner", api_id=old.API_ID,
+                        api_hash=old.API_HASH, bot_token=old.BOT_TOKEN, in_memory=True) as client:
+                fetched = client.download_media(old.FILE_ID, file_name=str(source))
+                if not fetched or not source.is_file():
+                    raise RuntimeError("MTProto could not download the video document.")
+                if source.stat().st_size > old.MAX_SOURCE:
+                    raise RuntimeError("Input document exceeds 500 MiB.")
+
+                info = old.probe(source)
+                print(f"V3 Quality First source={info}", flush=True)
+                publish = progress_reporter(message_id)
+                size, result = encode(source, target, info, on_progress=publish)
+                if message_id:
+                    try:
+                        old.telegram("editMessageText", {
+                            "chat_id": str(old.CHAT_ID),
+                            "message_id": str(message_id),
+                            "text": "✅ Encoding complete. Uploading your HQ video as a Document...",
+                        }, timeout=30)
+                    except Exception:
+                        pass
+                fps = source_fps(result)
+                caption = (
+                    "🧪 Premium+ HQ V3 — QUALITY FIRST\n"
+                    f"📐 {result['width']} × {result['height']}\n"
+                    f"🎞 Source FPS preserved: {fps:.2f}\n" if fps is not None else
+                    "🧪 Premium+ HQ V3 — QUALITY FIRST\n"
+                    f"📐 {result['width']} × {result['height']}\n"
+                    "🎞 Source FPS preserved\n"
+                )
+                caption += (
+                    "🎬 HEVC / H.265 • Slow • CRF 18\n"
+                    f"📦 Output size: {size / (1024 * 1024):.2f} MiB (quality-first, no 10 MB cap)\n"
+                    "📎 Sent as MP4 Document. Experimental HQ Lab only.\n"
+                    "Production Premium+ HQ unchanged."
+                )
+                client.send_document(old.CHAT_ID, str(target), caption=caption)
+        if message_id:
+            try:
+                old.telegram("deleteMessage", {
+                    "chat_id": str(old.CHAT_ID),
+                    "message_id": str(message_id),
+                }, timeout=30)
+            except Exception:
+                pass
+        print("V3 Quality First MP4 uploaded successfully", flush=True)
+    except Exception as exc:
+        print(f"V3 Quality First error: {exc}", flush=True)
+        old.notify("❌ Premium+ HQ V3 Quality First failed: " + str(exc)[:260])
+        raise
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as exc:
-        print("V3 HEVC Slow failed:", exc, flush=True)
-        old.notify("❌ HQ Lab V3 HEVC Slow gagal: " + str(exc)[:270])
-        raise
+    main()

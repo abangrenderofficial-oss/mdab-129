@@ -11,7 +11,7 @@ import {
   processHqLabBeforeMedia,
   processMediaCallbackWithSupport,
 } from '../src/bot/gated-media-flow.js';
-import { processOwnerHqLabV3 } from '../src/features/hq-lab-v3.js';
+import { processOwnerHqLabV3, processOwnerHqLabChoiceCallback } from '../src/features/hq-lab-v3.js';
 import { handleSupportTestCommand } from '../src/features/support-test.js';
 import { handleSupportCommand, processSupportCallback, processSupportMessage } from '../src/features/support.js';
 import { handleSupportPerClickCommand } from '../src/features/support-click-report.js';
@@ -127,6 +127,7 @@ async function processMessage(message, context) {
 async function runWebhookUpdate(update, context) {
   const callbackQuery = update?.callback_query;
   if (callbackQuery) {
+    if (await processOwnerHqLabChoiceCallback(callbackQuery)) return;
     if (await processQuoteFilterCallback(callbackQuery)) return;
     if (await processFridaySupportCallback(callbackQuery)) return;
     if (await processChannelGateCallback(callbackQuery)) return;

@@ -54,7 +54,7 @@ jobs:
 
   owner_v3_hevc_slow:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 60
     env:
       TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
       TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
@@ -67,12 +67,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Setup owner-only MTProto client
         run: python -m pip install --disable-pip-version-check --quiet 'kurigram[fast]==2.2.26' requests
-      - name: Ensure x265-capable FFmpeg
+      - name: Ensure HEVC encoder for quality-first mode
         run: |
           if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
             sudo apt-get update -qq && sudo apt-get install -y ffmpeg
           fi
           ffmpeg -hide_banner -encoders 2>&1 | grep 'libx265'
-          ffmpeg -hide_banner -filters 2>&1 | grep ' ssim '
-      - name: Encode V3 HEVC Slow two-pass and verify quality
+      - name: Encode HQ Lab V3 HEVC Slow CRF18 with live ETA
         run: python scripts/hqlab_v3_hevc_worker.py

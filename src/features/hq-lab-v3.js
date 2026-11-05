@@ -63,6 +63,48 @@ async function dispatch({ chatId, userId, document }) {
   }
 }
 
+// Match the legacy /hqlab 15-minute session WITHOUT changing protected HQ Lab code.
+function originalLabSessions() {
+  const symbol = Symbol.for('abangrender.downloader.hq-lab.v1');
+  if (!globalThis[symbol]) globalThis[symbol] = new Map();
+  return globalThis[symbol];
+}
+
+function setOriginalSession(message) {
+  const key = String(message.chat.id) + ':' + String(message.from.id);
+  originalLabSessions().set(key, { expiresAt: Date.now() + 15 * 60_000 });
+}
+
+function clearOriginalSession(message) {
+  const key = String(message.chat.id) + ':' + String(message.from.id);
+  originalLabSessions().delete(key);
+}
+
+export function ownerHqLabMenuText() {
+  return [
+    '🧪 HQ Lab aktif — hanya untuk owner.',
+    '',
+    '4 formula ujian dalam HQ Lab:',
+    '1. C+ HQ (asal)',
+    '2. Premium + HQ Old (asal)',
+    '3. Premium+ HQ V2 (asal)',
+    '4. ✨ Premium + HQ V3 — BARU',
+    '',
+    'V3: maksimum 1080p • 60 FPS • video bitrate sehingga 10 Mbps • fail ≤10 MB.',
+    '',
+    'Hantar SATU sumber:',
+    '• Video biasa dari Gallery: 3 formula asal + V3.',
+    '• Video 2K / 4K sebagai File / Document: V3 melalui worker khas. Jika fail ≤20 MB dan disokong, 3 formula asal turut dijalankan.',
+    '• Link TikTok / Reels / Threads / X / YouTube: 3 formula asal (V3 perlukan fail video yang diupload).',
+    '',
+    'V3 dihantar sebagai MP4 Document untuk mengekalkan hasil encode.',
+    'Untuk video panjang, bitrate V3 dikurangkan supaya tidak melebihi 10 MB.',
+    'Had input V3: 500 MiB.',
+    'Taip /hqlab off untuk tutup.',
+    'Formula Premium+ HQ production tidak diubah.',
+  ].join('\n');
+}
+
 export async function processOwnerHqLabV3(message) {
   if (!ownerOnly(message)) return false;
   const chatId = message.chat.id;
@@ -71,28 +113,20 @@ export async function processOwnerHqLabV3(message) {
   const cmd = command(message);
   const active = Number(sessions().get(key) || 0) > Date.now();
 
-  if (cmd === '/hqlab' && /^\/hqlab(?:@\w+)?\s+v3$/.test(raw)) {
-    sessions().set(key, Date.now() + LAB_TTL_MS);
-    await sendMessage(chatId, [
-      '🧪 Premium + HQ V3 | HQ Lab Owner Test',
-      'Hantar video 2K / 4K sebagai File / Document (MP4, MOV, MKV dan lain-lain).',
-      'Output: sehingga 1080p • 60 FPS • bitrate maksimum 10 Mbps • saiz maksimum 10 MB.',
-      'Untuk durasi panjang, bitrate akan diturunkan mengikut bajet saiz fail.',
-      'Output MP4 akan dihantar sebagai Document untuk kekalkan bitstream asal.',
-      'Had input ujian: 500 MiB. Taip /hqlab off untuk batal.',
-      'Premium+ HQ production dan tiga formula /hqlab asal tidak diubah.',
-    ].join('\n')).catch(() => {});
-    return true;
-  }
-
   if (cmd === '/hqlab') {
-    if (active && /^\/hqlab(?:@\w+)?\s+(?:off|stop|cancel|batal|v3\s+off)$/.test(raw)) {
+    if (/^\/hqlab(?:@\w+)?\s+(?:off|stop|cancel|batal|v3\s+off)$/.test(raw)) {
       sessions().delete(key);
-      await sendMessage(chatId, '🧪 HQ Lab V3 ditutup.').catch(() => {});
+      clearOriginalSession(message);
+      await sendMessage(chatId, '🧪 HQ Lab ditutup.').catch(() => {});
       return true;
     }
-    // Keep the original /hqlab command and three benchmarks completely unchanged.
-    sessions().delete(key);
+    // Existing /hqlab and /hqlab v3 both open the SAME four-formula lab.
+    if (/^\/hqlab(?:@\w+)?(?:\s+v3)?$/.test(raw)) {
+      sessions().set(key, Date.now() + 15 * 60_000);
+      setOriginalSession(message);
+      await sendMessage(chatId, ownerHqLabMenuText()).catch(() => {});
+      return true;
+    }
     return false;
   }
 
@@ -103,24 +137,41 @@ export async function processOwnerHqLabV3(message) {
   if (cmd.startsWith('/')) return false;
 
   const document = message?.document;
-  if (!videoDocument(document)) {
-    await sendMessage(chatId, '🧪 HQ Lab V3 menunggu video sebagai File / Document, bukan Telegram video biasa.').catch(() => {});
-    return true;
+  const video = message?.video;
+  const input = videoDocument(document) ? document : (video?.file_id ? video : null);
+  if (!input) {
+    // Links and other valid legacy inputs proceed to the three original HQ Lab formulas.
+    sessions().delete(key);
+    return false;
   }
-  if (Number(document.file_size || 0) > MAX_DOCUMENT_BYTES) {
-    await sendMessage(chatId, '❌ Video Document melebihi had ujian V3 500 MiB.').catch(() => {});
+  if (Number(input.file_size || 0) > MAX_DOCUMENT_BYTES) {
+    await sendMessage(chatId, '❌ Video melebihi had ujian V3 500 MiB.').catch(() => {});
     return true;
   }
 
   try {
-    await dispatch({ chatId, userId: message.from.id, document });
+    await dispatch({ chatId, userId: message.from.id, document: input });
     sessions().delete(key);
     await sendMessage(chatId,
-      '🧪 HQ Lab V3 diterima. Worker V3 sedang jalankan encoding. Hasil MP4 Document dihantar jika berjaya. Formula production tidak disentuh.'
+      '🧪 Premium+ HQ V3 diterima untuk 1080p60 / ≤10 MB. Output V3 akan dihantar sebagai MP4 Document.'
     ).catch(() => {});
   } catch (error) {
     console.error('[hqlab/v3] dispatch failed:', error?.message);
     await sendMessage(chatId, '❌ ' + (error?.message || 'HQ Lab V3 gagal dimulakan.')).catch(() => {});
+    // Keep session active to retry with a new document.
+    return true;
+  }
+
+  // The existing three lab formulas are left byte-identical, and still run for
+  // manageable uploads. Large Documents need MTProto and therefore V3 only.
+  const fileSize = Number(input.file_size || 0);
+  const legacyAcceptsDoc = !document || String(document.mime_type || '').startsWith('video/');
+  if (fileSize && fileSize <= 20 * 1024 * 1024 && legacyAcceptsDoc) return false;
+  clearOriginalSession(message);
+  if (document) {
+    await sendMessage(chatId,
+      'ℹ️ Document besar diproses oleh V3 sahaja. Formula 3 versi asal tidak boleh download Document besar menggunakan Telegram Bot API.'
+    ).catch(() => {});
   }
   return true;
 }

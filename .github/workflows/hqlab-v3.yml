@@ -72,7 +72,7 @@ jobs:
           if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
             sudo apt-get update -qq && sudo apt-get install -y ffmpeg
           fi
-          ffmpeg -hide_banner -encoders | grep -q libx265
-          ffmpeg -hide_banner -filters | grep -q ' ssim '
+          ffmpeg -hide_banner -encoders 2>&1 | grep 'libx265'
+          ffmpeg -hide_banner -filters 2>&1 | grep ' ssim '
       - name: Encode V3 HEVC Slow two-pass and verify quality
         run: python scripts/hqlab_v3_hevc_worker.py

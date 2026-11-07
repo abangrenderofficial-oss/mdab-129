@@ -29,7 +29,7 @@ const expected = {
   "src/features/live-wallpaper.js": "682fbb11d8926b34ae65c3e14ec2206c765c3835",
   "src/instagram-video-audio-mux.js": "5df6c9607454e82634aed6cc3cafe5fdbf4e700c",
   "src/youtube-upload.js": "11bbe3adab000e4f0536fbe80f17284f64e736dd",
-  "src/social-video.js": "5ba53a1af95edcb3b04cbc9acfbd95a7f327e352",
+  "src/social-video.js": "71f833e2a062c12395fc63a6f7a188eceb80fe5f",
   "src/heavy-worker-dispatch.js": "fae80bb5665806c76bbda9fb18188389267486a8"
 };
 let failures = 0;

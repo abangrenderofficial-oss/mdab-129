@@ -8,12 +8,15 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import ffmpegPath from 'ffmpeg-static';
+import { currentUserJobSignal } from './bot/user-job-queue.js';
 
 const execFileAsync = promisify(execFile);
 
 function commandOptions(timeoutMs) {
   return {
     timeout: timeoutMs,
+    killSignal: 'SIGKILL',
+    signal: currentUserJobSignal(),
     maxBuffer: 8 * 1024 * 1024,
     env: {
       ...process.env,

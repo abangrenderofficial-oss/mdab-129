@@ -119,14 +119,14 @@ export async function scheduleLinkJob({ message, context = {}, url, platform, st
     return true;
   }
 
-  await sendMessage(
-    chatId,
-    queued.queued
-      ? `⏳ Link ni dah masuk queue #${queued.position}. Aku proses satu-satu supaya bot kekal stabil.`
-      : '⏳ Link diterima. Aku sedang proses video korang sekarang.',
-  ).catch((error) => {
-    console.warn('[link-queue] acknowledgement failed:', error?.message);
-  });
+  if (queued.queued) {
+    await sendMessage(
+      chatId,
+      `⏳ Link ni dah masuk queue #${queued.position}. Aku proses satu-satu supaya bot kekal stabil.`,
+    ).catch((error) => {
+      console.warn('[link-queue] queue notification failed:', error?.message);
+    });
+  }
 
   queued.done?.catch((error) => {
     console.error('[link-queue] queued job failed:', error?.code, error?.message);

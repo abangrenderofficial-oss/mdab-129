@@ -12,6 +12,7 @@ import requests
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 CHAT_ID = os.environ.get("SOCIAL_CHAT_ID", "").strip()
 SOURCE_URL = os.environ.get("SOCIAL_SOURCE_URL", "").strip()
+STREAM_URL = os.environ.get("SOCIAL_STREAM_URL", "").strip()
 MAX_BYTES = 50 * 1024 * 1024
 MAX_SOURCE_BYTES = 500 * 1024 * 1024
 BOT_ENDPOINT = "https://api.telegram.org/bot" + BOT_TOKEN + "/"
@@ -79,6 +80,28 @@ def download(workdir):
             print("Source downloaded:", path.stat().st_size, "bytes", flush=True)
             return path
     raise RuntimeError("yt-dlp returned no source file")
+
+
+def download_stream(workdir):
+    parsed = urlparse(STREAM_URL)
+    if parsed.scheme != "https" or not (parsed.hostname or "").endswith(".apps.bot-hosting.cloud") or parsed.path != "/api/oversize-tiktok-source":
+        raise RuntimeError("Invalid trusted MediaX source stream URL")
+    destination = workdir / "source.mp4"
+    with requests.get(STREAM_URL, stream=True, timeout=(30, 300)) as response:
+        response.raise_for_status()
+        total = 0
+        with destination.open("wb") as out:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > MAX_SOURCE_BYTES:
+                    raise RuntimeError("Worker source stream exceeds 500 MiB")
+                out.write(chunk)
+    if total == 0:
+        raise RuntimeError("MediaX source stream returned an empty video")
+    print("SOURCE_STREAM_TRANSFERRED", total, "bytes", flush=True)
+    return destination
 
 
 def probe(path):
@@ -156,7 +179,7 @@ def main():
     notify("🎞️ Video TikTok ini terlalu besar untuk server bot. MediaX sedang memprosesnya melalui worker berasingan. Video akan dihantar di sini selepas siap.")
     with tempfile.TemporaryDirectory(prefix="mediax-oversize-") as temp:
         root = Path(temp)
-        source = download(root)
+        source = download_stream(root) if STREAM_URL else download(root)
         if source.stat().st_size <= MAX_BYTES:
             send_video(source)
             return

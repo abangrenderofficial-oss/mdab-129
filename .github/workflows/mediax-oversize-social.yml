@@ -11,6 +11,11 @@ on:
         description: Public TikTok source URL
         type: string
         required: true
+      stream_url:
+        description: One-time private MediaX source stream
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -27,6 +32,7 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       SOCIAL_CHAT_ID: ${{ inputs.chat_id }}
       SOCIAL_SOURCE_URL: ${{ inputs.source_url }}
+      SOCIAL_STREAM_URL: ${{ inputs.stream_url }}
 
     steps:
       - name: Check out MediaX

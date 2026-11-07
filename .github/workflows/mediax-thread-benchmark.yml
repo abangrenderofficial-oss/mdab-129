@@ -1,0 +1,41 @@
+name: MediaX Isolated CPU Thread Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      stream_url:
+        description: One-time private MediaX source ticket URL
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SOCIAL_STREAM_URL: ${{ inputs.stream_url }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Ensure FFmpeg and Python requests
+        shell: bash
+        run: |
+          ffmpeg -version | head -1
+          python -m pip install --disable-pip-version-check --quiet requests
+      - name: Benchmark original codec options at 2 and 4 threads
+        run: python scripts/mediax_thread_benchmark.py
+      - name: Save benchmark metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediax-thread-benchmark-results
+          path: mediax-benchmark-result.json
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,6 +1,6 @@
 // What happens after a support payment is verified, whichever way it was verified:
 // the Bayarcash callback, or a paid event handed over by PayPing (CHIP / Bayarcash via PayPing).
-import { getSupportSubmission, activateSupportSubmissionAfterPayment } from './submissions.js';
+import { getSupportSubmission, activateSupportSubmissionAfterPayment, ensurePaidSupportSubmission } from './submissions.js';
 import { sendMessage } from '../telegram.js';
 import { notifySuccessfulSupportPayment } from './payment-detail.js';
 import { notifyWebPushSupportPayment } from './webpush-payment.js';
@@ -33,7 +33,16 @@ export async function afterSupportTransaction(result, { sandbox = false } = {}) 
   }
 
   let submission = null;
-  if (result?.orderNumber) {
+  let promptForSupportMessage = false;
+  if (result?.paid && result?.orderNumber) {
+    // A PayPing checkout writes the verified PAID support order directly.
+    // The old Bayarcash flow already created the submission at checkout.
+    // This works for both, and a replay never asks for a second testimonial.
+    const ensured = await ensurePaidSupportSubmission(result.orderNumber);
+    submission = ensured.submission;
+    const activation = await activateSupportSubmissionAfterPayment(result.orderNumber);
+    promptForSupportMessage = Boolean(ensured.created || activation?.activated);
+  } else if (result?.orderNumber) {
     submission = await getSupportSubmission(result.orderNumber).catch((error) => {
       console.warn('[bayarcash] support submission lookup failed:', error?.message);
       return null;
@@ -63,18 +72,15 @@ export async function afterSupportTransaction(result, { sandbox = false } = {}) 
       console.warn('[bayarcash] Telegram confirmation failed:', error?.message);
     });
 
-    const activation = await activateSupportSubmissionAfterPayment(result.orderNumber).catch((error) => {
-      console.warn('[bayarcash] testimonial activation failed:', error?.message);
-      return null;
+  }
+
+  if (result?.paid && promptForSupportMessage && submission?.telegramUserId) {
+    await sendMessage(
+      submission.telegramUserId,
+      'Tinggalkan kata-kata support korang ❤️',
+    ).catch((error) => {
+      console.warn('[support] testimonial follow-up failed:', error?.message);
     });
-    if (activation?.activated) {
-      await sendMessage(
-        result.telegramUserId,
-        'Tinggalkan kata-kata support korang ❤️',
-      ).catch((error) => {
-        console.warn('[bayarcash] testimonial follow-up failed:', error?.message);
-      });
-    }
   }
 
 }

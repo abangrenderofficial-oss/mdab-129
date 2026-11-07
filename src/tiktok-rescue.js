@@ -5,6 +5,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import ffmpegPath from 'ffmpeg-static';
+import { currentUserJobSignal } from './bot/user-job-queue.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -15,6 +16,8 @@ function ytdlpBinary() {
 function commandOptions(timeoutMs) {
   return {
     timeout: timeoutMs,
+    killSignal: 'SIGKILL',
+    signal: currentUserJobSignal(),
     maxBuffer: 12 * 1024 * 1024,
     env: {
       ...process.env,
@@ -34,7 +37,7 @@ async function downloadOriginal(url, outputBase) {
     '--js-runtimes', `node:${process.execPath}`,
     '--remote-components', 'ejs:github',
     '--force-ipv4',
-    '--format', 'best[ext=mp4]/best',
+    '--format', 'best[height<=1080][ext=mp4]/best[height<=1080]/best[ext=mp4]/best',
     '--merge-output-format', 'mp4',
     '--ffmpeg-location', ffmpegPath,
     '--no-progress',
@@ -102,7 +105,9 @@ function compressionPlan(metadata, maxBytes) {
 
   const sourceMax = Math.max(Number(metadata?.width || 0), Number(metadata?.height || 0), 854);
   let desired = 854;
-  if (videoKbps >= 2200) desired = 1920;
+  // This is a last-resort delivery path on a 1 vCPU host. 720p beats a
+  // never-ending 1080p re-encode of 60fps 10-bit HDR source.
+  if (videoKbps >= 2200) desired = 1280;
   else if (videoKbps >= 1000) desired = 1280;
 
   return {
@@ -139,8 +144,8 @@ async function compressForTelegram(inputPath, outputPath, metadata, maxBytes) {
       '-map', '0:a:0?',
       '-vf', scale,
       '-c:v', 'libx264',
-      '-threads', String(Math.max(1, Math.min(4, Number(process.env.TIKTOK_RESCUE_COMPRESS_THREADS || 4)))),
-      '-preset', String(process.env.TIKTOK_RESCUE_COMPRESS_PRESET || 'veryfast'),
+      '-threads', String(Math.max(1, Math.min(2, Number(process.env.TIKTOK_RESCUE_COMPRESS_THREADS || 1)))),
+      '-preset', String(process.env.TIKTOK_RESCUE_COMPRESS_PRESET || 'ultrafast'),
       '-profile:v', 'high',
       '-pix_fmt', 'yuv420p',
       '-b:v', `${plan.videoKbps}k`,

@@ -128,6 +128,14 @@ export async function scheduleLinkJob({ message, context = {}, url, platform, st
 
   queued.done?.catch((error) => {
     console.error('[link-queue] queued job failed:', error?.code, error?.message);
+    // A queued failure must not leave the user staring at "queue #1" forever.
+    // After /reset, the old fence is invalid and must not send stale errors.
+    if (isJobFenceActive(context.fence)) {
+      void sendMessage(
+        chatId,
+        '❌ Proses link ni gagal sebelum video siap. Cuba hantar semula link asal. Kalau masih gagal, laporkan link tersebut kepada admin.',
+      ).catch(() => {});
+    }
   });
   return true;
 }

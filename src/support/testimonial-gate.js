@@ -53,19 +53,22 @@ async function rejectionGate(userId) {
 export async function enforceSupportTestimonialGateForMessage(message = {}) {
   const chatId = message?.chat?.id;
   const userId = message?.from?.id;
-  if (!chatId || !userId || message?.chat?.type !== 'private') return false;
+  const isPrivate = message?.chat?.type === 'private';
+  if (!chatId || !userId || !['private', 'group', 'supergroup'].includes(message?.chat?.type)) return false;
   if (!isUsageAttempt(message)) return false;
 
   const rejected = await rejectionGate(userId);
   if (rejected) {
-    await sendMessage(chatId, REJECTED_SUPPORT_COPY).catch(() => {});
+    await sendMessage(chatId, isPrivate ? REJECTED_SUPPORT_COPY : '🔒 Sila lengkapkan pengesahan support dalam private bot dahulu.').catch(() => {});
     return true;
   }
 
   const submission = await pendingPaidTestimonial(userId);
   if (!submission) return false;
 
-  const copy = submission.state === 'REVIEW' ? REVIEW_SUPPORT_COPY : PENDING_SUPPORT_COPY;
+  const copy = isPrivate
+    ? (submission.state === 'REVIEW' ? REVIEW_SUPPORT_COPY : PENDING_SUPPORT_COPY)
+    : '🔒 Sila lengkapkan pengesahan support dalam private bot dahulu.';
   await sendMessage(chatId, copy).catch(() => {});
   return true;
 }
@@ -74,29 +77,32 @@ export async function enforceSupportTestimonialGateForCallback(callbackQuery = {
   const chatId = callbackQuery?.message?.chat?.id;
   const userId = callbackQuery?.from?.id;
   const chatType = callbackQuery?.message?.chat?.type;
-  if (!chatId || !userId || chatType !== 'private') return false;
+  if (!chatId || !userId || !['private', 'group', 'supergroup'].includes(chatType)) return false;
+  const isPrivate = chatType === 'private';
 
   const rejected = await rejectionGate(userId);
   if (rejected) {
     await telegram('answerCallbackQuery', {
       callback_query_id: callbackQuery?.id,
-      text: REJECTED_SUPPORT_COPY,
+      text: isPrivate ? REJECTED_SUPPORT_COPY : 'Sila lengkapkan pengesahan dalam private bot.',
       show_alert: true,
     }).catch(() => {});
-    await sendMessage(chatId, REJECTED_SUPPORT_COPY).catch(() => {});
+    await sendMessage(chatId, isPrivate ? REJECTED_SUPPORT_COPY : '🔒 Sila lengkapkan pengesahan support dalam private bot dahulu.').catch(() => {});
     return true;
   }
 
   const submission = await pendingPaidTestimonial(userId);
   if (!submission) return false;
 
-  const copy = submission.state === 'REVIEW' ? REVIEW_SUPPORT_COPY : PENDING_SUPPORT_COPY;
+  const copy = isPrivate
+    ? (submission.state === 'REVIEW' ? REVIEW_SUPPORT_COPY : PENDING_SUPPORT_COPY)
+    : 'Sila lengkapkan pengesahan dalam private bot.';
   await telegram('answerCallbackQuery', {
     callback_query_id: callbackQuery?.id,
     text: copy,
     show_alert: true,
   }).catch(() => {});
-  await sendMessage(chatId, copy).catch(() => {});
+  await sendMessage(chatId, isPrivate ? copy : '🔒 Sila lengkapkan pengesahan support dalam private bot dahulu.').catch(() => {});
   return true;
 }
 

@@ -159,6 +159,68 @@ export async function createSupportSubmission({
   return selectSubmission(db, environment, orderNumber);
 }
 
+// PayPing creates a confirmed support_orders row directly, without the legacy
+// pre-checkout support_submissions row. Enrol paid users in the SAME approval
+// workflow, idempotently; never grant testimonial approval automatically.
+export async function ensurePaidSupportSubmission(orderNumber) {
+  await ensureSubmissionSchema();
+  const db = await getSupportDb();
+  const environment = currentSupportEnvironment();
+  const key = String(orderNumber || '').trim();
+  if (!key) throw new Error('A paid support order is required.');
+
+  const verified = await db.execute({
+    sql: `SELECT telegram_user_id, telegram_username, amount_cents
+          FROM support_orders
+          WHERE environment = ? AND order_number = ?
+            AND status = 'PAID' AND paid_at IS NOT NULL LIMIT 1`,
+    args: [environment, key],
+  });
+  const order = verified.rows?.[0];
+  if (!order || !validUserId(order.telegram_user_id) || Number(order.amount_cents) <= 0) {
+    const error = new Error('Cannot start testimonial workflow for an unverified payment.');
+    error.code = 'SUPPORT_PAID_ORDER_REQUIRED';
+    throw error;
+  }
+
+  const existing = await selectSubmission(db, environment, key);
+  if (existing) return { created: false, submission: existing };
+
+  const tierByCents = new Map([
+    [100, ['coffee', '☕️ Cofee Supporter']],
+    [1000, ['supporter', '🤍 Supporter']],
+    [2000, ['super', '🌟 Super Supporter']],
+    [3000, ['power', '💎 Power Supporter']],
+    [5000, ['ultimate', '🏆 Ultimate Supporter']],
+    [10000, ['legend', '👑 Legend Supporter']],
+  ]);
+  const [tierKey, tierLabel] = tierByCents.get(Number(order.amount_cents))
+    || ['supporter', '❤️ Supporter'];
+  const now = new Date().toISOString();
+  const userId = String(order.telegram_user_id);
+  // Insert first; cancel only earlier outstanding requests (as the legacy
+  // checkout did). A repeated paid event must not reopen an approved request.
+  const entries = await db.batch([
+    {
+      sql: `INSERT OR IGNORE INTO support_submissions (
+              environment, order_number, telegram_user_id, telegram_username,
+              amount_cents, tier_key, tier_label, state, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'AWAITING_MESSAGE', ?, ?)`,
+      args: [environment, key, userId, cleanUsername(order.telegram_username),
+        Number(order.amount_cents), tierKey, tierLabel, now, now],
+    },
+    {
+      sql: `UPDATE support_submissions SET state = 'CANCELLED', updated_at = ?
+            WHERE environment = ? AND telegram_user_id = ? AND order_number <> ?
+              AND state IN ('AWAITING_MESSAGE', 'AWAITING_NAME', 'READY', 'REVIEW')`,
+      args: [now, environment, userId, key],
+    },
+  ], 'write');
+  const submission = await selectSubmission(db, environment, key);
+  if (!submission) throw new Error('Failed to persist paid supporter approval workflow.');
+  return { created: Number(entries?.[0]?.rowsAffected || 0) === 1, submission };
+}
+
 export async function getActiveSupportSubmission(userId) {
   await ensureSubmissionSchema();
   const telegramUserId = validUserId(userId);

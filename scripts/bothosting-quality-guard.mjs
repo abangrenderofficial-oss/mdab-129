@@ -3,9 +3,9 @@
 // upgraded to preserve original JPEG bytes and dimensions (2026-10-18).
 // Video and image input adapters accept File/Document uploads (2026-11-01).
 // Native media capped at 20 MB; image Documents >20 MB routed to the MTProto
-// status_hq_image worker (2026-11-04). Encoders/presets unchanged.
-// Encoder, audio and worker pipelines retain their existing quality baseline.
-// It checks byte-identical implementations; it never changes media files or presets.
+// status_hq_image worker (2026-11-04). Isolated social-video fallback tuned (2026-11-07).
+// Protected Status HQ, audio and worker pipelines retain their existing quality baseline.
+// It checks the explicitly approved Git blob hashes without changing media files.
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 const expected = {
@@ -29,7 +29,7 @@ const expected = {
   "src/features/live-wallpaper.js": "682fbb11d8926b34ae65c3e14ec2206c765c3835",
   "src/instagram-video-audio-mux.js": "5df6c9607454e82634aed6cc3cafe5fdbf4e700c",
   "src/youtube-upload.js": "11bbe3adab000e4f0536fbe80f17284f64e736dd",
-  "src/social-video.js": "5ba53a1af95edcb3b04cbc9acfbd95a7f327e352",
+  "src/social-video.js": "b6639a87250f1b864c69ae5968e101d8aea891ac",
   "src/heavy-worker-dispatch.js": "fae80bb5665806c76bbda9fb18188389267486a8"
 };
 let failures = 0;

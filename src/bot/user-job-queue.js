@@ -67,6 +67,9 @@ export function resetUserHeavyQueue(userId) {
   for (const item of waiting) settleCancelled(item);
 
   const hadActive = Boolean(lane.active);
+  // /reset must stop an already-running ffmpeg/yt-dlp subprocess, not only
+  // detach the queue bookkeeping while it keeps the CPU busy.
+  try { lane.activeItem?.controller?.abort(); } catch {}
 
   // Detach this user's old lane immediately. The already-running async task may
   // still finish its current network/ffmpeg call, but its job fence has been
@@ -98,8 +101,9 @@ function pump() {
 
     Promise.resolve()
       .then(async () => {
+        if (item.controller.signal.aborted) return { skipped: true, cancelled: true };
         if (item.shouldRun && !item.shouldRun()) return { skipped: true };
-        return jobContext.run({ userKey: key }, () => item.task());
+        return jobContext.run({ userKey: key, signal: item.controller.signal }, () => item.task());
       })
       .then(item.resolve, item.reject)
       .finally(() => {
@@ -114,6 +118,10 @@ function pump() {
 
 export function currentUserJobKey() {
   return String(jobContext.getStore()?.userKey || '');
+}
+
+export function currentUserJobSignal() {
+  return jobContext.getStore()?.signal;
 }
 
 export function enqueueUserHeavyJob(userId, task, options = {}) {
@@ -146,6 +154,7 @@ export function enqueueUserHeavyJob(userId, task, options = {}) {
   });
 
   lane.queue.push({
+    controller: new AbortController(),
     task,
     shouldRun: typeof options.shouldRun === 'function' ? options.shouldRun : null,
     resolve: resolveDone,

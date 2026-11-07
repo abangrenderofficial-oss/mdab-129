@@ -8,12 +8,15 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import ffmpegPath from 'ffmpeg-static';
+import { currentUserJobSignal } from './bot/user-job-queue.js';
 
 const execFileAsync = promisify(execFile);
 
 function commandOptions(timeoutMs) {
   return {
     timeout: timeoutMs,
+    killSignal: 'SIGKILL',
+    signal: currentUserJobSignal(),
     maxBuffer: 8 * 1024 * 1024,
     env: {
       ...process.env,
@@ -200,8 +203,8 @@ async function compressVideo(inputPath, outputPath, plan) {
     '-map', '0:a:0?',
     '-vf', scale,
     '-c:v', 'libx264',
-    '-threads', String(Math.max(1, Math.min(2, Number(process.env.SOCIAL_COMPRESS_THREADS || 2)))),
-    '-preset', String(process.env.SOCIAL_COMPRESS_PRESET || 'veryfast'),
+    '-threads', String(plan.fastFallback ? 1 : Math.max(1, Math.min(2, Number(process.env.SOCIAL_COMPRESS_THREADS || 2)))),
+    '-preset', plan.fastFallback ? 'ultrafast' : String(process.env.SOCIAL_COMPRESS_PRESET || 'veryfast'),
     '-profile:v', 'high',
     '-pix_fmt', 'yuv420p',
     '-b:v', `${plan.videoKbps}k`,
@@ -218,7 +221,9 @@ async function compressVideo(inputPath, outputPath, plan) {
   await execFileAsync(
     ffmpegPath,
     args,
-    commandOptions(Number(process.env.SOCIAL_COMPRESS_TIMEOUT_MS || 70000)),
+    commandOptions(plan.fastFallback
+      ? Math.max(110_000, Number(process.env.SOCIAL_COMPRESS_TIMEOUT_MS || 70000))
+      : Number(process.env.SOCIAL_COMPRESS_TIMEOUT_MS || 70000)),
   );
 
   const fileStat = await stat(outputPath);
@@ -272,6 +277,13 @@ export async function prepareSocialVideoTelegramUpload(item, maxBytes, options =
     const probe = await probeLocalVideo(inputPath);
     const duration = Number(options.duration || item.duration || probe.duration || 0);
     let plan = compressionPlan(duration, limit, probe, 0.82);
+    // Some TikTok sources are ~450 MB for 66 seconds (10-bit HEVC 60fps).
+    // On a 1 vCPU host, normal 1080p encoding holds the entire media lane
+    // for minutes. Choose a bounded 720p ultrafast fallback for huge inputs.
+    const fastFallback = downloaded.size >= 128 * 1024 * 1024;
+    if (plan && fastFallback) {
+      plan = { ...plan, maxDimension: Math.min(plan.maxDimension, 1280), fastFallback: true };
+    }
     if (!plan) {
       const err = new Error('Video is too long to compress under the Telegram limit while keeping acceptable HQ quality.');
       err.code = 'SOCIAL_HQ_COMPRESSION_NOT_VIABLE';
@@ -287,6 +299,9 @@ export async function prepareSocialVideoTelegramUpload(item, maxBytes, options =
 
     if (compressed.size > limit) {
       plan = compressionPlan(duration, limit, probe, 0.70);
+      if (plan && fastFallback) {
+        plan = { ...plan, maxDimension: Math.min(plan.maxDimension, 1280), fastFallback: true };
+      }
       if (!plan) {
         const err = new Error('Compressed video still exceeds the Telegram limit at acceptable HQ quality.');
         err.code = 'SOCIAL_COMPRESSED_TOO_LARGE';

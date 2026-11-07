@@ -53,6 +53,7 @@ import { getDailyForceRuntimeState, repairDailyForceCurrentCycleUsers } from './
 import {startSharedConfigHeartbeat} from './src/support/payping-shared-config.js';
 import {startPayPingPaymentEvents} from './src/support/payping-payment-events.js';
 import {seedMediaXReminderRecipients} from './src/support/payping-reminder-registry.js';
+import { serveOversizeTikTokSource, oversizeSourcePath } from './src/tiktok-oversize-stream.js';
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
@@ -211,6 +212,11 @@ const server = http.createServer(async (req, res) => {
         runtime: 'railway-node',
         architecture: 'isolated-features-v1',
       });
+    }
+
+    if (url.pathname === oversizeSourcePath()) {
+      if (req.method !== 'GET') return res.status(405).json({ ok: false, error: 'method_not_allowed' });
+      return serveOversizeTikTokSource(req, res, url);
     }
 
     const handler = routes.get(url.pathname);

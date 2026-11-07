@@ -3,6 +3,7 @@ import { prepareInstagramVideoWithAudio } from '../instagram-video-audio-mux.js'
 import { resolveInstagramProviderVideo } from '../instagram-provider-fallback.js';
 import { prepareYouTubeTelegramUpload } from '../youtube-upload.js';
 import { prepareTikTokTelegramRescue } from '../tiktok-rescue.js';
+import { requiresOversizeTikTokWorker, dispatchOversizeTikTokWorker } from '../tiktok-oversize-worker.js';
 import { createRelayUrl } from '../relay.js';
 import { platformLabel } from '../platform.js';
 import { isJobFenceActive } from '../recovery.js';
@@ -254,6 +255,23 @@ export async function processStandardDownload({ chatId, url, platform, context =
   if (platform === 'youtube') {
     await sendChatAction(chatId, 'upload_video').catch(() => {});
     sentVideo = await deliverPreferredYouTube(chatId, url);
+  }
+
+  // TikTok sometimes exposes only a >400 MiB 10-bit source. Do not download
+  // and re-encode the same huge video twice on Bot Hosting's single CPU.
+  // This moves the ORIGINAL encoder parameters to a separate GitHub runner.
+  // Premium + HQ, HQLab and normal-sized TikTok downloads are unchanged.
+  if (platform === 'tiktok' && requiresOversizeTikTokWorker(candidates, configuredUploadLimit())) {
+    if (!active(fence)) return { handled: true, cancelled: true };
+    try {
+      await dispatchOversizeTikTokWorker({ chatId, sourceUrl: media?.canonicalUrl || url });
+      await sendMessage(chatId, '🎞️ Video TikTok ini sangat besar. Aku proses melalui worker berasingan supaya bot tak tersangkut. Video akan dihantar di sini selepas siap.').catch(() => {});
+      return { handled: true, slideshow: false, externalWorker: true };
+    } catch (error) {
+      console.error('[downloader/oversize-tiktok] worker dispatch failed:', error?.message);
+      await sendMessage(chatId, '❌ Video TikTok ini terlalu besar untuk server bot dan worker tambahan belum dapat dimulakan. Cuba link lain atau laporkan kepada admin.').catch(() => {});
+      return { handled: true, slideshow: false, externalWorker: false };
+    }
   }
 
   if (instagramNeedsMux && !sentVideo) {

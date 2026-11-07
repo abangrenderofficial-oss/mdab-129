@@ -218,6 +218,39 @@ const server = http.createServer(async (req, res) => {
       return res.status(404).json({ ok: false, error: 'not_found' });
     }
 
+    // Telegram needs an immediate webhook acknowledgement. Waiting for Turso,
+    // group/Force gates, or a media download makes Telegram retry or time out,
+    // even when our bot is still processing the message.
+    if (url.pathname === '/api/telegram' && req.method === 'POST') {
+      const secret = String(process.env.TELEGRAM_WEBHOOK_SECRET || '');
+      if (secret && req.headers['x-telegram-bot-api-secret-token'] !== secret) {
+        return res.status(401).json({ ok: false, error: 'invalid_webhook_secret' });
+      }
+      const detachedRes = {
+        statusCode: 200,
+        status(code) { this.statusCode = Number(code) || 200; return this; },
+        json(value) {
+          if (value?.ok === false) {
+            console.error('[telegram/webhook] background processing failed:', value?.error || value?.handled || 'unknown');
+          } else if (value?.ignored && value.ignored !== 'duplicate_update') {
+            console.warn('[telegram/webhook] ignored:', value.ignored);
+          }
+          return this;
+        },
+        setHeader() { return this; },
+        send() { return this; },
+        end() { return this; },
+      };
+      // Parsed JSON and the webhook secret are validated before acknowledging.
+      // In this persistent Node deployment, processing runs after the reply;
+      // this does not alter download workers or HQ codecs.
+      res.status(200).json({ ok: true, received: true });
+      void Promise.resolve()
+        .then(() => handler(req, detachedRes))
+        .catch(error => console.error('[telegram/webhook] uncaught background error:', error?.stack || error));
+      return;
+    }
+
     await handler(req, res);
     if (!res.writableEnded) res.end();
   } catch (error) {

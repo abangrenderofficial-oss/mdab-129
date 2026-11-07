@@ -144,12 +144,16 @@ def encode(source, dest, duration, width, height, safety):
     command = [
         "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-nostats",
         "-nostdin", "-i", str(source), "-map", "0:v:0", "-map", "0:a:0?",
-        "-vf", scale, "-c:v", "libx264",
+        # Square pixels and explicit display aspect ratio avoid Telegram/iOS
+        # misinterpreting a portrait video as 1:1.
+        "-vf", scale + ",setsar=1", "-c:v", "libx264",
         "-threads", "2", "-preset", "veryfast",
         "-profile:v", "high", "-pix_fmt", "yuv420p",
+        "-aspect", f"{width}:{height}",
         "-b:v", f"{video_kbps}k", "-maxrate", f"{max_rate}k",
         "-bufsize", f"{bufsize}k", "-c:a", "aac", "-b:a", f"{audio_kbps}k",
         "-ac", "2", "-movflags", "+faststart", "-map_metadata", "-1",
+        "-metadata:s:v:0", "rotate=0",
         str(dest),
     ]
     print("Encoding:", {"duration": duration, "maxDimension": dimension,
@@ -159,19 +163,47 @@ def encode(source, dest, duration, width, height, safety):
     print("Encoded bytes:", size, flush=True)
     if size == 0:
         raise RuntimeError("FFmpeg produced an empty result")
+    _, encoded_width, encoded_height = probe(dest)
+    before = width / height
+    after = encoded_width / encoded_height
+    if abs(before - after) > 0.015:
+        raise RuntimeError(
+            f"Output video aspect ratio changed unexpectedly: "
+            f"source={width}x{height}, output={encoded_width}x{encoded_height}"
+        )
+    print("ENCODED_DIMENSIONS_VERIFIED",
+          json.dumps({"width": encoded_width, "height": encoded_height,
+                      "source_width": width, "source_height": height}), flush=True)
     return size
 
 
 def send_video(path):
+    duration, width, height = probe(path)
+    print("SENDING_VIDEO_DIMENSIONS", json.dumps({
+        "width": width, "height": height, "duration": duration}), flush=True)
     with path.open("rb") as video:
         result = telegram("sendVideo", {
             "chat_id": CHAT_ID,
+            "width": str(width),
+            "height": str(height),
+            "duration": str(max(1, math.ceil(duration))),
             "supports_streaming": "true",
             "caption": "✅ MediaX Downloader — Video TikTok siap!",
         }, files={"video": ("video.mp4", video, "video/mp4")}, timeout=240)
-    if not result or not (result.get("video") or result.get("document")):
+    attachment = (result or {}).get("video") or (result or {}).get("document")
+    if not attachment:
         raise RuntimeError("Telegram returned no video attachment")
-    print("VIDEO_DELIVERED_SUCCESSFULLY", flush=True)
+    telegram_width = int(attachment.get("width") or 0)
+    telegram_height = int(attachment.get("height") or 0)
+    print("TELEGRAM_VIDEO_DIMENSIONS", json.dumps({
+        "width": telegram_width, "height": telegram_height,
+        "file_size": attachment.get("file_size", 0)}), flush=True)
+    if telegram_width != width or telegram_height != height:
+        notify("⚠️ Telegram menerima video tetapi metadata ratio tidak sama dengan sumber. Admin akan semak.")
+        raise RuntimeError(f"Telegram aspect mismatch: sent {width}x{height}, "
+                           f"Telegram reports {telegram_width}x{telegram_height}")
+    print("VIDEO_DELIVERED_SUCCESSFULLY_9X16" if width < height
+          else "VIDEO_DELIVERED_SUCCESSFULLY", flush=True)
 
 
 def main():

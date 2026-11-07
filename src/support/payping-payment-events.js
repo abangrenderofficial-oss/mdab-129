@@ -52,7 +52,7 @@ export async function consumePayPingPaymentEvents({ limit = 10 } = {}) {
         const result = await applyBayarcashTransaction(payload);
         if (!result?.knownOrder) throw new Error('Order not found in MediaX tables');
         if (result?.amountMismatch) throw new Error('Amount does not match order');
-        await afterSupportTransaction(result, { sandbox: false });
+        await afterSupportTransaction(result, { sandbox: false, enforcePaidSubmission: true });
         await db.execute({
           sql: "UPDATE payping_payment_events_v1 SET consumed_at = ?, last_error = '' WHERE environment = ? AND event_id = ?",
           args: [new Date().toISOString(), env, event.event_id],

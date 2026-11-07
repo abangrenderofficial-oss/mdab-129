@@ -81,6 +81,11 @@ try{
  const bad=(await db.execute("SELECT consumed_at,last_error,attempts FROM payping_payment_events_v1 WHERE event_id='PVCTEST0002:paid'")).rows[0];
  assert.equal(bad.consumed_at,'');assert.match(String(bad.last_error),/Amount/);assert.equal(Number(bad.attempts),1);
  assert.notEqual((await db.execute("SELECT status FROM support_orders WHERE order_number='PVCTEST0002'")).rows[0].status,'PAID');
+ // A repeat legacy callback for an old supporter must NOT suddenly lock them.
+ await db.execute({sql:"INSERT INTO support_orders(environment,order_number,telegram_user_id,telegram_username,amount_cents,status,created_at,updated_at,paid_at) VALUES(?,?,?,?,?,?,?,?,?)",args:[E,'LEGACYPAID0003','333000333','',1000,'PAID',t,t,'2026-10-01T12:00:00Z']});
+ const {afterSupportTransaction}=await import('../src/support/after-payment.js');
+ await afterSupportTransaction({paid:true,becamePaid:false,knownOrder:true,orderNumber:'LEGACYPAID0003',telegramUserId:'333000333',amount:'10.00',totalSupport:'10.00'});
+ assert.equal(await submissions.getSupportSubmission('LEGACYPAID0003'),null,'duplicate legacy callback must not retroactively gate an old payer');
  assert.equal(await submissions.getSupportSubmission('PVCTEST0002'),null,'unpaid order never becomes approved/pending testimonial');
  await assert.rejects(submissions.ensurePaidSupportSubmission('PVCTEST0002'),/unverified payment/,'unpaid order cannot create an access gate');
  console.log('PAYPING_PAYMENT_EVENTS_SELFTEST_OK — paid event -> testimonial -> name -> admin approve -> unlock; idempotent; invalid payment refused');

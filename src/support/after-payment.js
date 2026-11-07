@@ -25,7 +25,7 @@ export function confirmationText(result, submission = null, { sandbox = false } 
   return lines.join('\n');
 }
 
-export async function afterSupportTransaction(result, { sandbox = false } = {}) {
+export async function afterSupportTransaction(result, { sandbox = false, enforcePaidSubmission = false } = {}) {
   if (result?.affiliate?.created) {
     await notifyAffiliateCommission(result.affiliate).catch((error) => {
       console.warn('[affiliate] callback commission notification failed:', error?.message);
@@ -34,7 +34,9 @@ export async function afterSupportTransaction(result, { sandbox = false } = {}) 
 
   let submission = null;
   let promptForSupportMessage = false;
-  if (result?.paid && result?.orderNumber) {
+  if (result?.paid && result?.orderNumber && (result?.becamePaid || enforcePaidSubmission)) {
+    // Do not retroactively lock historical users on a duplicate Bayarcash
+    // callback. PayPing events explicitly enforce the workflow even on retry.
     // A PayPing checkout writes the verified PAID support order directly.
     // The old Bayarcash flow already created the submission at checkout.
     // This works for both, and a replay never asks for a second testimonial.

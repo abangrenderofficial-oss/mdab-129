@@ -131,6 +131,33 @@ export async function getActiveSupporterTitle(userId) {
     .filter(Boolean)
     .sort((a, b) => b.amountCents - a.amountCents || String(b.paidAt).localeCompare(String(a.paidAt)));
 
+  // Explicit lifetime entitlements outrank time-limited payment orders.
+  // Keep the user's earned supporter tier/title (including after its original
+  // paid order expires) while granting permanent MediaX access.
+  const lifetimeResult = await db.execute({
+    sql: "SELECT order_number,starts_at FROM payping_subscriptions WHERE environment=? AND bot_id='mediax' AND telegram_user_id=? AND status='active' AND expires_at='lifetime' ORDER BY starts_at DESC LIMIT 1",
+    args: [environment, telegramUserId],
+  }).catch(error => {
+    if (String(error?.message || '').toLowerCase().includes('no such table')) return {rows: []};
+    throw error;
+  });
+  const lifetime = lifetimeResult.rows?.[0];
+  if (lifetime) {
+    const legacy = [...rows].sort((a, b) =>
+      Number(b.amount_cents || 0) - Number(a.amount_cents || 0)
+      || String(b.paid_at || '').localeCompare(String(a.paid_at || '')))[0];
+    const tier = legacy ? normalizedTier(legacy) : {key: 'supporter', label: '❤️ Supporter'};
+    return {
+      orderNumber: String(legacy?.order_number || lifetime.order_number || ''),
+      tierKey: tier.key,
+      tierLabel: tier.label,
+      amount: legacy ? (Number(legacy.amount_cents || 0) / 100).toFixed(2) : '0.00',
+      displayName: String(legacy?.display_name || ''),
+      paidAt: String(legacy?.paid_at || lifetime.starts_at || ''),
+      expiresAt: '9999-12-31T23:59:59.000Z',
+    };
+  }
+
   // V2 entitlements remain valid when PayPing switches Free+Channel -> Force.
   // Never discard legacy orders, and also honor bot-specific paid subscriptions.
   if (!active.length) {

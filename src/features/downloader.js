@@ -378,5 +378,11 @@ export async function processStandardDownload({ chatId, url, platform, context =
     await sendDownloadButton(chatId, `${title}\n\nAudio tersedia:`, audio.url, '🎵 Download audio');
   }
 
+  // Providers can report a successful resolution with zero usable media.
+  // Never silently finish a user's link without video, audio or an error.
+  if (!sentVideo && !candidates.length && !media.images?.length && !media.audios?.length && active(fence)) {
+    await sendMessage(chatId, '❌ Link ini belum menghasilkan video atau gambar yang boleh dihantar. Cuba link asal atau cuba semula kemudian.').catch(() => {});
+  }
+
   return { handled: true, slideshow: false, media, sentVideo };
 }

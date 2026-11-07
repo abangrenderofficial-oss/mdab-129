@@ -60,7 +60,9 @@ async function runLinkJob({ message, context, url, platform, statusMode, fridayC
       return;
     }
 
+    console.info('[link-queue] job-start', { userId, messageId: message?.message_id, platform });
     const result = await processStandardDownload({ chatId, url, platform, context, message });
+    console.info('[link-queue] job-result', { userId, messageId: message?.message_id, platform, handled: Boolean(result?.handled), sentVideo: Boolean(result?.sentVideo), externalWorker: Boolean(result?.externalWorker), slideshow: Boolean(result?.slideshow) });
     if (result?.slideshow) {
       await sendTikTokSlideshowChoice(chatId, url, result.media, userId);
       if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
@@ -109,6 +111,7 @@ export async function scheduleLinkJob({ message, context = {}, url, platform, st
     { shouldRun: () => isJobFenceActive(context.fence) },
   );
 
+  console.info('[link-queue] enqueue-result', { userId, messageId: message?.message_id, platform, accepted: queued.accepted, queued: queued.queued, position: queued.position, reason: queued.reason });
   if (!queued.accepted) {
     if (fridayClaimed) await releaseFridayUsageAttempt(userId).catch(() => {});
     if (dailyClaimed) await releaseDailyForceUsageAttempt(userId).catch(() => {});

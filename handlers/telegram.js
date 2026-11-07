@@ -1,6 +1,6 @@
 import { detectPlatform, extractFirstUrl } from '../src/platform.js';
 import { sendMessage } from '../src/telegram.js';
-import { beginUpdate, captureJobFence, isResetAdmin, resetGlobalFence, resetUserFence } from '../src/recovery.js';
+import { beginUpdate, captureJobFence, isResetAdmin, resetGlobalFence, resetUserFence, allowRetryOfFailedUpdate } from '../src/recovery.js';
 import { adminCommandMenuText, commandMenuText, startText } from '../src/bot/commands.js';
 import { handleConnectCommand, processAuditDelete, setMirrorWebhook } from '../src/bot/audit.js';
 import { handleTotalUserCommand, recordUsage } from '../src/bot/stats.js';
@@ -167,25 +167,25 @@ export default async function handler(req, res) {
 
   try {
     const update = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    const decision = beginUpdate(update);
-    if (!decision.accept) return json(res, 200, { ok: true, ignored: decision.reason });
+    const decision = beginUpdate(update); const incomingMessage = update?.message ?? update?.edited_message; const incomingUrl = extractFirstUrl(String(incomingMessage?.text || incomingMessage?.caption || ''));
+    if (!decision.accept) { if (incomingUrl) console.warn('[webhook/link] dropped', { userId: incomingMessage?.from?.id, messageId: incomingMessage?.message_id, reason: decision.reason }); return json(res, 200, { ok: true, ignored: decision.reason }); }
+    if (incomingUrl) console.info('[webhook/link] accepted', { userId: incomingMessage?.from?.id, messageId: incomingMessage?.message_id, type: incomingMessage?.chat?.type });
     // Keep downloader and Premium + HQ processing independent of dashboard latency.
     void syncSharedConfigForUpdate(
       update?.callback_query?.from?.id || update?.message?.from?.id || update?.edited_message?.from?.id,
       update?.callback_query?.message?.chat?.type || update?.message?.chat?.type || update?.edited_message?.chat?.type,
       update?.callback_query?.from || update?.message?.from || update?.edited_message?.from || null
     );
-
     const context = { baseUrl: requestBaseUrl(req), mirrorGroupId: mirrorGroupFromRequest(req) };
     const message = update?.message ?? update?.edited_message;
     const callbackQuery = update?.callback_query;
     const actor = callbackQuery?.from || message?.from;
     const actorChatType = callbackQuery?.message?.chat?.type || message?.chat?.type;
     if (actorChatType === 'private' && actor?.id) {
-      await recordUsage(actor.id);
-      await trackSupportMonitorActor(actor, actorChatType);
+      const stats = recordUsage(actor.id).then(() => trackSupportMonitorActor(actor, actorChatType));
+      if (incomingUrl) void stats.catch((error) => console.warn('[webhook/link] stats sync failed:', error?.message));
+      else await stats;
     }
-
     if (message && await rejectNonOwnerGroupMessage(message)) return json(res, 200, { ok: true, ignored: 'group_owner_only' });
     if (callbackQuery && await rejectNonOwnerGroupCallback(callbackQuery)) return json(res, 200, { ok: true, ignored: 'group_owner_only' });
 
@@ -253,7 +253,7 @@ export default async function handler(req, res) {
     await runWebhookUpdate(update, context);
     return json(res, 200, { ok: true, accepted: true });
   } catch (error) {
-    console.error('[webhook/router] error:', error);
-    return json(res, 200, { ok: false, handled: true });
+    console.error('[webhook/router] error:', error); if (req.awaitLinkReceipt) allowRetryOfFailedUpdate(req.body);
+    return json(res, req.awaitLinkReceipt ? 503 : 200, { ok: false, handled: true });
   }
 }

@@ -224,13 +224,24 @@ const server = http.createServer(async (req, res) => {
       return res.status(404).json({ ok: false, error: 'not_found' });
     }
 
-    // Telegram needs an immediate webhook acknowledgement. Waiting for Turso,
-    // group/Force gates, or a media download makes Telegram retry or time out,
-    // even when our bot is still processing the message.
+    // Non-link Telegram updates are acknowledged immediately; link updates
+    // wait until the request is accepted into the queue to prevent silent loss
+    // during deploy/restart. Media processing itself remains asynchronous.
     if (url.pathname === '/api/telegram' && req.method === 'POST') {
       const secret = String(process.env.TELEGRAM_WEBHOOK_SECRET || '');
       if (secret && req.headers['x-telegram-bot-api-secret-token'] !== secret) {
         return res.status(401).json({ ok: false, error: 'invalid_webhook_secret' });
+      }
+      // Never acknowledge a link before its access checks have completed and
+      // the download request has been accepted into the in-process queue.
+      // Otherwise a deploy/restart after HTTP 200 silently loses the update.
+      const incoming = req.body?.message ?? req.body?.edited_message;
+      const sourceText = String(incoming?.text || incoming?.caption || '');
+      if (/https?:\/\/\S+/i.test(sourceText)) {
+        req.awaitLinkReceipt = true;
+        await handler(req, res);
+        if (!res.writableEnded) res.end();
+        return;
       }
       const detachedRes = {
         statusCode: 200,

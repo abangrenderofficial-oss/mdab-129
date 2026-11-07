@@ -87,12 +87,23 @@ export function beginUpdate(update = {}) {
   if (!resetCommand && command !== '/start' && command !== '/help') {
     const messageTime = messageTimestampMs(update);
     const staleAfter = numericEnv('UPDATE_STALE_AFTER_MS', DEFAULT_STALE_AFTER_MS);
-    if (messageTime && now - messageTime > staleAfter) {
+    // Links can queue at Telegram while a deployment restarts. The former
+    // two-minute blanket cutoff discarded valid retried sources silently.
+    const text = String(updateMessage(update)?.text || updateMessage(update)?.caption || '');
+    const allowableAge = /https?:\/\/\S+/i.test(text) ? Math.max(staleAfter, 10 * 60_000) : staleAfter;
+    if (messageTime && now - messageTime > allowableAge) {
       return { accept: false, reason: 'stale_update', updateId, key, command };
     }
   }
 
   return { accept: true, reason: 'accepted', updateId, key, command };
+}
+
+// Only use after a failed link webhook response (5xx), so Telegram can retry
+// a request that never reached the download queue.
+export function allowRetryOfFailedUpdate(update = {}) {
+  const id = Number(update?.update_id || 0);
+  if (Number.isSafeInteger(id) && id > 0) state().seenUpdates.delete(id);
 }
 
 export function captureJobFence(update = {}) {

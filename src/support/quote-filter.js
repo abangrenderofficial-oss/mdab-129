@@ -1,6 +1,7 @@
 import { currentSupportEnvironment, getSupportDb } from './store.js';
 import { getTelegramChat, sendMessage } from '../telegram.js';
 import { hasMinimumWords } from './text-validation.js';
+import { getQuoteAdminGroup, recordQuoteAdminSubmission, deliverPendingQuoteAdminSubmissions } from './quote-admin.js';
 
 let quoteSchemaPromise = null;
 
@@ -58,7 +59,12 @@ async function ensureQuoteFilterSchema() {
 export async function setQuoteFilterGroup(chatId, title = '') {
   const groupId = String(chatId || '').trim();
   if (!/^-?\d+$/.test(groupId)) throw new Error('Invalid quote filter group ID.');
-
+  const adminGroup = await getQuoteAdminGroup();
+  if (adminGroup?.groupId === groupId) {
+    const error = new Error('Quote Filter must be separate from private Quote Admin Database.');
+    error.code = 'QUOTE_ADMIN_GROUP_CONFLICT';
+    throw error;
+  }
   const chat = await getTelegramChat(groupId);
   if (!['group', 'supergroup'].includes(chat?.type)) {
     const error = new Error('Quote filter destination must be a Telegram group or supergroup.');
@@ -245,6 +251,7 @@ async function sendToQuoteFilter({
   tierLabel = '',
   sourceOrderNumber = '',
   telegramUserId = '',
+  telegramActor = null,
 }) {
   const target = await getQuoteFilterGroup();
   if (!target?.groupId) {
@@ -267,6 +274,19 @@ async function sendToQuoteFilter({
       reply_markup: moderationKeyboard(moderationId),
     });
     await attachFilterMessage(moderationId, target.groupId, sent?.message_id || '');
+    // Filter/channel text stays exactly as it was; identity goes to the
+    // separately configured private database only.
+    try {
+      await recordQuoteAdminSubmission(moderationId, {
+        userId: telegramUserId,
+        actor: telegramActor || {},
+      });
+      await deliverPendingQuoteAdminSubmissions({ limit: 5 });
+    } catch (error) {
+      // The filter already received the quote. Never duplicate it if private
+      // audit delivery is temporarily unavailable.
+      console.warn('[quote-admin] audit delivery deferred:', error?.message);
+    }
     return { ...target, moderationId, messageId: sent?.message_id || null };
   } catch (error) {
     const db = await getSupportDb().catch(() => null);
@@ -289,6 +309,7 @@ export async function sendSupportQuoteToFilter({
   tierLabel,
   orderNumber = '',
   userId = '',
+  telegramActor = null,
 }) {
   const message = cleanText(supportMessage, 500);
   const name = cleanText(displayName, 80) || 'Anonymous';
@@ -307,6 +328,7 @@ export async function sendSupportQuoteToFilter({
     tierLabel: tier,
     sourceOrderNumber: cleanText(orderNumber, 160),
     telegramUserId: cleanText(userId, 40),
+    telegramActor,
     text: [
       'Kata Support Buat Team MediaX👏🏻',
       '',
@@ -319,7 +341,9 @@ export async function sendSupportQuoteToFilter({
   });
 }
 
-export async function sendLuahRasaToFilter({ message, displayName, tierLabel = '' }) {
+export async function sendLuahRasaToFilter({
+  message, displayName, tierLabel = '', userId = '', telegramActor = null,
+}) {
   const luahan = cleanText(message, 1500);
   const name = cleanText(displayName, 80);
   const tier = cleanText(tierLabel, 100);
@@ -335,6 +359,8 @@ export async function sendLuahRasaToFilter({ message, displayName, tierLabel = '
     body: luahan,
     displayName: name,
     tierLabel: tier,
+    telegramUserId: cleanText(userId, 40),
+    telegramActor,
     text: [
       '💭 Luah Rasa',
       '',

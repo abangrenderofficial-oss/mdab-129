@@ -75,6 +75,8 @@ export function adminCommandMenuText() {
     '/connect — Sambung group pemantauan video',
     '/disconnect — Putus group pemantauan video',
     '/connectquote — Sambung group filter quote & luah rasa',
+    '/connectquoteadmin — Sambung group database private (ID, username, nama & support status)',
+    '/disconnectquoteadmin — Putus sambungan group database private',
     '/connectpaymentdetail — Sambung group notification payment support',
     '/pushsetup — Setup AR Payment push notification iPhone',
     '/affiliatepaid <request> — Tandakan affiliate payout paid',

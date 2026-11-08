@@ -16,6 +16,7 @@ import { handleSupportCommand, processSupportCallback, processSupportMessage } f
 import { handleSupportPerClickCommand } from '../src/features/support-click-report.js';
 import { handleLuahRasaCommand, processLuahRasaMessage } from '../src/features/luahrasa.js';
 import { handleConnectQuoteCommand, processQuoteFilterCallback } from '../src/features/quote-filter.js';
+import { handleConnectQuoteAdminCommand, handleDisconnectQuoteAdminCommand } from '../src/features/quote-admin.js';
 import { handleConnectPaymentDetailCommand, handlePaymentDetailTestCommand, handleSupportMonitorCommand, handleSupportCheckCommand } from '../src/features/payment-detail.js';
 import { handlePaymentPushSetupCommand } from '../src/features/payment-push.js';
 import { trackSupportMonitorActor } from '../src/support/monitor-hooks.js';
@@ -80,6 +81,7 @@ async function processMessage(message, context) {
   if (command === '/connect') return handleConnectCommand(message, context.baseUrl, false);
   if (command === '/disconnect') return handleConnectCommand(message, context.baseUrl, true);
   if (command === '/connectquote') return handleConnectQuoteCommand(message);
+  if (command === '/connectquoteadmin') return handleConnectQuoteAdminCommand(message); if (command === '/disconnectquoteadmin') return handleDisconnectQuoteAdminCommand(message);
   if (command === '/connectpaymentdetail') return handleConnectPaymentDetailCommand(message);
   if (command === '/pushsetup') return handlePaymentPushSetupCommand(message, context);
   if (command === '/affiliate') return handleAffiliateCommand(message, context);
@@ -123,7 +125,6 @@ async function processMessage(message, context) {
   }
   await scheduleLinkJob({ message, context, url, platform, statusMode });
 }
-
 async function runWebhookUpdate(update, context) {
   const callbackQuery = update?.callback_query;
   if (callbackQuery) {
@@ -146,7 +147,6 @@ async function runWebhookUpdate(update, context) {
   const message = update?.message ?? update?.edited_message;
   if (message) await processMessage(message, context);
 }
-
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     return json(res, 200, {

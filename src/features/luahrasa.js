@@ -53,6 +53,8 @@ export async function handleLuahRasaCommand(message = {}) {
       '',
       'apa2 ja semua boleh ✨',
       '',
+      '🔒 Untuk semakan dalaman, admin akan simpan Telegram ID, username, nama Telegram dan status support awak dalam group private. Hanya nama pilihan awak dan luahan yang diluluskan akan dikongsi di channel.',
+      '',
       'Tulis sekarang & Send di sini tau!',
     ].join('\n'),
   ).catch(() => {});
@@ -105,6 +107,8 @@ export async function processLuahRasaMessage(message = {}) {
         message: session.luahan,
         displayName,
         tierLabel: session.tierLabel,
+        userId,
+        telegramActor: message.from,
       });
       await clearLuahRasaSession(userId);
       await sendMessage(

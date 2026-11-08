@@ -251,7 +251,7 @@ export async function processSupportMessage(message = {}) {
 
     await sendMessage(
       chatId,
-      'Boleh saya tahu nama? Kalau tak nak paparkan nama, pilih Anonymous.',
+      'Boleh saya tahu nama? Kalau tak nak paparkan nama, pilih Anonymous.\n\n🔒 Note: Anonymous only hides your name publicly. Admin keeps your Telegram ID, username, Telegram name and supporter status in a private record group.',
       {
         reply_markup: {
           inline_keyboard: [[{ text: 'Anonymous', callback_data: SUPPORT_ANONYMOUS_NAME_ACTION }]],
@@ -284,6 +284,7 @@ export async function processSupportMessage(message = {}) {
         tierLabel: review.tierLabel,
         orderNumber: review.orderNumber,
         userId: review.telegramUserId,
+        telegramActor: message.from,
       });
 
       await sendMessage(
@@ -482,6 +483,7 @@ export async function processSupportCallback(callbackQuery = {}, context = {}) {
         tierLabel: review.tierLabel,
         orderNumber: review.orderNumber,
         userId: review.telegramUserId,
+        telegramActor: user,
       });
 
       await answerSupportCallback(callbackQuery, 'Anonymous dipilih ✅');

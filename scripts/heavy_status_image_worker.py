@@ -84,7 +84,7 @@ def status_caption():
     try:
         username = str(telegram('getMe', timeout=25).get('username') or '').strip().lstrip('@')
         if username:
-            return f'Image Ready For Status ✅\\nDownload In @{username}'
+            return f'Image Ready For Status ✅\nDownload In @{username}'
     except Exception:
         pass
     return 'Image Ready For Status ✅'

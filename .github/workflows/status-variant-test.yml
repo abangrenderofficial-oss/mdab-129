@@ -13,6 +13,10 @@ on:
         required: false
         default: '0'
         type: string
+      variants:
+        required: false
+        default: 'A,B,C'
+        type: string
 
 permissions:
   contents: read
@@ -31,6 +35,7 @@ jobs:
       HEAVY_SOURCE_KIND: gallery
       HEAVY_VIDEO_MAX_MB: '500'
       PYTHONPATH: scripts
+      VARIANTS: ${{ inputs.variants }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

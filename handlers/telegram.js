@@ -7,9 +7,8 @@ import { handleTotalUserCommand, recordUsage } from '../src/bot/stats.js';
 import { resetUserHeavyQueue } from '../src/bot/user-job-queue.js';
 import { rejectNonOwnerGroupCallback, rejectNonOwnerGroupMessage } from '../src/bot/group-owner-guard.js';
 import {
-  processGalleryUploadWithSupport,
-  processHqLabBeforeMedia,
-  processMediaCallbackWithSupport,
+  processGalleryUploadWithSupport, processNativeMediaGuide,
+  processHqLabBeforeMedia, processMediaCallbackWithSupport,
 } from '../src/bot/gated-media-flow.js';
 import { processOwnerHqLabV3, processOwnerHqLabChoiceCallback } from '../src/features/hq-lab-v3.js';
 import { handleSupportTestCommand } from '../src/features/support-test.js';
@@ -102,6 +101,7 @@ async function processMessage(message, context) {
   if (await enforceSupportTestimonialGateForMessage(message)) return;
   if (command === '/luahrasa') return handleLuahRasaCommand(message, context);
   if (await processLuahRasaMessage(message, context)) return;
+  if (await processNativeMediaGuide(message, context)) return;
   if (await enforceDailyForceSupportForMessage(message)) return;
   if (await enforceChannelGateForMessage(message)) return;
   if (await enforceShareGateForMessage(message)) return;

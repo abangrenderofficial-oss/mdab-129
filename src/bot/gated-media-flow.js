@@ -46,6 +46,26 @@ export async function processHqLabBeforeMedia(message, context = {}) {
   return false;
 }
 
+// Native Telegram Photo/Video uploads may be compressed before reaching MediaX.
+// Guide the user immediately, without mirroring the upload, claiming a support
+// attempt, or sending the same compressed media back to the chat.
+export const NATIVE_DOCUMENT_UPLOAD_GUIDE =
+  '📁✅ Please send your photos or videos as a File/Document instead.\n\n'
+  + '• Note • If your photo or video is already blurry or pixelated, the bot can’t make it sharp again. '
+  + 'MediaX only helps prevent extra quality loss when your original file is already clear. ☝🏻';
+
+export function isNativeGalleryMedia(message = {}) {
+  return Boolean((Array.isArray(message?.photo) && message.photo.length)
+    || message?.video?.file_id);
+}
+
+export async function processNativeMediaGuide(message, context = {}) {
+  if (!isNativeGalleryMedia(message)) return false;
+  if (await processHqLabBeforeMedia(message, context)) return true;
+  await sendMessage(message?.chat?.id, NATIVE_DOCUMENT_UPLOAD_GUIDE);
+  return true;
+}
+
 async function claimBoth(userId, messageOrCallback, isCallback = false) {
   const fridayClaimed = await claimFridayUsageAttempt(userId);
   if (!fridayClaimed) {
@@ -77,6 +97,7 @@ async function releaseClaims(userId, fridayClaimed, dailyClaimed) {
 export async function processGalleryUploadWithSupport(message, context = {}) {
   const userId = message?.from?.id;
   if (!userId) return false;
+  if (await processNativeMediaGuide(message, context)) return true;
 
   const photoError = uploadedPhotoError(message);
   const isPhoto = Boolean(uploadedPhoto(message) || photoError);

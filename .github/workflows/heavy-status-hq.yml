@@ -46,6 +46,11 @@ on:
         required: false
         default: ''
         type: string
+      upload_maxrate_kbps:
+        description: Uploaded-video Premium+ HQ bitrate ceiling (kbps)
+        required: false
+        default: '5000'
+        type: string
 
 permissions:
   contents: read
@@ -68,6 +73,7 @@ jobs:
       HEAVY_FILE_SIZE: ${{ inputs.file_size }}
       HEAVY_ACTION: status_hq
       HEAVY_SOURCE_KIND: ${{ inputs.source_kind }}
+      STATUS_UPLOAD_MAXRATE_KBPS: ${{ inputs.upload_maxrate_kbps }}
       HEAVY_PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
       HEAVY_SOURCE_MESSAGE_ID: ${{ inputs.source_message_id }}
       HEAVY_VIDEO_MAX_MB: '500'

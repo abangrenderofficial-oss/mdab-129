@@ -21,6 +21,19 @@ SOURCE_MESSAGE_ID = int(os.environ.get('HEAVY_SOURCE_MESSAGE_ID', '0') or 0)
 MAX_INPUT_MB = int(os.environ.get('HEAVY_VIDEO_MAX_MB', '250') or 250)
 MAX_INPUT_BYTES = MAX_INPUT_MB * MB
 BOT_API_BASE = os.environ.get('TELEGRAM_API_BASE_URL', 'https://api.telegram.org').rstrip('/')
+SOURCE_KIND = os.environ.get('HEAVY_SOURCE_KIND', 'link').strip().lower()
+IS_GALLERY_UPLOAD = SOURCE_KIND == 'gallery'
+UPLOAD_PRESET = os.environ.get('STATUS_UPLOAD_HEAVY_PRESET', 'medium').strip().lower() or 'medium'
+
+
+def upload_maxrate_cap():
+    try:
+        value = int(float(os.environ.get('STATUS_UPLOAD_MAXRATE_KBPS', '5000') or 5000))
+    except ValueError:
+        return 5000
+    if value <= 0:
+        return 5000
+    return max(2000, min(12000, value))
 
 
 def require_config():
@@ -129,12 +142,23 @@ def run(cmd, timeout=900):
     return subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
 
 
+def parse_rate(value):
+    try:
+        text = str(value or '')
+        if '/' in text:
+            num, den = text.split('/', 1)
+            return float(num) / float(den) if float(den) else 0.0
+        return float(text or 0)
+    except Exception:
+        return 0.0
+
+
 def probe_video(path):
     result = run(
         [
             'ffprobe', '-v', 'error', '-select_streams', 'v:0',
             '-show_entries',
-            'stream=width,height,r_frame_rate,color_range,color_space,color_transfer,color_primaries:format=duration',
+            'stream=width,height,r_frame_rate,avg_frame_rate,color_range,color_space,color_transfer,color_primaries:format=duration',
             '-of', 'json', str(path),
         ],
         timeout=60,
@@ -151,6 +175,7 @@ def probe_video(path):
         'duration': duration,
         'width': width,
         'height': height,
+        'fps': parse_rate(stream.get('avg_frame_rate')) or parse_rate(stream.get('r_frame_rate')),
         'color_range': str(stream.get('color_range') or ''),
         'color_space': str(stream.get('color_space') or ''),
         'color_transfer': str(stream.get('color_transfer') or ''),
@@ -191,7 +216,7 @@ def status_plan(probe, android=False):
     target_bytes = int(43.5 * MB)
     audio_kbps = 128
     total_kbps = int((target_bytes * 8 / duration / 1000) * 0.90)
-    max_video_kbps = 2800 if android else 5000
+    max_video_kbps = 2800 if android else (upload_maxrate_cap() if IS_GALLERY_UPLOAD else 5000)
     video_kbps = max(220, min(max_video_kbps, total_kbps - audio_kbps - 70))
     return {
         'video_kbps': video_kbps,
@@ -261,6 +286,49 @@ def premium_v2_color_args(probe):
     ]
 
 
+# Uploaded-video (gallery) Premium+ HQ only. Link Premium+ and Android HQ keep
+# their existing formulas. GitHub runners have 4 vCPU and a 1200s budget, so the
+# upload profile uses a real x265 preset with all cores instead of ultrafast/1 thread.
+def upload_tonemap_filter(probe):
+    transfer = str(probe.get('color_transfer') or '').lower()
+    primaries = str(probe.get('color_primaries') or '').lower()
+    bt2020 = 'bt2020' in primaries or 'bt2020' in str(probe.get('color_space') or '').lower()
+    if not bt2020 or transfer not in ('arib-std-b67', 'smpte2084'):
+        return None
+    return ','.join([
+        f'zscale=tin={transfer}:pin=bt2020:min=bt2020nc:rin=tv:t=linear:npl=100',
+        'format=gbrpf32le',
+        'zscale=p=bt709',
+        'tonemap=tonemap=hable:desat=0',
+        'zscale=t=bt709:m=bt709:r=tv',
+        'format=yuv420p',
+    ])
+
+
+def upload_fps_filter(probe):
+    fps = float(probe.get('fps') or 0)
+    if 0 < fps <= 30.5:
+        return None
+    return 'fps=30'
+
+
+def upload_status_cmd(input_path, output_path, probe, maxrate, bufsize, audio_kbps):
+    filters = [premium_v2_scale_filter(probe), 'setsar=1', upload_tonemap_filter(probe), upload_fps_filter(probe)]
+    return [
+        'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', '-nostdin',
+        '-i', str(input_path), '-map', '0:v:0', '-map', '0:a:0?',
+        '-vf', ','.join(f for f in filters if f),
+        '-c:v', 'libx265', '-preset', UPLOAD_PRESET, '-crf', '18',
+        '-maxrate', f'{maxrate}k', '-bufsize', f'{bufsize}k',
+        '-pix_fmt', 'yuv420p', '-tag:v', 'hvc1',
+        '-x265-params', 'vbv-init=0.8:aq-mode=3',
+        '-color_range', 'tv', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709',
+        '-c:a', 'aac', '-profile:a', 'aac_low', '-ar', '48000', '-ac', '2', '-b:a', f'{audio_kbps}k',
+        '-brand', 'isom', '-movflags', '+faststart', '-metadata:s:v:0', 'rotate=0', '-map_metadata', '-1',
+        '-threads', '0', str(output_path),
+    ]
+
+
 def encode_status(input_path, output_path, probe, android=False):
     plan = status_plan(probe, android=android)
     safe_limit = int(47 * MB)
@@ -285,6 +353,10 @@ def encode_status(input_path, output_path, probe, android=False):
                 '-movflags', '+faststart', '-metadata:s:v:0', 'rotate=0', '-map_metadata', '-1',
                 '-threads', '2', str(output_path),
             ]
+        elif IS_GALLERY_UPLOAD:
+            maxrate = video_kbps
+            bufsize = max(1000, maxrate * 2)
+            cmd = upload_status_cmd(input_path, output_path, probe, maxrate, bufsize, plan['audio_kbps'])
         else:
             # Production Premium+ HQ V2 benchmark formula:
             # 720p class / 29.97fps / HEVC Main10 / CRF18 / preservation-only.

@@ -236,3 +236,56 @@ jobs:
 
       - name: Process native Apple Live Photo
         run: python scripts/apple_live_worker.py
+
+  # Uploaded image Documents >18 MiB need MTProto. This branch is independent
+  # of all HEVC/HQ video jobs. It preserves original image bytes, no FFmpeg.
+  status_hq_image:
+    if: ${{ inputs.action == 'status_hq_image' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+      TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      HEAVY_CHAT_ID: ${{ inputs.chat_id }}
+      HEAVY_VIDEO_FILE_ID: ${{ inputs.video_file_id }}
+      HEAVY_FILE_SIZE: ${{ inputs.file_size }}
+      HEAVY_PROGRESS_MESSAGE_ID: ${{ inputs.progress_message_id }}
+      HEAVY_SOURCE_MESSAGE_ID: ${{ inputs.source_message_id }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install image document MTProto client
+        run: python -m pip install --disable-pip-version-check --quiet 'kurigram[fast]==2.2.26' requests
+
+      - name: Preserve and send original image Document
+        run: python scripts/heavy_status_image_worker.py
+
+      - name: Record image Premium HQ delivery
+        if: ${{ success() && inputs.completion_callback_url != '' && inputs.user_id != '0' }}
+        shell: bash
+        env:
+          COMPLETION_CALLBACK_URL: ${{ inputs.completion_callback_url }}
+          COMPLETION_CHAT_ID: ${{ inputs.chat_id }}
+          COMPLETION_USER_ID: ${{ inputs.user_id }}
+          COMPLETION_SOURCE_MESSAGE_ID: ${{ inputs.source_message_id }}
+          COMPLETION_FILE_ID: ${{ inputs.video_file_id }}
+          COMPLETION_SIGNING_SECRET: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          completion_key="image-heavy:${COMPLETION_CHAT_ID}:${COMPLETION_USER_ID}:${COMPLETION_SOURCE_MESSAGE_ID}:${COMPLETION_FILE_ID}"
+          payload="${COMPLETION_CHAT_ID}:${COMPLETION_USER_ID}:status_hq:${completion_key}:v2"
+          signature="$(printf '%s' "$payload" | openssl dgst -sha256 -hmac "$COMPLETION_SIGNING_SECRET" -hex | awk '{print $2}')"
+          if ! curl --fail-with-body --silent --show-error --retry 3 --retry-delay 2 \
+            -H 'Content-Type: application/json' \
+            -H "x-heavy-worker-signature: ${signature}" \
+            --data "{\"chat_id\":\"${COMPLETION_CHAT_ID}\",\"user_id\":\"${COMPLETION_USER_ID}\",\"event\":\"status_hq\",\"completion_key\":\"${completion_key}\"}" \
+            "$COMPLETION_CALLBACK_URL"; then
+            echo '::warning::Original image delivered but completion callback failed after retries.'
+          fi

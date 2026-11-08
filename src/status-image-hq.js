@@ -88,15 +88,23 @@ async function cleanup(paths) {
   await Promise.all([...new Set(paths)].map((filePath) => rm(filePath, { force: true }).catch(() => {})));
 }
 
-// Telegram photos arrive as JPEG in most cases. Preserve their exact bytes
-// when possible: resizing to 720x1280 and recompressing a 260 KB JPEG cannot
-// recover detail and will visibly soften text and high-frequency patterns.
-async function sourceIsJpeg(filePath) {
+// Telegram Photo is already compressed by Telegram before the bot receives it.
+// Document uploads retain their original JPEG/PNG/WEBP/BMP/TIFF bytes. Detect
+// the actual file signature (not just Telegram's sometimes generic extension)
+// and never run these files through lossy JPEG encoding a second time.
+async function originalImageExtension(filePath) {
   const handle = await open(filePath, 'r');
   try {
-    const header = Buffer.alloc(3);
-    const { bytesRead } = await handle.read(header, 0, header.length, 0);
-    return bytesRead === 3 && header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff;
+    const signature = Buffer.alloc(16);
+    const { bytesRead } = await handle.read(signature, 0, signature.length, 0);
+    if (bytesRead >= 3 && signature[0] === 0xff && signature[1] === 0xd8 && signature[2] === 0xff) return 'jpg';
+    if (bytesRead >= 8 && signature.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) return 'png';
+    if (bytesRead >= 12 && signature.toString('ascii', 0, 4) === 'RIFF' && signature.toString('ascii', 8, 12) === 'WEBP') return 'webp';
+    if (bytesRead >= 2 && signature.toString('ascii', 0, 2) === 'BM') return 'bmp';
+    if (bytesRead >= 4 &&
+        ((signature[0] === 0x49 && signature[1] === 0x49 && signature[2] === 0x2a && signature[3] === 0) ||
+         (signature[0] === 0x4d && signature[1] === 0x4d && signature[2] === 0 && signature[3] === 0x2a))) return 'tiff';
+    return '';
   } finally {
     await handle.close();
   }
@@ -106,19 +114,20 @@ export async function prepareWhatsAppStatusImageHQ({ image }) {
   const attemptId = randomUUID();
   const base = path.join(tmpdir(), `ar-status-image-${attemptId}`);
   const inputPath = `${base}-source.${safeExtension(image)}`;
-  const outputPath = `${base}-premium-plus-hq.jpg`;
-  const allPaths = [inputPath, outputPath];
+  const allPaths = [inputPath];
 
   try {
     await downloadRemoteImage(image, inputPath);
 
-    if (await sourceIsJpeg(inputPath)) {
-      // A document upload preserves the original Telegram JPEG without a second
-      // lossy JPEG encode or any resolution change.
+    const originalExt = await originalImageExtension(inputPath);
+    const outputExt = originalExt || 'jpg';
+    const outputPath = `${base}-premium-plus-hq.${outputExt}`;
+    allPaths.push(outputPath);
+    if (originalExt) {
+      // No re-encoding at all: pixel dimensions and source file bytes are preserved.
       await rename(inputPath, outputPath);
     } else {
-      // For less common photo formats, preserve source dimensions and encode at
-      // high quality without forcing a 720x1280 canvas or 4:2:0 chroma reduction.
+      // Unknown supported image signatures: one conservative conversion only.
       await execFileAsync(
         ffmpegPath,
         [
@@ -152,7 +161,11 @@ export async function prepareWhatsAppStatusImageHQ({ image }) {
     return {
       filePath: outputPath,
       size: outputStat.size,
-      quality: 'Premium+ HQ image • preserve original Telegram JPEG bytes and dimensions; no forced downscale • Telegram document',
+      fileName: `status-hq.${outputExt}`,
+      sourcePreserved: Boolean(originalExt),
+      quality: originalExt
+        ? 'Premium+ HQ image • original JPEG/PNG/WEBP/BMP/TIFF bytes and dimensions unchanged • Telegram document'
+        : 'Premium+ HQ image • fallback JPEG with source dimensions preserved • Telegram document',
       cleanup: async () => cleanup(allPaths),
     };
   } catch (error) {

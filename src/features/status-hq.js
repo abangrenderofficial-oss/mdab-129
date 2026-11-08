@@ -213,6 +213,20 @@ export async function processStatusButton(callbackQuery, context = {}) {
     return true;
   }
 
+  // Telegram has already recompressed Photo uploads before the bot sees
+  // them. Prevent a fake "HQ" result and protect the user's support quota.
+  // Re-upload as File/Document to preserve original pixels and dimensions.
+  if (isImage && Array.isArray(callbackQuery?.message?.photo) && callbackQuery.message.photo.length) {
+    await telegram('answerCallbackQuery', {
+      callback_query_id: callbackQuery.id,
+      text: 'Gambar Photo dah dikompres Telegram. Hantar semula sebagai File/Document untuk Premium+ HQ sebenar.',
+      show_alert: true,
+    }).catch(() => {});
+    await sendMessage(chatId,
+      '⚠️ Gambar ini dihantar sebagai Photo, jadi Telegram sudah compress sebelum MediaX terima. Detail yang hilang tak boleh dipulihkan.\n\nUntuk gambar Premium+ HQ: buka 📎 Attachment → File → pilih gambar asal (JPG/PNG/WEBP), kemudian tekan Premium+ HQ. Fungsi ini simpan resolusi dan kualiti asal tanpa encode semula.').catch(() => {});
+    return true;
+  }
+
   const claimed = await claimMediaButtons(callbackQuery);
   if (!claimed) {
     await telegram('answerCallbackQuery', {
@@ -294,7 +308,7 @@ export async function processStatusButton(callbackQuery, context = {}) {
         return true;
       }
       await progress.complete();
-      await sendDocumentFileUpload(chatId, prepared.filePath, await statusImageCaption(), 'status-hq.jpg');
+      await sendDocumentFileUpload(chatId, prepared.filePath, await statusImageCaption(), prepared.fileName || 'status-hq.jpg');
       premiumImageCompleted = true;
     } else {
       prepared = await localMediaLane(async () => {

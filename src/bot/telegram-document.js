@@ -35,8 +35,10 @@ export async function sendDocumentFileUpload(chatId, filePath, caption = '', fil
   const extension = path.extname(filePath).replace(/^\./, '').toLowerCase() || 'bin';
   const contentType = extension === 'jpg' || extension === 'jpeg'
     ? 'image/jpeg'
-    : extension === 'png'
-      ? 'image/png'
+    : extension === 'png' ? 'image/png'
+      : extension === 'webp' ? 'image/webp'
+      : extension === 'bmp' ? 'image/bmp'
+      : extension === 'tiff' || extension === 'tif' ? 'image/tiff'
       : 'application/octet-stream';
   const form = new FormData();
   form.set('chat_id', String(chatId));

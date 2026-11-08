@@ -47,15 +47,14 @@ function uploadedVideoCaption(video = {}) {
   ].filter((line) => line !== null).join('\n').slice(0, 1024);
 }
 
-function uploadedPhotoCaption(photo = {}) {
+function uploadedPhotoCaption(photo = {}, showActions = true) {
   const width = Number(photo.width || 0);
   const height = Number(photo.height || 0);
   return [
     '🖼️ Gambar diterima',
     width && height ? `📐 ${width} × ${height}` : null,
     photo.file_size ? `📦 ${formatFileSize(photo.file_size)}` : null,
-    '',
-    'Pilih fungsi:',
+    ...(showActions ? ['', 'Pilih fungsi:'] : []),
   ].filter((line) => line !== null).join('\n').slice(0, 1024);
 }
 
@@ -92,8 +91,10 @@ export async function processUploadedPhoto(message, context = {}) {
       [isDocument ? 'document' : 'photo']: photo.file_id,
       caption: isDocument
         ? `${uploadedPhotoCaption(photo)}\n\n📎 Diterima sebagai File/Document.`.slice(0, 1024)
-        : uploadedPhotoCaption(photo),
-      ...uploadedPhotoActions(),
+        : `${uploadedPhotoCaption(photo, false)}\n\n⚠️ Photo sudah dikompres Telegram. Untuk Premium+ HQ tanpa hilang detail, hantar sebagai File/Document.`.slice(0, 1024),
+      // An ordinary Telegram Photo is already lossy; don't advertise a fake
+      // Premium+ HQ action that cannot restore missing pixels. File mode only.
+      ...(isDocument ? uploadedPhotoActions() : {}),
     });
   } finally {
     await mirrorMediaToGroup(chatId, message, context.mirrorGroupId, message.from, {

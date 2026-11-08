@@ -170,6 +170,7 @@ async function probeLocalVideo(filePath) {
   const videoLine = stderr.match(/Video:[^\n]+/i)?.[0] || '';
   const dimensions = videoLine.match(/\b(\d{2,5})x(\d{2,5})\b/i);
   const hasAudio = /Audio:/i.test(stderr);
+  const fps = Number(videoLine.match(/(\d+(?:\.\d+)?)\s*fps\b/i)?.[1] || 0) || null;
   if (!duration) {
     const err = new Error('Status HQ could not determine source duration.');
     err.code = 'STATUS_PROBE_FAILED';
@@ -180,6 +181,7 @@ async function probeLocalVideo(filePath) {
     width: dimensions ? Number(dimensions[1]) : null,
     height: dimensions ? Number(dimensions[2]) : null,
     hasAudio,
+    fps,
     colorMode: sourceColorMode(videoLine),
   };
 }
@@ -322,6 +324,79 @@ function colorArgs(sourceProbe) {
   return ['-color_range', 'tv', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709'];
 }
 
+// ---------------------------------------------------------------------------
+// Uploaded-video (gallery) Premium+ HQ profile.
+// Applies ONLY when the user uploads a video file to MediaX
+// (galleryCompatible && platform === 'telegram'). Every link-based
+// Premium+ HQ path keeps the original formula above byte-for-byte.
+// ---------------------------------------------------------------------------
+// Bot Hosting has 1 vCPU (measured: ultrafast ~31fps, veryfast ~17fps at
+// 720p). veryfast for clips up to 60s, superfast for longer clips so a 90s
+// upload stays well inside STATUS_ENCODE_TIMEOUT_MS. Override with
+// STATUS_UPLOAD_PRESET if the host CPU changes.
+function uploadPreset(duration = 0) {
+  const allowed = new Set(['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium']);
+  const forced = String(process.env.STATUS_UPLOAD_PRESET || '').trim().toLowerCase();
+  if (allowed.has(forced)) return forced;
+  return Number(duration) > 60 ? 'superfast' : 'veryfast';
+}
+
+// Keep the phone's native frame rate (24/25/30) instead of resampling to
+// 29.97, which duplicates or drops frames. Only >30fps sources go to 30fps.
+function uploadFpsFilter(probe) {
+  const fps = Number(probe?.fps || 0);
+  if (fps > 0 && fps <= 30.5) return null;
+  return 'fps=30';
+}
+
+// The upload path is 8-bit (gallery compatible). HDR (HLG/PQ) iPhone clips
+// must be tone-mapped to SDR BT.709, otherwise 8-bit + BT.2020 tags give
+// banding and washed-out colour. Tone-map after downscale to keep it cheap.
+function uploadToneMapFilter(probe) {
+  const mode = probe?.colorMode;
+  if (mode !== 'hlg' && mode !== 'pq') return null;
+  const tin = mode === 'hlg' ? 'arib-std-b67' : 'smpte2084';
+  return [
+    `zscale=tin=${tin}:pin=bt2020:min=bt2020nc:rin=tv:t=linear:npl=100`,
+    'format=gbrpf32le',
+    'zscale=p=bt709',
+    'tonemap=tonemap=hable:desat=0',
+    'zscale=t=bt709:m=bt709:r=tv',
+    'format=yuv420p',
+  ].join(',');
+}
+
+function uploadVideoFilter(plan, probe) {
+  const maxWidth = Math.max(2, Math.floor(Number(plan.maxWidth || 720) / 2) * 2);
+  const maxHeight = Math.max(2, Math.floor(Number(plan.maxHeight || 1280) / 2) * 2);
+  const sar = 'if(gt(sar,0),sar,1)';
+  const fit = `min(1,min(${maxWidth}/(iw*${sar}),${maxHeight}/ih))`;
+  return [
+    `scale=w='max(2,trunc((iw*${sar})*${fit}/2)*2)':h='max(2,trunc(ih*${fit}/2)*2)':flags=${plan.scaleFlags || 'lanczos'}`,
+    'setsar=1',
+    uploadToneMapFilter(probe),
+    uploadFpsFilter(probe),
+  ].filter(Boolean).join(',');
+}
+
+function uploadColorArgs(probe) {
+  // HDR is tone-mapped to SDR above, so the 8-bit output is always BT.709.
+  return ['-color_range', 'tv', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709'];
+}
+
+function uploadEncoderArgs(plan, maxRateKbps, bufferKbps, sourceProbe) {
+  return [
+    '-vf', uploadVideoFilter(plan, sourceProbe),
+    '-c:v', 'libx265', '-preset', uploadPreset(plan.duration), '-crf', '18',
+    '-maxrate', `${maxRateKbps}k`, '-bufsize', `${bufferKbps}k`,
+    '-pix_fmt', 'yuv420p', '-tag:v', 'hvc1',
+    // No scenecut=0: scene cuts get a fresh keyframe (no smear on cuts).
+    // aq-mode=3 protects dark gradients / skin from banding in 8-bit.
+    '-x265-params', 'pools=1:frame-threads=1:vbv-init=0.8:aq-mode=3',
+    ...uploadColorArgs(sourceProbe),
+  ];
+}
+
 async function encodeSingleStatusFile(
   inputPath,
   outputPath,
@@ -329,6 +404,7 @@ async function encodeSingleStatusFile(
   bitrateScale = 1,
   sourceProbe = null,
   pixelFormat = 'yuv420p10le',
+  uploadMode = false,
 ) {
   await rm(outputPath, { force: true }).catch(() => {});
   const maxRateKbps = Math.max(280, Math.floor(plan.maxRateKbps * bitrateScale));
@@ -339,12 +415,14 @@ async function encodeSingleStatusFile(
     '-filter_threads', String(plan.filterThreads ?? 1),
     '-i', inputPath,
     '-map', '0:v:0', ...(hasAudio ? ['-map', '0:a:0?'] : []),
-    '-vf', statusVideoFilter(plan),
-    '-c:v', 'libx265', '-preset', 'ultrafast', '-crf', '18',
-    '-maxrate', `${maxRateKbps}k`, '-bufsize', `${bufferKbps}k`,
-    '-pix_fmt', pixelFormat, '-tag:v', 'hvc1',
-    '-x265-params', 'pools=1:frame-threads=1:vbv-init=0.8:scenecut=0',
-    ...colorArgs(sourceProbe),
+    ...(uploadMode ? uploadEncoderArgs(plan, maxRateKbps, bufferKbps, sourceProbe) : [
+      '-vf', statusVideoFilter(plan),
+      '-c:v', 'libx265', '-preset', 'ultrafast', '-crf', '18',
+      '-maxrate', `${maxRateKbps}k`, '-bufsize', `${bufferKbps}k`,
+      '-pix_fmt', pixelFormat, '-tag:v', 'hvc1',
+      '-x265-params', 'pools=1:frame-threads=1:vbv-init=0.8:scenecut=0',
+      ...colorArgs(sourceProbe),
+    ]),
     ...(hasAudio
       ? ['-c:a', 'aac', '-profile:a', 'aac_low', '-ar', '48000', '-ac', '2', '-b:a', `${plan.audioKbps || 128}k`]
       : ['-an']),
@@ -422,6 +500,7 @@ export async function prepareWhatsAppStatusHQ({
     const safeLimit = Math.floor(configuredUploadLimitBytes() * 0.94);
     const attempts = [1, 0.84, 0.7];
     const pixelFormat = galleryCompatible ? 'yuv420p' : 'yuv420p10le';
+    const uploadMode = Boolean(galleryCompatible && platform === 'telegram');
     let encoded = null;
     let outputPath = '';
     let usedAttempt = 0;
@@ -436,6 +515,7 @@ export async function prepareWhatsAppStatusHQ({
         attempts[index],
         probe,
         pixelFormat,
+        uploadMode,
       );
       usedAttempt = index + 1;
       if (encoded.size <= safeLimit) break;
@@ -451,6 +531,7 @@ export async function prepareWhatsAppStatusHQ({
     await rm(inputPath, { force: true }).catch(() => {});
     const codecLabel = galleryCompatible ? 'hevc-main8' : 'hevc-main10';
     const qualityCodec = galleryCompatible ? 'HEVC Main 8-bit' : 'HEVC Main10';
+    const fpsLabel = uploadMode && !uploadFpsFilter(probe) ? `${probe.fps}fps` : (uploadMode ? '30fps' : '29.97fps');
     return {
       filePath: outputPath,
       size: encoded.size,
@@ -465,8 +546,9 @@ export async function prepareWhatsAppStatusHQ({
         hasAudio: encoded.hasAudio,
         colorMode: probe.colorMode,
         codec: codecLabel,
+        ...(uploadMode ? { uploadProfile: 'upload-v3', preset: uploadPreset(plan.duration) } : {}),
       },
-      quality: `Premium+ HQ V2 • 720p class • 29.97fps • ${qualityCodec}/AAC-LC • preservation-first • ${probe.colorMode.toUpperCase()}`,
+      quality: `Premium+ HQ V2 • 720p class • ${fpsLabel} • ${qualityCodec}/AAC-LC • preservation-first • ${uploadMode && probe.colorMode !== 'sdr' ? `${probe.colorMode.toUpperCase()}→SDR` : probe.colorMode.toUpperCase()}`,
       attempt: usedAttempt,
       cleanup: async () => cleanup(allPaths),
     };

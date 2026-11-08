@@ -5,6 +5,9 @@
 // Native media capped at 20 MB; image Documents >20 MB routed to the MTProto
 // status_hq_image worker (2026-11-04). Encoders/presets unchanged.
 // Encoder, audio and worker pipelines retain their existing quality baseline.
+// Uploaded-video Premium+ HQ (gallery only) upgraded to upload-v3 profile
+// (real x265 preset, scene cuts, aq-mode 3, native fps, HDR->SDR) 2026-11-09.
+// Link-based Premium+ HQ formula unchanged.
 // It checks byte-identical implementations; it never changes media files or presets.
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -15,10 +18,10 @@ const expected = {
   "scripts/apple_live_photo_pair.swift": "f072314bc088dbdc870a27b54652926ffc3b4377",
   "scripts/apple_live_worker.py": "b4ec9f400b11933e5f1fd5019c1baee7f6c8fb25",
   "scripts/heavy_status_android_worker.py": "d4d19ea1e0b46e229a5f6ea43a3df5938dd83ee4",
-  "scripts/heavy_status_worker.py": "846f51dfc0599c8a3e15a3372e25fb11b5b11a57",
+  "scripts/heavy_status_worker.py": "40d7c87cd212ad5e7179de8b5758d9440977bb31",
   "src/hq-lab-premium-plus.js": "f138de3426d313e7578cd77df803443eb68db0b0",
   "src/hq-lab.js": "6b039fb0f99b7f9bd094106db3fa8c0d1af7849f",
-  "src/status-hq.js": "a9cb6e2bd80805f99844d0d6fc1b325e4fbda750",
+  "src/status-hq.js": "bdab24eea318257d6c0feae08cd3571d7aeb7447",
   "src/status-hq-android.js": "58adb78c9971463a5eaecbbfe002f0529d1fa74d",
   "src/status-image-hq.js": "d6bd4ddf40e34ed683f7fa6f9b5ef435b7809821",
   "src/live-wallpaper.js": "df08317783226f23228ec46eb3dae123319b502a",

@@ -281,12 +281,22 @@ function premiumV2Dimensions(probe) {
   return { maxWidth: 720, maxHeight: 1280 };
 }
 
-function chooseEncodePlan(probe) {
+// Uploaded-video only: video bitrate ceiling, tunable from Bot Hosting env
+// STATUS_UPLOAD_MAXRATE_KBPS (default 5000 = same as before, range 2000-12000).
+// Link Premium+ always keeps the fixed 5000 kbps ceiling.
+export function uploadMaxrateCapKbps() {
+  const value = Math.floor(Number(process.env.STATUS_UPLOAD_MAXRATE_KBPS || 5000));
+  if (!Number.isFinite(value) || value <= 0) return 5000;
+  return Math.max(2000, Math.min(12000, value));
+}
+
+function chooseEncodePlan(probe, uploadMode = false) {
   const duration = Math.max(1, Number(probe.duration || 0));
   const audioKbps = probe.hasAudio ? 128 : 0;
   const targetBytes = targetOutputBytes();
   const totalKbps = Math.max(500, Math.floor((targetBytes * 8 / duration / 1000) * 0.92));
-  const maxRateKbps = Math.max(300, Math.min(5000, totalKbps - audioKbps - 80));
+  const rateCeiling = uploadMode ? uploadMaxrateCapKbps() : 5000;
+  const maxRateKbps = Math.max(300, Math.min(rateCeiling, totalKbps - audioKbps - 80));
   return {
     targetBytes,
     audioKbps,
@@ -496,11 +506,11 @@ export async function prepareWhatsAppStatusHQ({
     const recovered = await recoverAudioSource({ inputPath, sourceUrl, platform, audio, base, allPaths });
     inputPath = recovered.inputPath;
     const probe = recovered.probe;
-    const plan = chooseEncodePlan(probe);
+    const uploadMode = Boolean(galleryCompatible && platform === 'telegram');
+    const plan = chooseEncodePlan(probe, uploadMode);
     const safeLimit = Math.floor(configuredUploadLimitBytes() * 0.94);
     const attempts = [1, 0.84, 0.7];
     const pixelFormat = galleryCompatible ? 'yuv420p' : 'yuv420p10le';
-    const uploadMode = Boolean(galleryCompatible && platform === 'telegram');
     let encoded = null;
     let outputPath = '';
     let usedAttempt = 0;

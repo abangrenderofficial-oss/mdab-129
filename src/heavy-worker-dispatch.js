@@ -7,6 +7,12 @@ function githubToken() {
   return String(process.env.GITHUB_ACTIONS_TOKEN || process.env.GH_ACTIONS_TOKEN || '').trim();
 }
 
+function uploadMaxrateKbps() {
+  const value = Math.floor(Number(process.env.STATUS_UPLOAD_MAXRATE_KBPS || 5000));
+  if (!Number.isFinite(value) || value <= 0) return 5000;
+  return Math.max(2000, Math.min(12000, value));
+}
+
 export function heavyWorkerConfigured() {
   return Boolean(githubToken());
 }
@@ -83,6 +89,11 @@ export async function dispatchHeavyMediaJob({
         progress_message_id: String(Math.max(0, Number(progressMessageId) || 0)),
         source_message_id: String(Math.max(0, Number(sourceMessageId) || 0)),
         completion_callback_url: String(completionCallbackUrl || '').trim(),
+        // Uploaded-video Premium+ HQ only: forward the Bot Hosting bitrate
+        // ceiling so local and heavy worker use the same value.
+        ...(action === 'status_hq' && sourceKind === 'gallery'
+          ? { upload_maxrate_kbps: String(uploadMaxrateKbps()) }
+          : {}),
       },
     }),
     signal: AbortSignal.timeout(Number(process.env.GITHUB_WORKER_DISPATCH_TIMEOUT_MS || 12000)),

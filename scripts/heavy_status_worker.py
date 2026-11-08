@@ -26,6 +26,16 @@ IS_GALLERY_UPLOAD = SOURCE_KIND == 'gallery'
 UPLOAD_PRESET = os.environ.get('STATUS_UPLOAD_HEAVY_PRESET', 'medium').strip().lower() or 'medium'
 
 
+def upload_maxrate_cap():
+    try:
+        value = int(float(os.environ.get('STATUS_UPLOAD_MAXRATE_KBPS', '5000') or 5000))
+    except ValueError:
+        return 5000
+    if value <= 0:
+        return 5000
+    return max(2000, min(12000, value))
+
+
 def require_config():
     missing = []
     if not BOT_TOKEN:
@@ -206,7 +216,7 @@ def status_plan(probe, android=False):
     target_bytes = int(43.5 * MB)
     audio_kbps = 128
     total_kbps = int((target_bytes * 8 / duration / 1000) * 0.90)
-    max_video_kbps = 2800 if android else 5000
+    max_video_kbps = 2800 if android else (upload_maxrate_cap() if IS_GALLERY_UPLOAD else 5000)
     video_kbps = max(220, min(max_video_kbps, total_kbps - audio_kbps - 70))
     return {
         'video_kbps': video_kbps,

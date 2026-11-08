@@ -352,11 +352,23 @@ function uploadPreset(duration = 0) {
 }
 
 // Keep the phone's native frame rate (24/25/30) instead of resampling to
-// 29.97, which duplicates or drops frames. Only >30fps sources go to 30fps.
-function uploadFpsFilter(probe) {
+// 29.97, which duplicates or drops frames. Higher rates drop by a whole
+// factor so motion stays even (50->25, 59.94->29.97, 60->30, 120->30).
+function uploadTargetFps(probe) {
   const fps = Number(probe?.fps || 0);
   if (fps > 0 && fps <= 30.5) return null;
-  return 'fps=30';
+  if (fps > 30.5) {
+    for (let n = 2; n <= 8; n += 1) {
+      const target = fps / n;
+      if (target >= 23.5 && target <= 30.5) return Math.round(target * 1000) / 1000;
+    }
+  }
+  return 30;
+}
+
+function uploadFpsFilter(probe) {
+  const target = uploadTargetFps(probe);
+  return target === null ? null : `fps=${target}`;
 }
 
 // The upload path is 8-bit (gallery compatible). HDR (HLG/PQ) iPhone clips
@@ -541,7 +553,7 @@ export async function prepareWhatsAppStatusHQ({
     await rm(inputPath, { force: true }).catch(() => {});
     const codecLabel = galleryCompatible ? 'hevc-main8' : 'hevc-main10';
     const qualityCodec = galleryCompatible ? 'HEVC Main 8-bit' : 'HEVC Main10';
-    const fpsLabel = uploadMode && !uploadFpsFilter(probe) ? `${probe.fps}fps` : (uploadMode ? '30fps' : '29.97fps');
+    const fpsLabel = uploadMode ? `${uploadTargetFps(probe) ?? probe.fps}fps` : '29.97fps';
     return {
       filePath: outputPath,
       size: encoded.size,

@@ -3,6 +3,7 @@ import math
 import os
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 import requests
@@ -305,11 +306,25 @@ def upload_tonemap_filter(probe):
     ])
 
 
-def upload_fps_filter(probe):
-    fps = float(probe.get('fps') or 0)
+def upload_target_fps(fps):
+    # <=30fps: keep native. Higher: drop by a whole factor so motion stays even
+    # (50 -> 25, 59.94 -> 29.97, 60 -> 30, 120 -> 30); otherwise 30.
+    fps = float(fps or 0)
     if 0 < fps <= 30.5:
         return None
-    return 'fps=30'
+    if fps > 30.5:
+        for n in range(2, 9):
+            target = fps / n
+            if 23.5 <= target <= 30.5:
+                return round(target, 3)
+    return 30
+
+
+def upload_fps_filter(probe):
+    target = upload_target_fps(probe.get('fps'))
+    if target is None:
+        return None
+    return f'fps={target:g}'
 
 
 def upload_status_cmd(input_path, output_path, probe, maxrate, bufsize, audio_kbps):
@@ -455,19 +470,66 @@ def send_live_photo(video_path, photo_path):
         )
 
 
+DOWNLOAD_ATTEMPTS = 3
+
+
+def download_progress_callback():
+    # Map MTProto download progress to the user's bar (5% -> 30%) so a large
+    # upload no longer looks frozen at 5% while Telegram streams the file.
+    state = {'last': 0.0, 'pct': 5}
+
+    def callback(current, total):
+        if not total:
+            return
+        now = time.monotonic()
+        pct = 5 + int(25 * min(1.0, current / float(total)))
+        if pct > state['pct'] and now - state['last'] >= 4:
+            state['last'] = now
+            state['pct'] = pct
+            set_progress(pct)
+
+    return callback
+
+
+def download_once(path, attempt):
+    # Fresh client per attempt: a stuck media DC session is not reused.
+    app = Client(
+        f'heavy_media_worker_{attempt}', api_id=API_ID, api_hash=API_HASH,
+        bot_token=BOT_TOKEN, in_memory=True,
+    )
+    progress = download_progress_callback()
+    with app:
+        downloaded = None
+        try:
+            downloaded = app.download_media(VIDEO_FILE_ID, file_name=str(path), progress=progress)
+        except Exception as exc:
+            if not SOURCE_MESSAGE_ID:
+                raise
+            print(f'file_id download failed ({type(exc).__name__}: {exc}); trying source message', flush=True)
+        if not downloaded and SOURCE_MESSAGE_ID:
+            message = app.get_messages(CHAT_ID, SOURCE_MESSAGE_ID)
+            downloaded = app.download_media(message, file_name=str(path), progress=progress)
+        return downloaded
+
+
 def download_source(path):
     set_progress(5)
-    app = Client('heavy_media_worker', api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True)
-    with app:
-        downloaded = app.download_media(VIDEO_FILE_ID, file_name=str(path))
-        if not downloaded and SOURCE_MESSAGE_ID:
-            try:
-                message = app.get_messages(CHAT_ID, SOURCE_MESSAGE_ID)
-                downloaded = app.download_media(message, file_name=str(path))
-            except Exception as exc:
-                print(f'message fallback failed: {exc}', flush=True)
-        if not downloaded:
-            raise RuntimeError('MTProto tak dapat download video Telegram ini.')
+    last_error = None
+    for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+        try:
+            if path.exists():
+                path.unlink()
+            downloaded = download_once(path, attempt)
+            if downloaded and path.exists() and path.stat().st_size > 0:
+                break
+            last_error = RuntimeError('MTProto tak dapat download video Telegram ini.')
+        except Exception as exc:
+            last_error = exc
+        print(f'download attempt {attempt}/{DOWNLOAD_ATTEMPTS} failed: {type(last_error).__name__}: {last_error}', flush=True)
+        if attempt < DOWNLOAD_ATTEMPTS:
+            time.sleep(5 * attempt)
+    else:
+        raise RuntimeError(f'MTProto download gagal selepas {DOWNLOAD_ATTEMPTS} cubaan: {last_error}')
     if not path.exists() or path.stat().st_size <= 0:
         raise RuntimeError('Video download kosong.')
     if path.stat().st_size > MAX_INPUT_BYTES:

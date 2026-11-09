@@ -4,6 +4,7 @@ import { resolveInstagramProviderVideo } from '../instagram-provider-fallback.js
 import { prepareYouTubeTelegramUpload } from '../youtube-upload.js';
 import { prepareTikTokTelegramRescue } from '../tiktok-rescue.js';
 import { requiresOversizeTikTokWorker, dispatchOversizeTikTokWorker } from '../tiktok-oversize-worker.js';
+import { isAudioOnlyTikTok, dispatchHiddenTikTokWorker } from '../tiktok-hidden-video-worker.js';
 import { createRelayUrl } from '../relay.js';
 import { platformLabel } from '../platform.js';
 import { isJobFenceActive } from '../recovery.js';
@@ -270,6 +271,24 @@ export async function processStandardDownload({ chatId, url, platform, context =
     } catch (error) {
       console.error('[downloader/oversize-tiktok] worker dispatch failed:', error?.message);
       await sendMessage(chatId, '❌ Video TikTok ini terlalu besar untuk server bot dan worker tambahan belum dapat dimulakan. Cuba link lain atau laporkan kepada admin.').catch(() => {});
+      return { handled: true, slideshow: false, externalWorker: false };
+    }
+  }
+
+  // TikTok link that resolved to audio only (promoted/ad posts hide the MP4
+  // and TikWM blocks this host). Never send an MP3 as a "video": hand it to a
+  // separate GitHub runner that fetches the real MP4. Normal links unchanged.
+  if (platform === 'tiktok' && isAudioOnlyTikTok(candidates)) {
+    if (!active(fence)) return { handled: true, cancelled: true };
+    const sourceUrl = media?.canonicalUrl || url;
+    try {
+      await dispatchHiddenTikTokWorker({ chatId, sourceUrl, replyMarkup: mediaActionButtons(sourceUrl).reply_markup });
+      console.info('[downloader/tiktok-hidden] audio-only result; dispatched hidden-video worker');
+      await sendMessage(chatId, '🎞️ Video TikTok ini perlu cara khas untuk dimuat turun. Sedang diproses, video akan dihantar di sini sekejap lagi.').catch(() => {});
+      return { handled: true, slideshow: false, externalWorker: true };
+    } catch (error) {
+      console.error('[downloader/tiktok-hidden] worker dispatch failed:', error?.message);
+      await sendMessage(chatId, '❌ Video TikTok ini tak dapat dimuat turun sekarang. Cuba semula kemudian.').catch(() => {});
       return { handled: true, slideshow: false, externalWorker: false };
     }
   }

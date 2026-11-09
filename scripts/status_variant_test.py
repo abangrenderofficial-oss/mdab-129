@@ -63,6 +63,7 @@ def main():
     }
     keys = [k.strip().upper() for k in os.environ.get('VARIANTS', 'A,B,C').split(',') if k.strip()]
     variants = []
+    prod = 'P' in keys
     for k in keys:
         if k not in all_variants:
             continue
@@ -77,9 +78,15 @@ def main():
         w.download_source(src)
         probe = w.probe_video(src)
         print(f'probe={probe}', flush=True)
+        if prod:
+            variants.insert(0, ('P', 'prod', 0, False, 1280, 'FORMULA AKHIR (worker sebenar, upload-v4 H.264)', False, False))
         for key, codec, mb, denoise, height, label, tuned, sharpen in variants:
             out = tmp / f'TEST-{key}.mp4'
-            kbps = encode(src, out, probe, codec, mb, denoise=denoise, height=height, sharpen=sharpen, tuned=tuned)
+            if codec == 'prod':
+                w.encode_status(src, out, probe, android=False)
+                kbps = int(out.stat().st_size * 8 / max(1.0, probe['duration']) / 1000) - AUDIO_KBPS
+            else:
+                kbps = encode(src, out, probe, codec, mb, denoise=denoise, height=height, sharpen=sharpen, tuned=tuned)
             meta = w.probe_video(out)
             size = out.stat().st_size
             caption = (

@@ -24,7 +24,7 @@ MAX_INPUT_BYTES = MAX_INPUT_MB * MB
 BOT_API_BASE = os.environ.get('TELEGRAM_API_BASE_URL', 'https://api.telegram.org').rstrip('/')
 SOURCE_KIND = os.environ.get('HEAVY_SOURCE_KIND', 'link').strip().lower()
 IS_GALLERY_UPLOAD = SOURCE_KIND == 'gallery'
-UPLOAD_PRESET = os.environ.get('STATUS_UPLOAD_HEAVY_PRESET', 'medium').strip().lower() or 'medium'
+UPLOAD_PRESET_H264 = os.environ.get('STATUS_UPLOAD_HEAVY_PRESET', 'slow').strip().lower() or 'slow'
 
 
 def upload_maxrate_cap():
@@ -328,18 +328,24 @@ def upload_fps_filter(probe):
 
 
 def upload_status_cmd(input_path, output_path, probe, maxrate, bufsize, audio_kbps):
-    filters = [premium_v2_scale_filter(probe), 'setsar=1', upload_tonemap_filter(probe), upload_fps_filter(probe)]
+    # Upload-v4 (WhatsApp-tuned): WhatsApp Status always re-encodes to
+    # 720x1280 ~2.2 Mbps, so give it a clean H.264 720p source at ~5 Mbps
+    # with light sharpening + film tuning (best result in owner A/B tests).
+    filters = [
+        premium_v2_scale_filter(probe), 'setsar=1', upload_tonemap_filter(probe),
+        'unsharp=5:5:0.55:5:5:0.0', upload_fps_filter(probe),
+    ]
     return [
         'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', '-nostdin',
         '-i', str(input_path), '-map', '0:v:0', '-map', '0:a:0?',
         '-vf', ','.join(f for f in filters if f),
-        '-c:v', 'libx265', '-preset', UPLOAD_PRESET, '-crf', '18',
+        '-c:v', 'libx264', '-preset', UPLOAD_PRESET_H264, '-tune', 'film', '-crf', '18',
         '-maxrate', f'{maxrate}k', '-bufsize', f'{bufsize}k',
-        '-pix_fmt', 'yuv420p', '-tag:v', 'hvc1',
-        '-x265-params', 'vbv-init=0.8:aq-mode=3',
+        '-profile:v', 'high', '-level:v', '3.1', '-pix_fmt', 'yuv420p',
+        '-x264-params', 'aq-mode=3:psy-rd=1.0,0.15',
         '-color_range', 'tv', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709',
         '-c:a', 'aac', '-profile:a', 'aac_low', '-ar', '48000', '-ac', '2', '-b:a', f'{audio_kbps}k',
-        '-brand', 'isom', '-movflags', '+faststart', '-metadata:s:v:0', 'rotate=0', '-map_metadata', '-1',
+        '-movflags', '+faststart', '-metadata:s:v:0', 'rotate=0', '-map_metadata', '-1',
         '-threads', '0', str(output_path),
     ]
 

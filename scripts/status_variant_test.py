@@ -12,15 +12,16 @@ MB = 1024 * 1024
 AUDIO_KBPS = 128
 
 
-def encode(src, out, probe, codec, total_mb, denoise=False, height=1280):
+def encode(src, out, probe, codec, total_mb, denoise=False, height=1280, sharpen=False, tuned=False):
     dur = max(1.0, probe['duration'])
     video_kbps = max(300, int(total_mb * 8 * 1_000_000 / dur / 1000 * 0.96) - AUDIO_KBPS)
     scale = w.premium_v2_scale_filter(probe)
     if height != 1280:
         scale = scale.replace('1280', str(height)).replace('720', str(height * 9 // 16))
+    sharp = 'unsharp=5:5:0.55:5:5:0.0' if sharpen else None
     filters = [
         'hqdn3d=2:1.5:4:3' if denoise else None,
-        scale, 'setsar=1', w.upload_tonemap_filter(probe), w.upload_fps_filter(probe),
+        scale, 'setsar=1', w.upload_tonemap_filter(probe), sharp, w.upload_fps_filter(probe),
     ]
     vf = ','.join(f for f in filters if f)
     common_v = ['-vf', vf, '-pix_fmt', 'yuv420p',
@@ -30,8 +31,13 @@ def encode(src, out, probe, codec, total_mb, denoise=False, height=1280):
     tail = ['-movflags', '+faststart', '-map_metadata', '-1', str(out)]
     base = ['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', '-nostdin', '-i', str(src), '-map', '0:v:0']
     if codec == 'h264':
-        x264 = ['-x264-params', 'aq-mode=3:aq-strength=1.0:deblock=1,1'] if denoise else []
-        venc = ['-c:v', 'libx264', '-preset', 'slow', '-profile:v', 'high', '-level:v', '3.1', *rate, *x264,
+        if denoise:
+            x264 = ['-x264-params', 'aq-mode=3:aq-strength=1.0:deblock=1,1']
+        elif tuned:
+            x264 = ['-tune', 'film', '-x264-params', 'aq-mode=3:psy-rd=1.0,0.15']
+        else:
+            x264 = []
+        venc = ['-c:v', 'libx264', '-preset', 'slow', '-profile:v', 'high', '-level:v', '4.0' if height > 1280 else '3.1', *rate, *x264,
                 '-passlogfile', str(out) + '.log']
         w.run(base + common_v + venc + ['-pass', '1', '-an', '-f', 'mp4', os.devnull], timeout=1500)
         w.run(base + ['-map', '0:a:0?'] + common_v + venc + ['-pass', '2'] + audio + tail, timeout=1500)
@@ -51,18 +57,28 @@ def main():
         'C': ('h264', 9.0, False, 1280, 'H.264 720p ~9MB (lebih sasaran)'),
         'D': ('h264', 5.3, True, 1280, 'H.264 720p ~5.3MB + buang noise malam + AQ gelap'),
         'E': ('h264', 5.3, True, 960, 'H.264 540p ~5.3MB + buang noise (bitrate lebih per piksel)'),
+        'F': ('h264', 9.0, False, 1280, 'H.264 720p ~9MB + sharpen ringan + tune film', True),
+        'G': ('h264', 9.0, False, 1920, 'H.264 1080p ~9MB + tune film (tiada resize loss)', True, False),
     }
     keys = [k.strip().upper() for k in os.environ.get('VARIANTS', 'A,B,C').split(',') if k.strip()]
-    variants = [(k, *all_variants[k]) for k in keys if k in all_variants]
+    variants = []
+    for k in keys:
+        if k not in all_variants:
+            continue
+        v = all_variants[k]
+        codec, mb, denoise, height, label = v[:5]
+        tuned = v[5] if len(v) > 5 else False
+        sharpen = v[6] if len(v) > 6 else tuned
+        variants.append((k, codec, mb, denoise, height, label, tuned, sharpen))
     with tempfile.TemporaryDirectory(prefix='status-variant-') as tmp:
         tmp = Path(tmp)
         src = tmp / 'source.bin'
         w.download_source(src)
         probe = w.probe_video(src)
         print(f'probe={probe}', flush=True)
-        for key, codec, mb, denoise, height, label in variants:
+        for key, codec, mb, denoise, height, label, tuned, sharpen in variants:
             out = tmp / f'TEST-{key}.mp4'
-            kbps = encode(src, out, probe, codec, mb, denoise=denoise, height=height)
+            kbps = encode(src, out, probe, codec, mb, denoise=denoise, height=height, sharpen=sharpen, tuned=tuned)
             meta = w.probe_video(out)
             size = out.stat().st_size
             caption = (

@@ -25,7 +25,7 @@ BOT_API_BASE = os.environ.get('TELEGRAM_API_BASE_URL', 'https://api.telegram.org
 SOURCE_KIND = os.environ.get('HEAVY_SOURCE_KIND', 'link').strip().lower()
 IS_GALLERY_UPLOAD = SOURCE_KIND == 'gallery'
 UPLOAD_PRESET_H264 = os.environ.get('STATUS_UPLOAD_HEAVY_PRESET', 'slow').strip().lower() or 'slow'
-UPLOAD_DENOISE = os.environ.get('STATUS_UPLOAD_DENOISE', '0').strip().lower() in ('1', 'true', 'yes', 'on')
+UPLOAD_DENOISE = os.environ.get('STATUS_UPLOAD_DENOISE', '1').strip().lower() in ('1', 'true', 'yes', 'on')
 
 
 def upload_maxrate_cap():
@@ -328,12 +328,27 @@ def upload_fps_filter(probe):
     return f'fps={target:g}'
 
 
+def upload_scale_filter():
+    # Decide portrait/landscape from the frame ffmpeg actually delivers
+    # (after auto-rotation), NOT from the coded size in probe. iPhone portrait
+    # clips are stored 1920x1080 + rotate=90; using probe dims shrank them
+    # into a 1280x720 box -> 404x720 output.
+    sq = 'lt(abs(iw-ih)/max(iw,ih),0.08)'
+    max_w = f'if({sq},1280,if(gte(iw,ih),1280,720))'
+    max_h = f'if({sq},1280,if(gte(iw,ih),720,1280))'
+    fit = f'min(1,min(({max_w})/iw,({max_h})/ih))'
+    return (
+        f"scale=w='max(2,trunc(iw*{fit}/2)*2)':"
+        f"h='max(2,trunc(ih*{fit}/2)*2)':flags=lanczos"
+    )
+
+
 def upload_status_cmd(input_path, output_path, probe, maxrate, bufsize, audio_kbps):
     # Upload-v4 (WhatsApp-tuned): WhatsApp Status always re-encodes to
     # 720x1280 ~2.2 Mbps, so give it a clean H.264 720p source at ~5 Mbps
     # with light sharpening + film tuning (best result in owner A/B tests).
     filters = [
-        premium_v2_scale_filter(probe), 'setsar=1', upload_tonemap_filter(probe),
+        upload_scale_filter(), 'setsar=1', upload_tonemap_filter(probe),
         # Light denoise (after downscale, cheap): camera grain no longer
         # eats WhatsApp's fixed ~2.2 Mbps; then sharpen real edges.
         'hqdn3d=1.5:1.0:3:2.25' if UPLOAD_DENOISE else None,

@@ -78,6 +78,10 @@ def main():
         w.download_source(src)
         probe = w.probe_video(src)
         print(f'probe={probe}', flush=True)
+        if os.environ.get('KEEP_DIR') and os.environ.get('KEEP_SOURCE') == '1':
+            import shutil
+            Path(os.environ['KEEP_DIR']).mkdir(parents=True, exist_ok=True)
+            shutil.copy(src, Path(os.environ['KEEP_DIR']) / 'source.mp4')
         if 'Q' in keys:
             variants.insert(0, ('Q', 'prod', 0, True, 1280, 'P + buang noise ringan (worker sebenar)', False, False))
         if prod:
@@ -105,6 +109,11 @@ def main():
                     'duration': str(max(1, int(round(meta.get('duration') or 1)))),
                 }, {'video': (f'TEST-{key}.mp4', handle, 'video/mp4')}, timeout=300)
             print(f'sent {key} size={size}', flush=True)
+            keep = os.environ.get('KEEP_DIR')
+            if keep:
+                Path(keep).mkdir(parents=True, exist_ok=True)
+                import shutil
+                shutil.copy(out, Path(keep) / out.name)
 
 
 if __name__ == '__main__':

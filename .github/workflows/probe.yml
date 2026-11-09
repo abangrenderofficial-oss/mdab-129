@@ -1,0 +1,17 @@
+name: probe-tiktok-ad
+on:
+  push:
+    branches: ['probe/tiktok-ad']
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe providers
+        run: |
+          URL='https://vt.tiktok.com/ZSpDeTFRR/'
+          echo "== TikWM"; curl -s -m 25 -A 'Mozilla/5.0' "https://www.tikwm.com/api/?url=$URL&hd=1" | python3 -c "import sys,json;j=json.load(sys.stdin);d=j.get('data') or {};print(j.get('code'),j.get('msg'),d.get('duration'),d.get('size'),d.get('hd_size'),str(d.get('play'))[:120],str(d.get('hdplay'))[:120],len(d.get('images') or []))" || echo tikwm-failed
+          pip -q install -U yt-dlp
+          echo "== yt-dlp default"; yt-dlp --no-warnings -J "$URL" | python3 -c "import sys,json;j=json.load(sys.stdin);print([(f['format_id'],f.get('vcodec'),f.get('acodec'),f.get('width'),f.get('height')) for f in j.get('formats',[])])" || true
+          echo "== yt-dlp app api"; yt-dlp --no-warnings -J --extractor-args "tiktok:app_info=7355728856979392262" "$URL" | python3 -c "import sys,json;j=json.load(sys.stdin);print([(f['format_id'],f.get('vcodec'),f.get('acodec'),f.get('width'),f.get('height')) for f in j.get('formats',[])])" || true
+          echo "== tikwm hd video head"; P=$(curl -s -m 25 -A 'Mozilla/5.0' "https://www.tikwm.com/api/?url=$URL&hd=1" | python3 -c "import sys,json;d=(json.load(sys.stdin).get('data') or {});print(d.get('hdplay') or d.get('play') or '')"); [ -n "$P" ] && curl -sL -m 40 -o v.mp4 "$P" && ls -la v.mp4 && ffprobe -v error -show_entries stream=codec_type,codec_name,width,height -of csv v.mp4 || true

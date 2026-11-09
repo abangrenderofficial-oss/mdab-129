@@ -100,6 +100,10 @@ def main():
             import shutil
             Path(os.environ['KEEP_DIR']).mkdir(parents=True, exist_ok=True)
             shutil.copy(src, Path(os.environ['KEEP_DIR']) / 'source.mp4')
+        if 'TDS' in keys:
+            variants.insert(0, ('TDS', 'statusdrop', 0, False, 1920, 'U + denoise temporal + sharpen sangat halus (lawan blur)', False, False))
+        if 'TD' in keys:
+            variants.insert(0, ('TD', 'statusdrop', 0, False, 1920, 'U + denoise TEMPORAL sahaja (tak sentuh ketajaman)', False, False))
         for vk, vlabel in [('V3', 'U + sharpen ringan + grain statik ringan'), ('V2', 'U + sharpen ringan sahaja'), ('V1', 'U + grain statik ringan sahaja')]:
             if vk in keys:
                 variants.insert(0, (vk, 'statusdrop', 0, False, 1920, vlabel, False, False))
@@ -115,7 +119,7 @@ def main():
         for key, codec, mb, denoise, height, label, tuned, sharpen in variants:
             out = tmp / f'TEST-{key}.mp4'
             if codec == 'statusdrop':
-                encode_statusdrop(src, out, {'V1': 'noise=alls=4:allf=u', 'V2': 'unsharp=5:5:0.4:5:5:0.0', 'V3': 'unsharp=5:5:0.4:5:5:0.0,noise=alls=3:allf=u'}.get(key, ''))
+                encode_statusdrop(src, out, {'V1': 'noise=alls=4:allf=u', 'V2': 'unsharp=5:5:0.4:5:5:0.0', 'V3': 'unsharp=5:5:0.4:5:5:0.0,noise=alls=3:allf=u', 'TD': 'hqdn3d=0:0:3:3', 'TDS': 'hqdn3d=0:0:3:3,unsharp=5:5:0.25:5:5:0.0'}.get(key, ''))
                 kbps = int(out.stat().st_size * 8 / 29 / 1000) - AUDIO_KBPS
             elif codec == 'prod-clean':
                 w.UPLOAD_ENHANCE = False

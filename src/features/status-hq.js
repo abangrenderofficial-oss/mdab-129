@@ -190,7 +190,14 @@ export async function processStatusButton(callbackQuery, context = {}) {
   const instagramStorySource = sourcePlatform === 'instagram' && isInstagramStoryUrl(sourceUrl);
   const gallery = galleryMediaMeta(action, MEDIA_STATUS_HQ);
   const fileSize = Number(video?.file_size || gallery?.fileSize || 0);
-  const heavyCandidate = Boolean(!isImage && gallery && videoFileId && shouldUseHeavyWorker({ file_size: fileSize }));
+  // Upload-v4 (TDS + <=29s parts) runs on the GitHub worker for every
+  // uploaded video: Bot Hosting's single CPU is ~6x slower than realtime for
+  // this formula. Small uploads fall back to the local path only when the
+  // worker is not configured. STATUS_UPLOAD_V4_WORKER=0 restores the old split.
+  const uploadV4Worker = String(process.env.STATUS_UPLOAD_V4_WORKER ?? '1').trim() !== '0';
+  const heavyCandidate = Boolean(!isImage && gallery && videoFileId && (
+    shouldUseHeavyWorker({ file_size: fileSize }) || (uploadV4Worker && heavyWorkerConfigured())
+  ));
   if (!chatId) return true;
 
   if (gallery && fileSize > heavyVideoLimitBytes()) {

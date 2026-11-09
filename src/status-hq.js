@@ -389,10 +389,13 @@ function uploadToneMapFilter(probe) {
 }
 
 function uploadVideoFilter(plan, probe) {
-  const maxWidth = Math.max(2, Math.floor(Number(plan.maxWidth || 720) / 2) * 2);
-  const maxHeight = Math.max(2, Math.floor(Number(plan.maxHeight || 1280) / 2) * 2);
+  // Orientation from the auto-rotated frame, not probe dims: iPhone portrait
+  // clips are coded 1920x1080 + rotate=90 and were shrunk to 404x720.
   const sar = 'if(gt(sar,0),sar,1)';
-  const fit = `min(1,min(${maxWidth}/(iw*${sar}),${maxHeight}/ih))`;
+  const sq = `lt(abs(iw*${sar}-ih)/max(iw*${sar},ih),0.08)`;
+  const maxWidth = `if(${sq},1280,if(gte(iw*${sar},ih),1280,720))`;
+  const maxHeight = `if(${sq},1280,if(gte(iw*${sar},ih),720,1280))`;
+  const fit = `min(1,min((${maxWidth})/(iw*${sar}),(${maxHeight})/ih))`;
   return [
     `scale=w='max(2,trunc((iw*${sar})*${fit}/2)*2)':h='max(2,trunc(ih*${fit}/2)*2)':flags=${plan.scaleFlags || 'lanczos'}`,
     'setsar=1',

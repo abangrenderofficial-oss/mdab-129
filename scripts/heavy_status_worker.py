@@ -25,6 +25,7 @@ BOT_API_BASE = os.environ.get('TELEGRAM_API_BASE_URL', 'https://api.telegram.org
 SOURCE_KIND = os.environ.get('HEAVY_SOURCE_KIND', 'link').strip().lower()
 IS_GALLERY_UPLOAD = SOURCE_KIND == 'gallery'
 UPLOAD_PRESET_H264 = os.environ.get('STATUS_UPLOAD_HEAVY_PRESET', 'slow').strip().lower() or 'slow'
+UPLOAD_DENOISE = os.environ.get('STATUS_UPLOAD_DENOISE', '0').strip().lower() in ('1', 'true', 'yes', 'on')
 
 
 def upload_maxrate_cap():
@@ -333,6 +334,9 @@ def upload_status_cmd(input_path, output_path, probe, maxrate, bufsize, audio_kb
     # with light sharpening + film tuning (best result in owner A/B tests).
     filters = [
         premium_v2_scale_filter(probe), 'setsar=1', upload_tonemap_filter(probe),
+        # Light denoise (after downscale, cheap): camera grain no longer
+        # eats WhatsApp's fixed ~2.2 Mbps; then sharpen real edges.
+        'hqdn3d=1.5:1.0:3:2.25' if UPLOAD_DENOISE else None,
         'unsharp=5:5:0.55:5:5:0.0', upload_fps_filter(probe),
     ]
     return [

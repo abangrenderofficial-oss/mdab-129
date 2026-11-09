@@ -330,14 +330,14 @@ def upload_fps_filter(probe):
     return f'fps={target:g}'
 
 
-def upload_scale_filter():
+def upload_scale_filter(long_side=1280, short_side=720):
     # Decide portrait/landscape from the frame ffmpeg actually delivers
     # (after auto-rotation), NOT from the coded size in probe. iPhone portrait
     # clips are stored 1920x1080 + rotate=90; using probe dims shrank them
     # into a 1280x720 box -> 404x720 output.
     sq = 'lt(abs(iw-ih)/max(iw,ih),0.08)'
-    max_w = f'if({sq},1280,if(gte(iw,ih),1280,720))'
-    max_h = f'if({sq},1280,if(gte(iw,ih),720,1280))'
+    max_w = f'if({sq},{long_side},if(gte(iw,ih),{long_side},{short_side}))'
+    max_h = f'if({sq},{long_side},if(gte(iw,ih),{short_side},{long_side}))'
     fit = f'min(1,min(({max_w})/iw,({max_h})/ih))'
     return (
         f"scale=w='max(2,trunc(iw*{fit}/2)*2)':"

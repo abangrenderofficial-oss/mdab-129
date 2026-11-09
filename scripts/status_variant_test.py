@@ -15,12 +15,10 @@ AUDIO_KBPS = 128
 def encode(src, out, probe, codec, total_mb, denoise=False, height=1280, sharpen=False, tuned=False):
     dur = max(1.0, probe['duration'])
     video_kbps = max(300, int(total_mb * 8 * 1_000_000 / dur / 1000 * 0.96) - AUDIO_KBPS)
-    scale = w.premium_v2_scale_filter(probe)
-    if height != 1280:
-        scale = scale.replace('1280', str(height)).replace('720', str(height * 9 // 16))
+    scale = w.upload_scale_filter(height, height * 9 // 16)
     sharp = 'unsharp=5:5:0.55:5:5:0.0' if sharpen else None
     filters = [
-        'hqdn3d=2:1.5:4:3' if denoise else None,
+        ('hqdn3d=3:2:6:4.5' if denoise == 'medium' else 'hqdn3d=2:1.5:4:3') if denoise else None,
         scale, 'setsar=1', w.upload_tonemap_filter(probe), sharp, w.upload_fps_filter(probe),
     ]
     vf = ','.join(f for f in filters if f)
@@ -59,6 +57,8 @@ def main():
         'E': ('h264', 5.3, True, 960, 'H.264 540p ~5.3MB + buang noise (bitrate lebih per piksel)'),
         'F': ('h264', 9.0, False, 1280, 'H.264 720p ~9MB + sharpen ringan + tune film', True),
         'G': ('h264', 9.0, False, 1920, 'H.264 1080p ~9MB + tune film (tiada resize loss)', True, False),
+        'S': ('h264', 9.5, False, 1024, '576x1024 BERSIH ~2.5Mbps (tiru saiz video TikTok)'),
+        'T': ('h264', 9.5, 'medium', 1024, '576x1024 + licinkan sederhana ~2.5Mbps (tiru rupa TikTok)'),
         'H': ('h264', 25.0, False, 1280, 'Formula F tapi ~25MB (sumber lebih bersih untuk WhatsApp)', True),
     }
     keys = [k.strip().upper() for k in os.environ.get('VARIANTS', 'A,B,C').split(',') if k.strip()]

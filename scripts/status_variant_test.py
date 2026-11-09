@@ -59,6 +59,7 @@ def main():
         'E': ('h264', 5.3, True, 960, 'H.264 540p ~5.3MB + buang noise (bitrate lebih per piksel)'),
         'F': ('h264', 9.0, False, 1280, 'H.264 720p ~9MB + sharpen ringan + tune film', True),
         'G': ('h264', 9.0, False, 1920, 'H.264 1080p ~9MB + tune film (tiada resize loss)', True, False),
+        'H': ('h264', 25.0, False, 1280, 'Formula F tapi ~25MB (sumber lebih bersih untuk WhatsApp)', True),
     }
     keys = [k.strip().upper() for k in os.environ.get('VARIANTS', 'A,B,C').split(',') if k.strip()]
     variants = []

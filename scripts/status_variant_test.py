@@ -82,13 +82,21 @@ def main():
             import shutil
             Path(os.environ['KEEP_DIR']).mkdir(parents=True, exist_ok=True)
             shutil.copy(src, Path(os.environ['KEEP_DIR']) / 'source.mp4')
+        if 'R' in keys:
+            variants.insert(0, ('R', 'prod-clean', 0, False, 1280, 'BERSIH: tanpa sharpen, tanpa buang noise, tanpa tune (encode asli sahaja)', False, False))
         if 'Q' in keys:
+
             variants.insert(0, ('Q', 'prod', 0, True, 1280, 'P + buang noise ringan (worker sebenar)', False, False))
         if prod:
             variants.insert(0, ('P', 'prod', 0, False, 1280, 'FORMULA AKHIR (worker sebenar, upload-v4 H.264)', False, False))
         for key, codec, mb, denoise, height, label, tuned, sharpen in variants:
             out = tmp / f'TEST-{key}.mp4'
-            if codec == 'prod':
+            if codec == 'prod-clean':
+                w.UPLOAD_ENHANCE = False
+                w.encode_status(src, out, probe, android=False)
+                w.UPLOAD_ENHANCE = True
+                kbps = int(out.stat().st_size * 8 / max(1.0, probe['duration']) / 1000) - AUDIO_KBPS
+            elif codec == 'prod':
                 w.UPLOAD_DENOISE = bool(denoise)
                 w.encode_status(src, out, probe, android=False)
                 kbps = int(out.stat().st_size * 8 / max(1.0, probe['duration']) / 1000) - AUDIO_KBPS

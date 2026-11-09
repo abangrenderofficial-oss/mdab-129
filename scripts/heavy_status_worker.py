@@ -26,6 +26,8 @@ SOURCE_KIND = os.environ.get('HEAVY_SOURCE_KIND', 'link').strip().lower()
 IS_GALLERY_UPLOAD = SOURCE_KIND == 'gallery'
 UPLOAD_PRESET_H264 = os.environ.get('STATUS_UPLOAD_HEAVY_PRESET', 'slow').strip().lower() or 'slow'
 UPLOAD_DENOISE = os.environ.get('STATUS_UPLOAD_DENOISE', '1').strip().lower() in ('1', 'true', 'yes', 'on')
+# 0 = clean encode only: no sharpen, no denoise, no film tuning.
+UPLOAD_ENHANCE = os.environ.get('STATUS_UPLOAD_ENHANCE', '1').strip().lower() in ('1', 'true', 'yes', 'on')
 
 
 def upload_maxrate_cap():
@@ -351,17 +353,17 @@ def upload_status_cmd(input_path, output_path, probe, maxrate, bufsize, audio_kb
         upload_scale_filter(), 'setsar=1', upload_tonemap_filter(probe),
         # Light denoise (after downscale, cheap): camera grain no longer
         # eats WhatsApp's fixed ~2.2 Mbps; then sharpen real edges.
-        'hqdn3d=1.5:1.0:3:2.25' if UPLOAD_DENOISE else None,
-        'unsharp=5:5:0.55:5:5:0.0', upload_fps_filter(probe),
+        'hqdn3d=1.5:1.0:3:2.25' if (UPLOAD_ENHANCE and UPLOAD_DENOISE) else None,
+        'unsharp=5:5:0.55:5:5:0.0' if UPLOAD_ENHANCE else None, upload_fps_filter(probe),
     ]
     return [
         'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', '-nostdin',
         '-i', str(input_path), '-map', '0:v:0', '-map', '0:a:0?',
         '-vf', ','.join(f for f in filters if f),
-        '-c:v', 'libx264', '-preset', UPLOAD_PRESET_H264, '-tune', 'film', '-crf', '18',
+        '-c:v', 'libx264', '-preset', UPLOAD_PRESET_H264, *(['-tune', 'film'] if UPLOAD_ENHANCE else []), '-crf', '18',
         '-maxrate', f'{maxrate}k', '-bufsize', f'{bufsize}k',
         '-profile:v', 'high', '-level:v', '3.1', '-pix_fmt', 'yuv420p',
-        '-x264-params', 'aq-mode=3:psy-rd=1.0,0.15',
+        '-x264-params', 'aq-mode=3:psy-rd=1.0,0.15' if UPLOAD_ENHANCE else 'aq-mode=3',
         '-color_range', 'tv', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709',
         '-c:a', 'aac', '-profile:a', 'aac_low', '-ar', '48000', '-ac', '2', '-b:a', f'{audio_kbps}k',
         '-movflags', '+faststart', '-metadata:s:v:0', 'rotate=0', '-map_metadata', '-1',

@@ -352,6 +352,7 @@ def upload_status_cmd(input_path, output_path, probe, maxrate, bufsize, audio_kb
 # Clips longer than 29s are split into equal parts <=29s.
 # ---------------------------------------------------------------------------
 UPLOAD_PART_MAX_SECONDS = 29.0
+UPLOAD_SINGLE_MAX_SECONDS = 32.0
 UPLOAD_MAX_PARTS = 10
 UPLOAD_V4_PRESET = os.environ.get('STATUS_UPLOAD_V4_PRESET', 'medium').strip().lower() or 'medium'
 
@@ -381,9 +382,10 @@ def upload_v4_filter(probe):
 
 def upload_part_plan(duration):
     duration = max(0.1, float(duration or 0))
-    # Up to 30s stays one file (WhatsApp's classic Status length); longer
-    # clips are split into equal parts of <=29s.
-    count = 1 if duration <= 30.0 else int(math.ceil(duration / UPLOAD_PART_MAX_SECONDS))
+    # Phones show 0:30 for anything up to 30.99s, so up to 32s stays one
+    # file (still <16MB at the 3.8 Mbps cap); longer clips are split into
+    # equal parts of <=29s.
+    count = 1 if duration <= UPLOAD_SINGLE_MAX_SECONDS else int(math.ceil(duration / UPLOAD_PART_MAX_SECONDS))
     count = min(count, UPLOAD_MAX_PARTS)
     total = duration if count == 1 else min(duration, UPLOAD_PART_MAX_SECONDS * count)
     length = total / count

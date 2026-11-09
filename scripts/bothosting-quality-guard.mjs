@@ -22,7 +22,7 @@ const expected = {
   "scripts/apple_live_photo_pair.swift": "f072314bc088dbdc870a27b54652926ffc3b4377",
   "scripts/apple_live_worker.py": "b4ec9f400b11933e5f1fd5019c1baee7f6c8fb25",
   "scripts/heavy_status_android_worker.py": "d4d19ea1e0b46e229a5f6ea43a3df5938dd83ee4",
-  "scripts/heavy_status_worker.py": "6703b18efd8eb58c1611df802d3a4a5f76b741f1",
+  "scripts/heavy_status_worker.py": "5416b7b3999617f4c0e7a4c158f7508ce6422d8f",
   "src/hq-lab-premium-plus.js": "f138de3426d313e7578cd77df803443eb68db0b0",
   "src/hq-lab.js": "6b039fb0f99b7f9bd094106db3fa8c0d1af7849f",
   "src/status-hq.js": "6d8e58ad0fd55e80cba9d0418a6f6d3414309da2",

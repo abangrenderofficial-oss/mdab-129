@@ -47,6 +47,22 @@ def encode(src, out, probe, codec, total_mb, denoise=False, height=1280, sharpen
     return video_kbps
 
 
+def encode_statusdrop(src, out):
+    # Exact StatusDrop (github.com/Shamanthnp1/WAstatus) "WhatsApp_Spec" encode:
+    # 1080x1920 canvas, x264 High@4.0 CRF23 maxrate 3800k, no SEI, 30fps cap,
+    # <=29s per clip, <16MB. Their claim: WhatsApp passes it through untouched
+    # when posted via Gallery-HD-to-chat then forward to Status.
+    vf = ("scale=w=1080:h=1920:force_original_aspect_ratio=decrease,"
+          "pad=1080:1920:(ow-iw)/2:(oh-ih)/2,scale=trunc(iw/2)*2:trunc(ih/2)*2")
+    w.run(['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', '-nostdin', '-i', str(src), '-t', '29',
+           '-map', '0:v:0', '-map', '0:a:0?', '-vf', vf, '-c:v', 'libx264', '-preset', 'medium',
+           '-pix_fmt', 'yuv420p', '-color_range', 'tv', '-color_primaries', 'bt470bg',
+           '-color_trc', 'bt709', '-colorspace', 'bt470bg', '-crf', '23', '-maxrate', '3800k',
+           '-bufsize', '5700k', '-g', '250', '-profile:v', 'high', '-level:v', '4.0',
+           '-x264-params', 'sei=0', '-r', '30', '-c:a', 'aac', '-ar', '44100', '-ac', '2',
+           '-b:a', '128k', '-brand', 'isom', '-movflags', '+faststart', '-f', 'mp4', str(out)], timeout=1500)
+
+
 def main():
     w.require_config()
     all_variants = {

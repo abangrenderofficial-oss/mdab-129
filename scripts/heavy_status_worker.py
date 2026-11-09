@@ -344,6 +344,112 @@ def upload_status_cmd(input_path, output_path, probe, maxrate, bufsize, audio_kb
     ]
 
 
+# ---------------------------------------------------------------------------
+# Upload-v4 "TDS" (gallery uploads only; link Premium+, Android HQ, Live
+# Wallpaper untouched). Owner A/B tests on real WhatsApp Status, 9 Nov 2026:
+# StatusDrop WhatsApp spec (1080p H.264 High CRF23 <=3.8 Mbps, <=29s, <16MB)
+# + temporal-only denoise + very light sharpen gave the cleanest Status.
+# Clips longer than 29s are split into equal parts <=29s.
+# ---------------------------------------------------------------------------
+UPLOAD_PART_MAX_SECONDS = 29.0
+UPLOAD_MAX_PARTS = 10
+UPLOAD_V4_PRESET = os.environ.get('STATUS_UPLOAD_V4_PRESET', 'medium').strip().lower() or 'medium'
+
+
+def upload_box_scale_filter(long_side=1920, short_side=1080):
+    # Orientation from the auto-rotated frame (iPhone portrait clips are coded
+    # 1920x1080 + rotate=90); never from probe dims.
+    sq = 'lt(abs(iw-ih)/max(iw,ih),0.08)'
+    max_w = f'if({sq},{short_side},if(gte(iw,ih),{long_side},{short_side}))'
+    max_h = f'if({sq},{short_side},if(gte(iw,ih),{short_side},{long_side}))'
+    fit = f'min(1,min(({max_w})/iw,({max_h})/ih))'
+    return (
+        f"scale=w='max(2,trunc(iw*{fit}/2)*2)':"
+        f"h='max(2,trunc(ih*{fit}/2)*2)':flags=lanczos"
+    )
+
+
+def upload_v4_filter(probe):
+    filters = [
+        'hqdn3d=0:0:3:3',                      # temporal-only denoise (no blur)
+        'unsharp=5:5:0.25:5:5:0.0',            # very light sharpen
+        upload_box_scale_filter(), 'setsar=1',
+        upload_tonemap_filter(probe), upload_fps_filter(probe),
+    ]
+    return ','.join(f for f in filters if f)
+
+
+def upload_part_plan(duration):
+    duration = max(0.1, float(duration or 0))
+    # Up to 30s stays one file (WhatsApp's classic Status length); longer
+    # clips are split into equal parts of <=29s.
+    count = 1 if duration <= 30.0 else int(math.ceil(duration / UPLOAD_PART_MAX_SECONDS))
+    count = min(count, UPLOAD_MAX_PARTS)
+    total = duration if count == 1 else min(duration, UPLOAD_PART_MAX_SECONDS * count)
+    length = total / count
+    return [(index * length, length) for index in range(count)], total < duration - 0.5
+
+
+def encode_upload_v4_part(input_path, output_path, probe, start, length):
+    cmd = [
+        'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', '-nostdin',
+        '-ss', f'{start:.3f}', '-i', str(input_path), '-t', f'{length:.3f}',
+        '-map', '0:v:0', '-map', '0:a:0?', '-vf', upload_v4_filter(probe),
+        '-c:v', 'libx264', '-preset', UPLOAD_V4_PRESET, '-crf', '23',
+        '-maxrate', '3800k', '-bufsize', '5700k', '-g', '250',
+        '-profile:v', 'high', '-level:v', '4.0', '-pix_fmt', 'yuv420p',
+        '-x264-params', 'sei=0',
+        '-color_range', 'tv', '-color_primaries', 'bt470bg', '-color_trc', 'bt709', '-colorspace', 'bt470bg',
+        '-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', '128k',
+        '-brand', 'isom', '-movflags', '+faststart', '-metadata:s:v:0', 'rotate=0', '-map_metadata', '-1',
+        '-threads', '0', str(output_path),
+    ]
+    run(cmd, timeout=1200)
+    if not output_path.exists() or output_path.stat().st_size <= 0:
+        raise RuntimeError('Upload-v4 part output kosong.')
+
+
+def encode_upload_v4(input_path, temp, probe):
+    plan, trimmed = upload_part_plan(probe['duration'])
+    parts = []
+    for index, (start, length) in enumerate(plan, 1):
+        output = temp / f'status-hq-part{index}.mp4'
+        encode_upload_v4_part(input_path, output, probe, start, length)
+        parts.append(output)
+        set_progress(42 + int(46 * index / len(plan)))
+    return parts, trimmed
+
+
+def send_upload_v4_parts(parts, trimmed):
+    total = len(parts)
+    if total > 1:
+        notice = (
+            f'📌 Video ni lebih 29 saat, jadi MediaX pecahkan kepada {total} bahagian '
+            'supaya kualiti kekal tajam di Status WhatsApp.\n\n'
+            f'Cara post: save semua bahagian, kemudian post ke Status ikut turutan Bahagian 1 → {total}.'
+        )
+        if trimmed:
+            notice += f'\n\n⚠️ Video terlalu panjang, jadi hanya {int(UPLOAD_PART_MAX_SECONDS * total)} saat pertama diproses.'
+        try:
+            telegram_call('sendMessage', {'chat_id': str(CHAT_ID), 'text': notice}, timeout=30)
+        except Exception as exc:
+            print(f'part notice failed: {exc}', flush=True)
+    caption = status_caption()
+    for index, path in enumerate(parts, 1):
+        metadata = probe_video(path)
+        part_caption = caption if total == 1 else f'{caption}\n\n🎬 Bahagian {index}/{total}'
+        data = {
+            'chat_id': str(CHAT_ID),
+            'caption': part_caption,
+            'supports_streaming': 'true',
+            'width': str(int(metadata.get('width') or 0)),
+            'height': str(int(metadata.get('height') or 0)),
+            'duration': str(max(1, int(round(metadata.get('duration') or 1)))),
+        }
+        with path.open('rb') as handle:
+            telegram_call('sendVideo', data, {'video': (f'status-hq-{index}.mp4', handle, 'video/mp4')}, timeout=300)
+
+
 def encode_status(input_path, output_path, probe, android=False):
     plan = status_plan(probe, android=android)
     safe_limit = int(47 * MB)
@@ -565,10 +671,15 @@ def main():
         else:
             set_progress(42)
             output = temp / 'status-hq.mp4'
-            encode_status(source, output, probe, android=False)
-            set_progress(88)
-            set_progress(100)
-            send_status_video(output, android=False)
+            if IS_GALLERY_UPLOAD:
+                parts, trimmed = encode_upload_v4(source, temp, probe)
+                set_progress(100)
+                send_upload_v4_parts(parts, trimmed)
+            else:
+                encode_status(source, output, probe, android=False)
+                set_progress(88)
+                set_progress(100)
+                send_status_video(output, android=False)
 
         finish_progress()
         print('heavy worker complete', flush=True)

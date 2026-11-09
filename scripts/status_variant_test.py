@@ -47,13 +47,15 @@ def encode(src, out, probe, codec, total_mb, denoise=False, height=1280, sharpen
     return video_kbps
 
 
-def encode_statusdrop(src, out):
+def encode_statusdrop(src, out, extra=''):
     # Exact StatusDrop (github.com/Shamanthnp1/WAstatus) "WhatsApp_Spec" encode:
     # 1080x1920 canvas, x264 High@4.0 CRF23 maxrate 3800k, no SEI, 30fps cap,
     # <=29s per clip, <16MB. Their claim: WhatsApp passes it through untouched
     # when posted via Gallery-HD-to-chat then forward to Status.
     vf = ("scale=w=1080:h=1920:force_original_aspect_ratio=decrease,"
           "pad=1080:1920:(ow-iw)/2:(oh-ih)/2,scale=trunc(iw/2)*2:trunc(ih/2)*2")
+    if extra:
+        vf += ',' + extra
     w.run(['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', '-nostdin', '-i', str(src), '-t', '29',
            '-map', '0:v:0', '-map', '0:a:0?', '-vf', vf, '-c:v', 'libx264', '-preset', 'medium',
            '-pix_fmt', 'yuv420p', '-color_range', 'tv', '-color_primaries', 'bt470bg',
@@ -98,6 +100,9 @@ def main():
             import shutil
             Path(os.environ['KEEP_DIR']).mkdir(parents=True, exist_ok=True)
             shutil.copy(src, Path(os.environ['KEEP_DIR']) / 'source.mp4')
+        for vk, vlabel in [('V3', 'U + sharpen ringan + grain statik ringan'), ('V2', 'U + sharpen ringan sahaja'), ('V1', 'U + grain statik ringan sahaja')]:
+            if vk in keys:
+                variants.insert(0, (vk, 'statusdrop', 0, False, 1920, vlabel, False, False))
         if 'U' in keys:
             variants.insert(0, ('U', 'statusdrop', 0, False, 1920, 'SPEC STATUSDROP: 1080x1920 H.264 High CRF23 <=3.8Mbps, 29s, <16MB', False, False))
         if 'R' in keys:
@@ -110,7 +115,7 @@ def main():
         for key, codec, mb, denoise, height, label, tuned, sharpen in variants:
             out = tmp / f'TEST-{key}.mp4'
             if codec == 'statusdrop':
-                encode_statusdrop(src, out)
+                encode_statusdrop(src, out, {'V1': 'noise=alls=4:allf=u', 'V2': 'unsharp=5:5:0.4:5:5:0.0', 'V3': 'unsharp=5:5:0.4:5:5:0.0,noise=alls=3:allf=u'}.get(key, ''))
                 kbps = int(out.stat().st_size * 8 / 29 / 1000) - AUDIO_KBPS
             elif codec == 'prod-clean':
                 w.UPLOAD_ENHANCE = False
